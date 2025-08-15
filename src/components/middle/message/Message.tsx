@@ -214,6 +214,7 @@ import StoryMention from './StoryMention';
 import TodoList from './TodoList';
 import Video from './Video';
 import WebPage from './WebPage';
+import { OnlikActionsButtons } from './OnlikActions';
 
 import './Message.scss';
 
@@ -2002,6 +2003,9 @@ const Message = ({
             isAccountFrozen={isAccountFrozen}
           />
         )}
+      </div>
+      <div className="onlick-buttons-container">
+        <OnlikActionsButtons message={message} />
       </div>
       {contextMenuAnchor && (
         <ContextMenuContainer

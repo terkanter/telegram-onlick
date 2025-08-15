@@ -50,6 +50,7 @@
   }
 
   > .Avatar,
+  > .onlick-buttons-container,
   > .message-content-wrapper {
     transform: scale(1) translateX(0);
     opacity: 1;
@@ -377,6 +378,7 @@
 
     &:not(.own) {
       > .Avatar,
+      > .onlick-buttons-container,
       > .message-content-wrapper {
         transform: translateX(2.5rem);
       }
@@ -834,4 +836,11 @@
 
 .media-inner {
   overflow: hidden;
+}
+
+.onlick-buttons-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px;
 }

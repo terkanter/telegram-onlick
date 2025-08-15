@@ -253,9 +253,6 @@ const AuthPhoneNumber = ({
         />
       )}
       <div className="auth-form">
-        <div id="logo" />
-        <h1>{lang('AuthTitle')}</h1>
-        <p className="note">{lang('StartText')}</p>
         <form className="form" action="" onSubmit={handleSubmit}>
           <CountryCodeInput
             id="sign-in-phone-code"

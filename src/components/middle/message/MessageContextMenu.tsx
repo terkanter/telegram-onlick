@@ -18,7 +18,8 @@ import type {
   ApiUser,
   ApiWebPage,
 } from '../../../api/types';
-import type { IAnchorPosition, TranslationTone } from '../../../types';
+import type { IAnchorPosition } from '../../../types';
+import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
 import {
   getUserFullName,
@@ -319,6 +320,15 @@ const MessageContextMenu: FC<OwnProps> = ({
     onCopyNumber,
   );
 
+  const sendOptions = isSponsoredMessage
+    ? []
+    : getMessageSendToParentWindowOptions(
+      message,
+      canCopy,
+      handleAfterCopy,
+      onCopyMessages,
+    );
+
   const getTriggerElement = useLastCallback(() => {
     return document.querySelector(`.Transition_slide-active > .MessageList`);
   });
@@ -485,6 +495,15 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canSelectLanguage && (
           <MenuItem icon="web" onClick={onSelectLanguage}>{oldLang('lng_settings_change_lang')}</MenuItem>
         )}
+        {sendOptions.map((option) => (
+          <MenuItem
+            key={option.label}
+            icon={option.icon}
+            onClick={option.handler}
+            withPreventDefaultOnMouseDown
+          >{option.label}
+          </MenuItem>
+        ))}
         {copyOptions.map((option) => (
           <MenuItem
             key={option.label}

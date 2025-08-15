@@ -34,6 +34,7 @@ import Main from './main/Main.async';
 import Transition from './ui/Transition';
 
 import styles from './App.module.scss';
+import {withLogin} from "./Login.tsx";
 
 type StateProps = {
   authState: GlobalState['auth']['state'];
@@ -262,9 +263,8 @@ const App = ({
   );
 };
 
-export default withGlobal(
-  (global): Complete<StateProps> => {
-    const { state: authState, hasWebAuthTokenFailed, hasWebAuthTokenPasswordRequired } = global.auth;
+export default withLogin(withGlobal(
+  (global): StateProps => {
     return {
       authState,
       isScreenLocked: global.passcode?.isScreenLocked,
@@ -276,4 +276,4 @@ export default withGlobal(
       actionMessageBg: selectActionMessageBg(global),
     };
   },
-)(App);
+)(App));
