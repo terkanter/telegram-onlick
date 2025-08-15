@@ -320,14 +320,7 @@ const MessageContextMenu: FC<OwnProps> = ({
     onCopyNumber,
   );
 
-  const sendOptions = isSponsoredMessage
-    ? []
-    : getMessageSendToParentWindowOptions(
-      message,
-      canCopy,
-      handleAfterCopy,
-      onCopyMessages,
-    );
+  const sendOptions = getMessageSendToParentWindowOptions(message, canCopy, handleAfterCopy, onCopyMessages);
 
   const getTriggerElement = useLastCallback(() => {
     return document.querySelector(`.Transition_slide-active > .MessageList`);
