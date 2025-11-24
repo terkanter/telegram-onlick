@@ -8,6 +8,7 @@ textCopyEl.className = 'visually-hidden';
 type ISendMessageProps = { user?: ApiUser; image?: any; text?: string; message?: any; chat: any };
 
 export function sendNewPost(message: ISendMessageProps) {
+  console.log(message);
   window.parent?.postMessage(
     {
       type: 'form-content',
