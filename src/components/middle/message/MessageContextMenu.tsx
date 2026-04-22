@@ -18,7 +18,7 @@ import type {
   ApiUser,
   ApiWebPage,
 } from '../../../api/types';
-import type { IAnchorPosition } from '../../../types';
+import type { IAnchorPosition, TranslationTone } from '../../../types';
 import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
 import {
@@ -320,7 +320,7 @@ const MessageContextMenu: FC<OwnProps> = ({
     onCopyNumber,
   );
 
-  const sendOptions = getMessageSendToParentWindowOptions(message, canCopy, handleAfterCopy, onCopyMessages);
+  const sendOptions = getMessageSendToParentWindowOptions(lang, message, canCopy, handleAfterCopy, onCopyMessages);
 
   const getTriggerElement = useLastCallback(() => {
     return document.querySelector(`.Transition_slide-active > .MessageList`);
@@ -492,9 +492,10 @@ const MessageContextMenu: FC<OwnProps> = ({
           <MenuItem
             key={option.label}
             icon={option.icon}
-            onClick={option.handler}
+            onClick={() => option.handler()}
             withPreventDefaultOnMouseDown
-          >{option.label}
+          >
+            {oldLang(option.label)}
           </MenuItem>
         ))}
         {copyOptions.map((option) => (

@@ -10,13 +10,13 @@ import {
   getMessageHtmlId,
   getMessagePhoto,
   getMessageText,
-  getMessageWebPagePhoto,
-  getMessageWebPageVideo,
   getPhotoMediaHash,
+  getWebPagePhoto,
+  getWebPageVideo,
   hasMediaLocalBlobUrl,
 } from '../../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../../global/helpers/messageSummary';
-import { selectChat, selectUser } from '../../../../global/selectors';
+import { selectChat, selectUser, selectWebPageFromMessage } from '../../../../global/selectors';
 import getMessageIdsForSelectedText from '../../../../util/getMessageIdsForSelectedText';
 import * as mediaLoader from '../../../../util/mediaLoader';
 import {
@@ -25,6 +25,7 @@ import {
   sendNewPost,
 } from '../../../../util/onlik-bridge';
 import { IS_SAFARI } from '../../../../util/browser/windowEnvironment';
+import { LangFn } from '../../../../util/localization';
 
 export type ISendOption = {
   label: string;
@@ -36,25 +37,27 @@ export type ISendOption = {
 export type ISendOptions = ISendOption[];
 
 export function getMessageSendToParentWindowOptions(
+  lang: LangFn,
   message: ApiMessage,
   canCopy?: boolean,
   afterEffect?: () => void,
   onCopyMessages?: (messageIds: number[]) => void,
 ): ISendOptions {
   const options: ISendOptions = [];
+  const global = getGlobal();
   const text = getMessageText(message);
+  const webPage = selectWebPageFromMessage(global, message);
   const photo = getMessagePhoto(message)
-    || (!getMessageWebPageVideo(message) ? getMessageWebPagePhoto(message) : undefined);
+    || (!getWebPageVideo(webPage) ? getWebPagePhoto(webPage) : undefined);
   const document = getMessageDocument(message);
   const mediaHash = photo ? getPhotoMediaHash(photo, 'inline') : undefined;
   const documentMediaHash = document ? getDocumentMediaHash(document, 'full') : undefined;
   const canImageBeCopied = canCopy && photo && (mediaHash || hasMediaLocalBlobUrl(photo)) && !IS_SAFARI;
   const selection = window.getSelection();
-  const global = getGlobal();
   const chat = selectChat(global, message.chatId);
-  const user = global.currentUserId ? selectUser(getGlobal(), global.currentUserId) : undefined;
-  // eslint-disable-next-line max-len
-  const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document)) && !IS_SAFARI;
+  const user = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
+  const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document))
+    && !IS_SAFARI;
 
   if ((canDocumentBeCopied || canImageBeCopied) && canCopy && text) {
     // Detect if the user has selection in the current message
@@ -80,7 +83,7 @@ export function getMessageSendToParentWindowOptions(
             // @ts-ignore
             return selection.toString();
           } else {
-            return getMessageTextWithSpoilers(message);
+            return getMessageTextWithSpoilers(lang, message, undefined);
           }
         }
         const ntext = getText();
@@ -147,15 +150,14 @@ export function getMessageSendToParentWindowOptions(
           // onCopyMessages(messageIds);
         } else if (hasSelection) {
           sendNewPost({
-            // @ts-ignore
-            text: selection.toString()!,
+            text: selection?.toString() || '',
             message,
             chat,
             user,
           });
         } else {
           sendNewPost({
-            text: getMessageTextWithSpoilers(message)!,
+            text: getMessageTextWithSpoilers(lang, message, undefined)!,
             message,
             chat,
             user,
@@ -171,7 +173,7 @@ export function getMessageSendToParentWindowOptions(
 }
 function checkMessageHasSelection(message: ApiMessage): boolean {
   const selection = window.getSelection();
-  const selectionParentNode = (selection?.anchorNode?.parentNode as HTMLElement);
+  const selectionParentNode = selection?.anchorNode?.parentNode as HTMLElement;
   const selectedMessageElement = selectionParentNode?.closest<HTMLDivElement>('.Message.message-list-item');
   return getMessageHtmlId(message.id) === selectedMessageElement?.id;
 }

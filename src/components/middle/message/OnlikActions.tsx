@@ -8,6 +8,7 @@ import { getMessageSendToParentWindowOptions } from './helpers/sendMessageConten
 import useLastCallback from '../../../hooks/useLastCallback';
 
 import Button from '../../ui/Button';
+import useLang from '../../../hooks/useLang';
 
 type OwnProps = {
   message: ApiMessage;
@@ -49,7 +50,8 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
 export function OnlikActionsButtons(props: OwnProps) {
   const { message } = props;
 
-  const options = getMessageSendToParentWindowOptions(message, true);
+  const lang = useLang();
+  const options = getMessageSendToParentWindowOptions(lang, message, true);
 
   return options.map((option) => (
     <OnlickActionButton option={option} />
