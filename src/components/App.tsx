@@ -265,6 +265,8 @@ const App = ({
 
 export default withLogin(withGlobal(
   (global): StateProps => {
+    const { state: authState, hasWebAuthTokenFailed, hasWebAuthTokenPasswordRequired } = global.auth;
+
     return {
       authState,
       isScreenLocked: global.passcode?.isScreenLocked,
