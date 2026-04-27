@@ -46,6 +46,11 @@ function subscribeToWorker() {
 }
 
 if (IS_SERVICE_WORKER_SUPPORTED) {
+  // Reload the page when a new SW takes control to avoid stale JS chunks
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+
   window.addEventListener('load', async () => {
     try {
       const controller = navigator.serviceWorker.controller;
