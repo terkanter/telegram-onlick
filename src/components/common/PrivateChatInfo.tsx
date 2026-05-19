@@ -41,7 +41,7 @@ import TypingStatus from './TypingStatus';
 const TOPIC_ICON_SIZE = 2.5 * REM;
 
 type BaseOwnProps = {
-  typingStatus?: ApiTypingStatus;
+  typingStatusByPeerId?: Record<string, ApiTypingStatus>;
   avatarSize?: 'tiny' | 'small' | 'medium' | 'large' | 'jumbo';
   forceShowSelf?: boolean;
   status?: string;
@@ -97,7 +97,7 @@ const UPDATE_INTERVAL = 1000 * 60; // 1 min
 const PrivateChatInfo = ({
   userId,
   customPeer,
-  typingStatus,
+  typingStatusByPeerId,
   avatarSize = 'medium',
   status,
   statusIcon,
@@ -204,8 +204,8 @@ const PrivateChatInfo = ({
       return undefined;
     }
 
-    if (typingStatus) {
-      return <TypingStatus typingStatus={typingStatus} />;
+    if (typingStatusByPeerId) {
+      return <TypingStatus typingStatusByPeerId={typingStatusByPeerId} isPrivate />;
     }
 
     if (isTopic) {
@@ -335,13 +335,19 @@ const PrivateChatInfo = ({
 };
 
 export default memo(withGlobal<OwnProps>(
-  (global, { userId, threadId, forceShowSelf }): Complete<StateProps> => {
+  (global, {
+    userId, threadId, forceShowSelf, isSavedDialog,
+  }): Complete<StateProps> => {
     const { isSynced } = global;
     const user = userId ? selectUser(global, userId) : undefined;
     const userStatus = userId ? selectUserStatus(global, userId) : undefined;
     const isSavedMessages = !forceShowSelf && user && user.isSelf;
     const self = isSavedMessages ? user : selectUser(global, global.currentUserId!);
-    const areMessagesLoaded = Boolean(userId ? selectChatMessages(global, userId) : undefined);
+    const areMessagesLoaded = Boolean(
+      isSavedDialog
+        ? selectChatMessages(global, global.currentUserId!)
+        : selectChatMessages(global, userId!),
+    );
 
     const topic = threadId ? selectTopic(global, userId, threadId) : undefined;
     const messagesCount = topic && userId ? selectThreadMessagesCount(global, userId, threadId!) : undefined;

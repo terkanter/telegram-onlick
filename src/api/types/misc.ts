@@ -174,6 +174,7 @@ export type ApiDialog = ApiDialogError | ApiDialogMessage | ApiDialogContact | A
 
 export type ApiError = {
   message: string;
+  code?: number;
   entities?: ApiMessageEntity[];
   hasErrorKey?: boolean;
   isSlowMode?: boolean;
@@ -257,6 +258,7 @@ export interface ApiAppConfig {
   autologinDomains: string[];
   urlAuthDomains: string[];
   whitelistedDomains: string[];
+  webAppAllowedProtocols: string[];
   premiumInvoiceSlug?: string;
   premiumBotUsername: string;
   isPremiumPurchaseBlocked: boolean;
@@ -318,7 +320,8 @@ export interface ApiAppConfig {
   tonStargiftResaleCommissionPermille?: number;
   tonUsdRate?: number;
   tonTopupUrl: string;
-  pollMaxAnswers?: number;
+  pollMaxAnswers: number;
+  pollClosePeriodMax: number;
   todoItemsMax: number;
   todoTitleLengthMax: number;
   todoItemLengthMax: number;
@@ -388,6 +391,7 @@ export type ApiUrlAuthResultRequest = {
   type: 'request';
   bot: ApiUser;
   domain: string;
+  isApp?: boolean;
   shouldRequestWriteAccess?: boolean;
   shouldRequestPhoneNumber?: boolean;
   browser?: string;
@@ -397,6 +401,7 @@ export type ApiUrlAuthResultRequest = {
   matchCodes?: string[];
   matchCodesFirst?: boolean;
   userIdHint?: string;
+  verifiedAppName?: string;
 };
 
 type ApiUrlAuthResultAccepted = {

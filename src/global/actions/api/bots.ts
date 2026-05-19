@@ -18,7 +18,7 @@ import { copyTextToClipboard } from '../../../util/clipboard';
 import { getUsernameFromDeepLink } from '../../../util/deepLinkParser';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { pick } from '../../../util/iteratees.ts';
-import { getTranslationFn } from '../../../util/localization';
+import { type AdvancedLangFnParameters, getTranslationFn } from '../../../util/localization';
 import { formatStarsAsText } from '../../../util/localization/format';
 import { oldTranslate } from '../../../util/oldLangProvider';
 import requestActionTimeout from '../../../util/requestActionTimeout';
@@ -126,9 +126,16 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       break;
     }
 
-    case 'requestPoll':
-      actions.openPollModal({ isQuiz: button.isQuiz, tabId });
+    case 'requestPoll': {
+      actions.openPollModal({
+        chatId,
+        threadId,
+        messageListType: 'thread',
+        isQuiz: button.isQuiz,
+        tabId,
+      });
       break;
+    }
 
     case 'requestPhone': {
       const user = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
@@ -703,6 +710,42 @@ addActionHandler('requestWebView', async (global, actions, payload): Promise<voi
   }
 });
 
+addActionHandler('requestAgeVerification', async (global, actions, payload): Promise<void> => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  const { verifyAgeBotUsername } = global.appConfig;
+
+  if (!verifyAgeBotUsername) {
+    actions.showNotification({
+      message: { key: 'MiniAppUnavailableError' },
+      tabId,
+    });
+    return;
+  }
+
+  const chat = await fetchChatByUsername(global, verifyAgeBotUsername);
+  global = getGlobal();
+  const bot = chat && selectUser(global, chat.id);
+
+  if (!bot?.hasMainMiniApp) {
+    actions.showNotification({
+      message: { key: 'MiniAppUnavailableError' },
+      tabId,
+    });
+    return;
+  }
+
+  const theme = extractCurrentThemeParams();
+  actions.requestMainWebView({
+    botId: bot.id,
+    peerId: bot.id,
+    theme,
+    shouldMarkBotTrusted: true,
+    tabId,
+  });
+
+  actions.closeAgeVerificationModal({ tabId });
+});
+
 addActionHandler('requestMainWebView', async (global, actions, payload): Promise<void> => {
   const {
     botId, peerId, theme, startParam, mode, shouldMarkBotTrusted,
@@ -717,7 +760,14 @@ addActionHandler('requestMainWebView', async (global, actions, payload): Promise
   if (checkIfOpenOrActivate(global, botId, tabId)) return;
 
   const bot = selectUser(global, botId);
-  if (!bot) return;
+  if (!bot) {
+    actions.showNotification({
+      message: { key: 'MiniAppUnavailableError' },
+      tabId,
+    });
+    return;
+  }
+
   const peer = selectPeer(global, peerId);
   if (!peer) return;
 
@@ -748,6 +798,10 @@ addActionHandler('requestMainWebView', async (global, actions, payload): Promise
     mode,
   });
   if (!result) {
+    actions.showNotification({
+      message: { key: 'MiniAppUnavailableError' },
+      tabId,
+    });
     return;
   }
 
@@ -1298,41 +1352,28 @@ function handleUrlAuthResult<T extends GlobalState>(
   }
 
   if (result.type === 'accepted' && !result.url) {
-    if (!wasPhoneShared && tabState.urlAuth?.request?.shouldRequestPhoneNumber) {
-      actions.showNotification({
-        message: {
-          key: 'BotAuthSuccessTextNoPhone',
-          variables: {
-            url: tabState.urlAuth.request?.domain || result.url,
-          },
-          options: {
-            withMarkdown: true,
-            withNodes: true,
-          },
-        },
-        title: {
-          key: 'BotAuthSuccessTitle',
-        },
-        tabId,
-      });
-    } else {
-      actions.showNotification({
-        message: {
-          key: 'BotAuthSuccessText',
-          variables: {
-            url: tabState.urlAuth?.request?.domain || result.url,
-          },
-          options: {
-            withMarkdown: true,
-            withNodes: true,
-          },
-        },
-        title: {
-          key: 'BotAuthSuccessTitle',
-        },
-        tabId,
-      });
-    }
+    const request = tabState.urlAuth?.request;
+    const requestDisplayName = request?.isApp
+      ? (request.verifiedAppName || getTranslationFn()('BotAuthUnverifiedApp'))
+      : (request?.domain || url);
+    const successMessage: AdvancedLangFnParameters = {
+      key: !wasPhoneShared && request?.shouldRequestPhoneNumber ? 'BotAuthSuccessTextNoPhone' : 'BotAuthSuccessText',
+      variables: {
+        url: requestDisplayName,
+      },
+      options: {
+        withMarkdown: true,
+        withNodes: true,
+      },
+    };
+
+    actions.showNotification({
+      message: successMessage,
+      title: {
+        key: 'BotAuthSuccessTitle',
+      },
+      tabId,
+    });
     actions.closeUrlAuthModal({ tabId });
     return;
   }

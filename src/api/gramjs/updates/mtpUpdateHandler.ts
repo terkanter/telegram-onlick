@@ -1,7 +1,7 @@
 import { Api as GramJs, type Update } from '../../../lib/gramjs';
 import { UpdateConnectionState, UpdateServerTimeOffset } from '../../../lib/gramjs/network';
 
-import type { GroupCallConnectionData } from '../../../lib/secret-sauce';
+import type { GroupCallConnectionData } from '../../../lib/vibecalls';
 import {
   type ApiMessage,
   type ApiMessagePoll,
@@ -514,6 +514,7 @@ export function updater(update: Update) {
       readState: {
         lastReadInboxMessageId: update.maxId,
         unreadCount: update.stillUnreadCount,
+        hasUnreadMark: undefined,
       },
     });
   } else if (update instanceof GramJs.UpdateReadHistoryOutbox) {
@@ -533,6 +534,7 @@ export function updater(update: Update) {
       readState: {
         lastReadInboxMessageId: update.maxId,
         unreadCount: update.stillUnreadCount,
+        hasUnreadMark: undefined,
       },
     });
   } else if (update instanceof GramJs.UpdateReadChannelOutbox) {
@@ -677,6 +679,9 @@ export function updater(update: Update) {
     const chatId = update instanceof GramJs.UpdateUserTyping
       ? buildApiPeerId(update.userId, 'user')
       : buildApiPeerId(update.chatId, 'chat');
+    const peerId = update instanceof GramJs.UpdateUserTyping
+      ? buildApiPeerId(update.userId, 'user')
+      : getApiChatIdFromMtpPeer(update.fromId);
 
     const threadId = update instanceof GramJs.UpdateUserTyping ? update.topMsgId : undefined;
 
@@ -700,16 +705,19 @@ export function updater(update: Update) {
       sendApiUpdate({
         '@type': 'updateChatTypingStatus',
         id: chatId,
+        peerId,
         threadId,
         typingStatus: buildChatTypingStatus(update),
       });
     }
   } else if (update instanceof GramJs.UpdateChannelUserTyping) {
     const id = buildApiPeerId(update.channelId, 'channel');
+    const peerId = getApiChatIdFromMtpPeer(update.fromId);
 
     sendApiUpdate({
       '@type': 'updateChatTypingStatus',
       id,
+      peerId,
       threadId: update.topMsgId,
       typingStatus: buildChatTypingStatus(update),
     });

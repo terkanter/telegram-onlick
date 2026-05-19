@@ -69,6 +69,7 @@ interface OwnProps {
   anchorIdRef: { current: string | undefined };
   memoUnreadDividerBeforeIdRef: { current: number | undefined };
   memoFirstUnreadIdRef: { current: number | undefined };
+  isReplacingHistoryRef: { current: boolean };
   type: MessageListType;
   isReady: boolean;
   hasLinkedChat: boolean | undefined;
@@ -84,6 +85,7 @@ interface OwnProps {
   onScrollDownToggle?: BooleanToVoidFunction;
   onNotchToggle?: AnyToVoidFunction;
   onIntersectPinnedMessage?: OnIntersectPinnedMessage;
+  onTallTypingDraft?: (messageId: number, isNearExit: boolean) => void;
 }
 
 const UNREAD_DIVIDER_CLASS = 'unread-divider';
@@ -108,6 +110,7 @@ const MessageListContent = ({
   anchorIdRef,
   memoUnreadDividerBeforeIdRef,
   memoFirstUnreadIdRef,
+  isReplacingHistoryRef,
   type,
   isReady,
   hasLinkedChat,
@@ -123,6 +126,7 @@ const MessageListContent = ({
   onScrollDownToggle,
   onNotchToggle,
   onIntersectPinnedMessage,
+  onTallTypingDraft,
 }: OwnProps) => {
   const { openHistoryCalendar } = getActions();
 
@@ -153,6 +157,7 @@ const MessageListContent = ({
     backwardsTriggerRef,
     forwardsTriggerRef,
     fabTriggerRef,
+    observeIntersectionForTopExit,
   } = useScrollHooks({
     type,
     containerRef,
@@ -161,6 +166,7 @@ const MessageListContent = ({
     isViewportNewest,
     isUnread,
     isReady,
+    isReplacingHistoryRef,
     onScrollDownToggle,
     onNotchToggle,
   });
@@ -376,7 +382,9 @@ const MessageListContent = ({
               isLastInList={position.isLastInList}
               memoFirstUnreadIdRef={memoFirstUnreadIdRef}
               getIsMessageListReady={getIsReady}
+              observeIntersectionForTopExit={observeIntersectionForTopExit}
               onMessageUnmount={onMessageUnmount}
+              onTallTypingDraft={onTallTypingDraft}
             />,
           ]);
         }

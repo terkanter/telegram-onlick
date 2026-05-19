@@ -245,7 +245,9 @@ type OwnProps = {
   observeIntersectionForBottom?: ObserveFn;
   observeIntersectionForLoading?: ObserveFn;
   observeIntersectionForPlaying?: ObserveFn;
+  observeIntersectionForTopExit?: ObserveFn;
   onMessageUnmount?: (messageId: number) => void;
+  onTallTypingDraft?: (messageId: number, isNearExit: boolean) => void;
 } & MessagePositionProperties;
 
 type StateProps = {
@@ -474,7 +476,9 @@ const Message = ({
   observeIntersectionForBottom,
   observeIntersectionForLoading,
   observeIntersectionForPlaying,
+  observeIntersectionForTopExit,
   onMessageUnmount,
+  onTallTypingDraft,
 }: OwnProps & StateProps) => {
   const {
     toggleMessageSelection,
@@ -485,6 +489,7 @@ const Message = ({
     disableContextMenuHint,
     animateUnreadReaction,
     focusMessage,
+    markTypingDraftDone,
     markMentionsRead,
     markPollVotesRead,
     openThread,
@@ -492,11 +497,16 @@ const Message = ({
   } = getActions();
 
   const ref = useRef<HTMLDivElement>();
+  const topMarkerRef = useRef<HTMLDivElement>();
   const bottomMarkerRef = useRef<HTMLDivElement>();
   const quickReactionRef = useRef<HTMLDivElement>();
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const {
+    id: messageId, chatId, forwardInfo, viaBotId, isTranscriptionError, factCheck,
+    isTypingDraft, previousLocalId, fromRank,
+  } = message;
 
   const [isTranscriptionHidden, setIsTranscriptionHidden] = useState(false);
   const [isPlayingSnapAnimation, setIsPlayingSnapAnimation] = useState(false);
@@ -509,6 +519,15 @@ const Message = ({
   const { isMobile, isTouchScreen } = useAppLayout();
 
   useOnIntersect(bottomMarkerRef, observeIntersectionForBottom);
+
+  const handleTypingDraftNearExit = useLastCallback(({ isIntersecting }: IntersectionObserverEntry) => {
+    onTallTypingDraft?.(messageId, !isIntersecting);
+  });
+  useOnIntersect(
+    topMarkerRef,
+    isTypingDraft && isLastInList ? observeIntersectionForTopExit : undefined,
+    handleTypingDraftNearExit,
+  );
 
   const {
     isContextMenuOpen,
@@ -554,10 +573,6 @@ const Message = ({
     onMessageUnmount?.(messageId);
   });
 
-  const {
-    id: messageId, chatId, forwardInfo, viaBotId, isTranscriptionError, factCheck,
-    isTypingDraft, fromRank,
-  } = message;
   const hasSummary = Boolean(message.summaryLanguageCode);
 
   const isLocal = isMessageLocal(message);
@@ -1081,6 +1096,14 @@ const Message = ({
 
   const contentStyle = buildStyle(peerColorStyle, sizeStyles);
 
+  const handleTypingAnimationEnd = useLastCallback(() => {
+    if (!isTypingDraft || !previousLocalId) {
+      return;
+    }
+
+    markTypingDraftDone({ chatId, messageId });
+  });
+
   function renderMessageText(isForAnimation?: boolean) {
     if (!textMessage) return undefined;
 
@@ -1105,6 +1128,7 @@ const Message = ({
         threadId={threadId}
         shouldAnimateTyping={isTypingDraft}
         canAnimateTextStreaming={canAnimateTextStreaming}
+        onTypingAnimationEnd={handleTypingAnimationEnd}
       />
     );
   }
@@ -1871,6 +1895,10 @@ const Message = ({
       onMouseMove={withQuickReactionButton ? handleMouseMove : undefined}
       onMouseLeave={(withQuickReactionButton || isInDocumentGroupNotLast) ? handleMouseLeave : undefined}
     >
+      <div
+        ref={topMarkerRef}
+        className="top-marker"
+      />
       <div
         ref={bottomMarkerRef}
         className="bottom-marker"

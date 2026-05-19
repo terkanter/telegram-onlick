@@ -5,7 +5,7 @@ import type {
   GroupCallParticipant,
   VideoRotation,
   VideoState,
-} from '../../lib/secret-sauce';
+} from '../../lib/vibecalls';
 import type { ThreadId, ThreadReadState, TranslationTone } from '../../types';
 import type { RegularLangFnParameters } from '../../util/localization';
 import type { ApiBotCommand, ApiBotMenuButton } from './bots';
@@ -145,6 +145,7 @@ export type ApiUpdateChatLeave = {
 export type ApiUpdateChatTypingStatus = {
   '@type': 'updateChatTypingStatus';
   id: string;
+  peerId: string;
   threadId?: ThreadId;
   typingStatus: ApiTypingStatus | undefined;
 };
@@ -610,11 +611,6 @@ export type ApiUpdatePeerBlocked = {
   isBlockedFromStories?: boolean;
 };
 
-export type ApiUpdatePaymentVerificationNeeded = {
-  '@type': 'updatePaymentVerificationNeeded';
-  url: string;
-};
-
 export type ApiUpdatePaymentStateCompleted = {
   '@type': 'updatePaymentStateCompleted';
   paymentState: TabState['payment'];
@@ -953,7 +949,7 @@ export type ApiUpdate = (
   ApiUpdateServerTimeOffset | ApiUpdateMessageReactions | ApiUpdateSavedReactionTags |
   ApiUpdateGroupCallParticipants | ApiUpdateGroupCallConnection | ApiUpdateGroupCall | ApiUpdateGroupCallStreams |
   ApiUpdateGroupCallConnectionState | ApiUpdateGroupCallLeavePresentation | ApiUpdateGroupCallChatId |
-  ApiUpdatePendingJoinRequests | ApiUpdatePaymentVerificationNeeded | ApiUpdatePaymentStateCompleted |
+  ApiUpdatePendingJoinRequests | ApiUpdatePaymentStateCompleted |
   ApiUpdatePhoneCall | ApiUpdatePhoneCallSignalingData | ApiUpdatePhoneCallMediaState |
   ApiUpdatePhoneCallConnectionState | ApiUpdateBotMenuButton | ApiUpdateTranscribedAudio | ApiUpdateUserEmojiStatus |
   ApiUpdateMessageExtendedMedia | ApiUpdateConfig | ApiUpdateTopicNotifySettings | ApiUpdatePinnedTopic |

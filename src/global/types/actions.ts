@@ -70,7 +70,7 @@ import type {
 import type { ApiCredentials } from '../../components/payment/PaymentModal';
 import type { FoldersActions } from '../../hooks/reducers/useFoldersReducer';
 import type { ReducerAction } from '../../hooks/useReducer';
-import type { P2pMessage } from '../../lib/secret-sauce';
+import type { P2pMessage } from '../../lib/vibecalls';
 import type {
   AccountSettings,
   AttachmentCompression,
@@ -742,6 +742,10 @@ export interface ActionPayloads {
   setEditingId: {
     messageId?: number;
   } & WithTabId;
+  markTypingDraftDone: {
+    chatId: string;
+    messageId: number;
+  };
   editLastMessage: WithTabId | undefined;
   saveDraft: {
     chatId: string;
@@ -1145,6 +1149,7 @@ export interface ActionPayloads {
   closeDeleteAccountModal: WithTabId | undefined;
   openAgeVerificationModal: WithTabId | undefined;
   closeAgeVerificationModal: WithTabId | undefined;
+  requestAgeVerification: WithTabId | undefined;
   setAccountTTL: {
     days: number;
   } & WithTabId | undefined;
@@ -1522,6 +1527,11 @@ export interface ActionPayloads {
     chatId: string;
     messageId: number;
     options: string[];
+  };
+  appendPollAnswer: {
+    chatId: string;
+    messageId: number;
+    text: string;
   };
   toggleTodoCompleted: {
     chatId: string;
@@ -2416,9 +2426,12 @@ export interface ActionPayloads {
   refreshLangPackFromCache: {
     langCode: string;
   };
-  openPollModal: ({
+  openPollModal: {
+    chatId: string;
+    threadId?: ThreadId;
+    messageListType: MessageListType;
     isQuiz?: boolean;
-  } & WithTabId) | undefined;
+  } & WithTabId;
   closePollModal: WithTabId | undefined;
   openTodoListModal: {
     chatId: string;
