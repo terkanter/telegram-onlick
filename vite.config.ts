@@ -153,7 +153,9 @@ export default defineConfig(({ mode }): UserConfig => {
 
   const shouldCollectWorkerReportBundles = bundleStatsVisualizerValue === '1' || bundleStatsValue === '1';
 
-  if (appEnv !== 'test' && (!telegramApiId || !telegramApiHash)) {
+  // Gateway mode (variant 2): the backend runs `initConnection` with its own credentials,
+  // so the fork build needs none. Skip the requirement; the runtime uses placeholders.
+  if (appEnv !== 'test' && !isGateway && (!telegramApiId || !telegramApiHash)) {
     throw new Error('Missing required Telegram API credentials');
   }
 
