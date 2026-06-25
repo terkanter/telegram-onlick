@@ -13,7 +13,7 @@ import type { DownloadFileParams, DownloadFileWithDcParams, DownloadMediaParams 
 import type { UploadFileParams } from './uploadFile';
 
 import Deferred from '../../../util/Deferred';
-import { concat } from '../../../util/encoding/buffer';
+import { bufferFromBase64, bufferToBase64, concat } from '../../../util/encoding/buffer';
 import { toJSNumber } from '../../../util/numbers';
 import {
   FloodTestPhoneWaitError,
@@ -387,7 +387,7 @@ class TelegramClient {
 
     transport.setUpdateHandler((updateB64) => {
       try {
-        const bytes = Buffer.from(updateB64, 'base64');
+        const bytes = bufferFromBase64(updateB64);
         // Same gzip handling as responses — update containers may be gzip-packed too.
         let reader = new BinaryReader(bytes);
         if (reader.readInt(false) === GZIPPacked.CONSTRUCTOR_ID) {
@@ -1216,7 +1216,7 @@ class TelegramClient {
   ): Promise<R['__response']> {
     this._lastRequest = Date.now();
     logGateway('client: invoke', request.className, dcId !== undefined ? `(dc=${dcId})` : '');
-    const requestB64 = request.getBytes().toString('base64');
+    const requestB64 = bufferToBase64(request.getBytes());
 
     try {
       const invokePromise = this._gatewayTransport!.invoke(requestB64, dcId);
@@ -1230,7 +1230,7 @@ class TelegramClient {
         })])
         : await invokePromise;
 
-      const responseBytes = Buffer.from(responseB64, 'base64');
+      const responseBytes = bufferFromBase64(responseB64);
       // Telegram gzip-packs large responses (dialogs, history, difference). The normal flow
       // unpacks this in `RPCResult.fromReader`; the gateway path must do the same before reading.
       let reader = new BinaryReader(responseBytes);

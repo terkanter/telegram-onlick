@@ -78,7 +78,8 @@ export default defineConfig(({ mode }): UserConfig => {
   const appleIcon = isProductionApp ? 'apple-touch-icon' : 'apple-touch-icon-dev';
   const mainIcon = isProductionApp ? 'icon-192x192' : 'icon-dev-192x192';
   const manifest = isProductionApp ? 'site.webmanifest' : 'site_dev.webmanifest';
-  const csp = buildCsp(appEnv);
+  const isGateway = env.TG_GATEWAY === '1';
+  const csp = buildCsp(appEnv, isGateway);
   const isDevelopmentMode = mode === 'development';
   const telegramApiId = env.TELEGRAM_API_ID || '';
   const telegramApiHash = env.TELEGRAM_API_HASH || '';
@@ -277,10 +278,10 @@ function setViteEnv(env: Record<string, string>) {
   });
 }
 
-function buildCsp(appEnv: string) {
+function buildCsp(appEnv: string, isGateway: boolean) {
   return `
   default-src 'self';
-  connect-src 'self' wss://*.web.telegram.org blob: http: https: ${appEnv === 'development' ? 'wss: ipc:' : ''};
+  connect-src 'self' wss://*.web.telegram.org blob: http: https: ${(appEnv === 'development' || isGateway) ? 'wss:' : ''} ${appEnv === 'development' ? 'ipc:' : ''};
   script-src 'self' 'wasm-unsafe-eval' https://t.me/_websync_ https://telegram.me/_websync_;
   style-src 'self' 'unsafe-inline';
   font-src 'self' data:;

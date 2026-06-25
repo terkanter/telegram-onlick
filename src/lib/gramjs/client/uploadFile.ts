@@ -46,7 +46,7 @@ async function uploadFileViaGateway(
       throw new Error('USER_CANCELED');
     }
 
-    const partBytes = Buffer.from(await file.slice(i * partSize, (i + 1) * partSize).arrayBuffer());
+    const partBytes = new Uint8Array(await file.slice(i * partSize, (i + 1) * partSize).arrayBuffer());
 
     while (true) {
       try {

@@ -214,6 +214,19 @@ export function bufferFromBase64(base64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+export function bufferToBase64(bytes: Uint8Array): string {
+  if (typeof bytes.toBase64 === 'function') {
+    return bytes.toBase64();
+  }
+
+  // TODO: Drop in 2028 when method is Baseline Widely Available
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export function bufferFromUtf8(value: string): Uint8Array<ArrayBuffer> {
   return textEncoder.encode(value);
 }
