@@ -221,14 +221,18 @@ export default function createConfig(
         // eslint-disable-next-line no-null/no-null
         APP_NAME: null,
         APP_TITLE,
-        TELEGRAM_API_ID: undefined,
-        TELEGRAM_API_HASH: undefined,
+        // In gateway mode (variant 2) the backend runs `initConnection`, so the fork needs no
+        // API credentials — default them to '' so the build passes without TELEGRAM_API_*.
+        // Outside gateway mode they stay required (default undefined → build error if missing).
+        TELEGRAM_API_ID: TG_GATEWAY === '1' ? '' : undefined,
+        TELEGRAM_API_HASH: TG_GATEWAY === '1' ? '' : undefined,
         // eslint-disable-next-line no-null/no-null
         TEST_SESSION: null,
         BASE_URL,
         // Gateway mode (variant 2): optional, off unless explicitly set at build time.
-        TG_GATEWAY: undefined,
-        TG_GATEWAY_ALLOWED_ORIGINS: undefined,
+        // Default '' (not undefined) so a build without these vars doesn't error.
+        TG_GATEWAY: '',
+        TG_GATEWAY_ALLOWED_ORIGINS: '',
       }),
       // Updates each dev re-build to provide current git branch or commit hash
       new DefinePlugin({

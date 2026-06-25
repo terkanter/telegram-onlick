@@ -36,6 +36,7 @@ import {
   UpdateConnectionState,
 } from '../network';
 import { Api } from '../tl';
+import GZIPPacked from '../tl/core/GZIPPacked';
 import {
   getCurrentPassword,
   getTmpPassword,
@@ -1197,7 +1198,16 @@ class TelegramClient {
         })])
         : await invokePromise;
 
-      const reader = new BinaryReader(Buffer.from(responseB64, 'base64'));
+      const responseBytes = Buffer.from(responseB64, 'base64');
+      // Telegram gzip-packs large responses (dialogs, history, difference). The normal flow
+      // unpacks this in `RPCResult.fromReader`; the gateway path must do the same before reading.
+      let reader = new BinaryReader(responseBytes);
+      if (reader.readInt(false) === GZIPPacked.CONSTRUCTOR_ID) {
+        logGateway('client: gunzip', request.className);
+        reader = new BinaryReader((await GZIPPacked.fromReader(reader)).data);
+      } else {
+        reader = new BinaryReader(responseBytes);
+      }
       // `readResult` is an instance method on generated requests (typed only as static).
       const result = (request as any).readResult(reader) as R['__response'];
       logGateway('client: invoke ✓', request.className);
