@@ -17,7 +17,7 @@ import {
   omit, omitUndefined, pick,
 } from '../../../util/iteratees';
 import { getServerTimeOffset, setServerTimeOffset } from '../../../util/serverTime';
-import { buildApiBotCommand, buildApiBotMenuButton } from '../apiBuilders/bots';
+import { buildApiBotCommand, buildApiBotMenuButton, buildApiJoinChatBotResult } from '../apiBuilders/bots';
 import {
   buildApiGroupCall,
   buildApiGroupCallParticipant,
@@ -40,6 +40,7 @@ import { buildApiStarGiftAuctionUserState, buildApiTypeStarGiftAuctionState } fr
 import { omitVirtualClassFields } from '../apiBuilders/helpers';
 import {
   buildApiMessageExtendedMediaPreview,
+  buildApiRichMessage,
   buildBoughtMediaContent,
   buildMessagePollFromMedia,
   buildPoll,
@@ -474,7 +475,9 @@ export function updater(update: Update) {
       },
     });
   } else if (update instanceof GramJs.UpdateMessagePoll) {
-    const { pollId, poll, results } = update;
+    const {
+      pollId, poll, results, peer, msgId, topMsgId,
+    } = update;
     const apiPoll = poll && buildPoll(poll);
     const pollResults = buildPollResults(results);
 
@@ -483,6 +486,16 @@ export function updater(update: Update) {
       pollId: pollId.toString(),
       pollUpdate: omitUndefined({ summary: apiPoll, results: pollResults }),
     });
+
+    if (peer && msgId && results.hasUnreadVotes && !results.min) {
+      sendApiUpdate({
+        '@type': 'updateMessagePollUnread',
+        chatId: getApiChatIdFromMtpPeer(peer),
+        messageId: msgId,
+        threadId: topMsgId || MAIN_THREAD_ID,
+        pollId: pollId.toString(),
+      });
+    }
   } else if (update instanceof GramJs.UpdateMessagePollVote) {
     sendApiUpdate({
       '@type': 'updateMessagePollVote',
@@ -700,6 +713,19 @@ export function updater(update: Update) {
         id: update.action.randomId.toString(),
         threadId,
         text: buildApiFormattedText(update.action.text),
+      });
+    } else if (update.action instanceof GramJs.SendMessageRichMessageDraftAction) {
+      const richMessage = buildApiRichMessage(update.action.richMessage);
+      if (!richMessage) {
+        return;
+      }
+
+      sendApiUpdate({
+        '@type': 'updateChatTypingDraft',
+        chatId,
+        id: update.action.randomId.toString(),
+        threadId,
+        richMessage,
       });
     } else {
       sendApiUpdate({
@@ -1006,6 +1032,13 @@ export function updater(update: Update) {
       '@type': 'updateWebViewResultSent',
       queryId: queryId.toString(),
     });
+  } else if (update instanceof GramJs.UpdateJoinChatWebViewDecision) {
+    sendApiUpdate({
+      '@type': 'updateJoinChatWebViewDecision',
+      peerId: getApiChatIdFromMtpPeer(update.peer),
+      queryId: update.queryId.toString(),
+      result: buildApiJoinChatBotResult(update.result),
+    });
   } else if (update instanceof GramJs.UpdateWebPage || update instanceof GramJs.UpdateChannelWebPage) {
     const webPage = buildWebPage(update.webpage);
     if (webPage) {
@@ -1049,6 +1082,8 @@ export function updater(update: Update) {
     });
   } else if (update instanceof GramJs.UpdateConfig) {
     sendApiUpdate({ '@type': 'updateConfig' });
+  } else if (update instanceof GramJs.UpdateAiComposeTones) {
+    sendApiUpdate({ '@type': 'updateAiComposeTones' });
   } else if (update instanceof GramJs.UpdatePinnedForumTopic) {
     sendApiUpdate({
       '@type': 'updatePinnedTopic',

@@ -1,4 +1,6 @@
 import type {
+  ApiAiComposeTone,
+  ApiAiComposeToneExample,
   ApiAttachBot,
   ApiBirthday,
   ApiBoost,
@@ -17,6 +19,7 @@ import type {
   ApiGeoPoint,
   ApiGlobalMessageSearchType,
   ApiGroupStatistics,
+  ApiInputAiComposeTone,
   ApiInputInvoice,
   ApiLimitTypeWithModal,
   ApiMessage,
@@ -81,6 +84,7 @@ import type {
   ManagementState,
   MediaViewerMedia,
   MediaViewerOrigin,
+  MediaViewerPageMedia,
   MessageList,
   MessageListType,
   MiddleSearchParams,
@@ -107,6 +111,11 @@ import type { CallbackAction } from './actions';
 export type PollVote = {
   peerId: string;
   date: number;
+};
+
+export type ReactionDeletionContext = {
+  peerId: string;
+  count: number;
 };
 
 export type AiEditorTabBase = {
@@ -380,6 +389,7 @@ export type TabState = {
     isAvatarView?: boolean;
     isSponsoredMessage?: boolean;
     standaloneMedia?: MediaViewerMedia[];
+    pageMedia?: MediaViewerPageMedia;
     origin?: MediaViewerOrigin;
     volume: number;
     playbackRate: number;
@@ -400,6 +410,9 @@ export type TabState = {
   };
 
   webPagePreviewId?: string;
+  instantViewModal?: {
+    webPageId: string;
+  };
 
   loadingThread?: {
     loadingChatId: string;
@@ -679,18 +692,30 @@ export type TabState = {
     isFromAttachment?: boolean;
     translateTab?: AiEditorTabBase & {
       selectedLanguage?: string;
-      selectedTone?: string;
+      selectedTone?: ApiInputAiComposeTone;
       shouldEmojify?: boolean;
       cache?: Record<string, ApiComposedMessageWithAI>;
     };
     styleTab?: AiEditorTabBase & {
-      selectedTone?: string;
+      selectedTone?: ApiInputAiComposeTone;
       shouldEmojify?: boolean;
       cache?: Record<string, ApiComposedMessageWithAI>;
     };
     fixTab?: AiEditorTabBase & {
       cache?: ApiComposedMessageWithAI;
     };
+  };
+
+  aiToneEditorModal?: {
+    toneToEdit?: ApiAiComposeTone;
+  };
+
+  aiTonePreviewModal?: {
+    slug: string;
+    tone?: ApiAiComposeTone;
+    example?: ApiAiComposeToneExample;
+    isAlreadyAdded?: boolean;
+    hasExampleError?: boolean;
   };
 
   aiMessageEditorPendingResult?: {
@@ -717,6 +742,7 @@ export type TabState = {
     messageIds: number[];
     isSchedule?: boolean;
     onConfirm?: NoneToVoidFunction;
+    reactionContext?: ReactionDeletionContext;
   };
 
   isWebAppsCloseConfirmationModalOpen?: boolean;

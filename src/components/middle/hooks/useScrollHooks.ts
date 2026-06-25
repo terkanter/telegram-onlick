@@ -19,7 +19,6 @@ import useSyncEffect from '../../../hooks/useSyncEffect';
 
 const FAB_THRESHOLD = 50;
 const NOTCH_THRESHOLD = 1; // Notch has zero height so we at least need a 1px margin to intersect
-const TOP_EXIT_THRESHOLD = 50;
 const CONTAINER_HEIGHT_DEBOUNCE = 200;
 const SCROLL_TOOLS_DEBOUNCE = 100;
 const TOOLS_FREEZE_TIMEOUT = 350; // Approximate message sending animation duration
@@ -34,7 +33,8 @@ export default function useScrollHooks({
   isReady,
   isReplacingHistoryRef,
   onScrollDownToggle,
-  onNotchToggle,
+  onBottomNotchToggle,
+  onTopNotchToggle,
 }: {
   type: MessageListType;
   containerRef: ElementRef<HTMLDivElement>;
@@ -45,7 +45,8 @@ export default function useScrollHooks({
   isReady: boolean;
   isReplacingHistoryRef: { current: boolean };
   onScrollDownToggle: BooleanToVoidFunction | undefined;
-  onNotchToggle: AnyToVoidFunction | undefined;
+  onBottomNotchToggle: AnyToVoidFunction | undefined;
+  onTopNotchToggle: AnyToVoidFunction | undefined;
 }) {
   const { loadViewportMessages } = getActions();
 
@@ -62,9 +63,10 @@ export default function useScrollHooks({
   const forwardsTriggerRef = useRef<HTMLDivElement>();
   const fabTriggerRef = useRef<HTMLDivElement>();
 
-  const toggleScrollTools = useLastCallback((scrollDown: boolean, notch: boolean) => {
+  const toggleScrollTools = useLastCallback((scrollDown: boolean, bottomNotch: boolean, topNotch: boolean) => {
     onScrollDownToggle?.(scrollDown);
-    onNotchToggle?.(notch);
+    onBottomNotchToggle?.(bottomNotch);
+    onTopNotchToggle?.(topNotch);
   });
 
   const toggleScrollToolsDebounced = useDebouncedCallback(
@@ -75,13 +77,13 @@ export default function useScrollHooks({
     if (!isReady) return;
 
     if (!messageIds?.length) {
-      toggleScrollTools(false, false);
+      toggleScrollTools(false, false, false);
 
       return;
     }
 
     if (!isViewportNewest) {
-      toggleScrollToolsDebounced(true, true);
+      toggleScrollToolsDebounced(true, true, true);
 
       return;
     }
@@ -95,10 +97,11 @@ export default function useScrollHooks({
     const scrollBottom = Math.round(fabOffsetTop - scrollTop - offsetHeight);
     const isNearBottom = scrollBottom <= FAB_THRESHOLD;
     const isAtBottom = scrollBottom <= NOTCH_THRESHOLD;
+    const isAtTop = scrollTop <= NOTCH_THRESHOLD;
 
     if (scrollHeight === 0) return;
 
-    toggleScrollToolsDebounced(isUnread ? !isAtBottom : !isNearBottom, !isAtBottom);
+    toggleScrollToolsDebounced(isUnread ? !isAtBottom : !isNearBottom, !isAtBottom, !isAtTop);
   });
 
   const {
@@ -157,14 +160,6 @@ export default function useScrollHooks({
 
   useOnIntersect(fabTriggerRef, observeIntersectionForNotch);
 
-  const {
-    observe: observeIntersectionForTopExit,
-  } = useIntersectionObserver({
-    rootRef: containerRef,
-    margin: `-${TOP_EXIT_THRESHOLD}px 0px 0px 0px`,
-    throttleScheduler: requestMeasure,
-  });
-
   useEffect(() => {
     if (isReady) {
       updateScrollTools();
@@ -175,9 +170,11 @@ export default function useScrollHooks({
     const container = containerRef.current;
     if (!container) return;
 
+    container.addEventListener('scroll', updateScrollTools);
     container.addEventListener('scrollend', updateScrollTools);
 
     return () => {
+      container.removeEventListener('scroll', updateScrollTools);
       container.removeEventListener('scrollend', updateScrollTools);
     };
   }, [containerRef]);
@@ -204,6 +201,5 @@ export default function useScrollHooks({
     backwardsTriggerRef,
     forwardsTriggerRef,
     fabTriggerRef,
-    observeIntersectionForTopExit,
   };
 }

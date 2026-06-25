@@ -15,6 +15,7 @@ import type {
   ApiError,
   ApiFormattedText,
   ApiGlobalMessageSearchType,
+  ApiInputAiComposeTone,
   ApiInputReplyInfo,
   ApiInputSuggestedPostInfo,
   ApiMessage,
@@ -63,10 +64,13 @@ import {
   buildApiSponsoredMessageReportResult,
   buildThreadReadState,
 } from '../apiBuilders/chats';
-import { buildApiComposedMessageWithAI, buildApiFormattedText } from '../apiBuilders/common';
+import {
+  buildApiAiComposeTone, buildApiAiComposeToneExample, buildApiComposedMessageWithAI, buildApiFormattedText,
+} from '../apiBuilders/common';
 import { buildApiTopicWithState } from '../apiBuilders/forums';
 import {
   buildMessageMediaContent, buildMessagePollFromMedia, buildMessageTextContent,
+  buildWebPage,
   buildWebPageFromMedia,
 } from '../apiBuilders/messageContent';
 import {
@@ -87,6 +91,7 @@ import {
 import { getApiChatIdFromMtpPeer } from '../apiBuilders/peers';
 import { buildApiUser, buildApiUserStatuses } from '../apiBuilders/users';
 import {
+  buildInputAiComposeTone,
   buildInputChannel,
   buildInputDocument,
   buildInputMediaDocument,
@@ -175,7 +180,7 @@ export async function fetchMessages({
       ...(threadId !== MAIN_THREAD_ID && !isSavedDialog && {
         msgId: Number(threadId),
       }),
-      // Workaround for local message IDs overflowing some internal `Buffer` range check
+      // Workaround for local message IDs overflowing some internal range check
       offsetId: offsetId ? Math.min(offsetId, MAX_INT_32) : DEFAULT_PRIMITIVES.INT,
       addOffset: addOffset ?? DEFAULT_PRIMITIVES.INT,
       limit,
@@ -275,6 +280,42 @@ export async function fetchMessage({ chat, messageId }: { chat: ApiChat; message
 
   if (mtpMessage instanceof GramJs.MessageEmpty) {
     return MESSAGE_DELETED;
+  }
+
+  processMessageAndUpdateThreadInfo(mtpMessage);
+  const message = buildApiMessage(mtpMessage);
+
+  if (!message) {
+    return undefined;
+  }
+
+  return { message };
+}
+
+export async function fetchRichMessage({ chat, messageId }: { chat: ApiChat; messageId: number }) {
+  const isChannel = getEntityTypeById(chat.id) === 'channel';
+
+  const result = await invokeRequest(
+    new GramJs.messages.GetRichMessage({
+      peer: buildInputPeer(chat.id, chat.accessHash),
+      id: messageId,
+    }),
+    {
+      abortControllerChatId: chat.id,
+    },
+  );
+
+  if (!result || result instanceof GramJs.messages.MessagesNotModified) {
+    return undefined;
+  }
+
+  if (isChannel && 'pts' in result) {
+    updateChannelState(chat.id, result.pts);
+  }
+
+  const mtpMessage = result.messages[0];
+  if (!mtpMessage || mtpMessage instanceof GramJs.MessageEmpty) {
+    return undefined;
   }
 
   processMessageAndUpdateThreadInfo(mtpMessage);
@@ -1052,7 +1093,7 @@ async function uploadMedia(message: ApiMessage, attachment: ApiAttachment, onPro
       attributes.push(new GramJs.DocumentAttributeAudio({
         voice: true,
         duration,
-        waveform: Buffer.from(inputWaveform),
+        waveform: Uint8Array.from(inputWaveform),
       }));
     }
   }
@@ -1859,6 +1900,25 @@ export async function fetchWebPagePreview({
   if (!preview) return undefined;
 
   return buildWebPageFromMedia(preview.media);
+}
+
+export async function fetchWebPage({
+  url,
+  hash = DEFAULT_PRIMITIVES.INT,
+}: {
+  url: string;
+  hash?: number;
+}) {
+  const result = await invokeRequest(new GramJs.messages.GetWebPage({
+    url,
+    hash,
+  }), {
+    shouldIgnoreErrors: true,
+  });
+
+  if (!result?.webpage) return undefined;
+
+  return buildWebPage(result.webpage);
 }
 
 export async function sendPollVote({
@@ -2800,13 +2860,13 @@ export async function composeMessageWithAI({
   shouldProofread,
   isEmojify,
   translateToLang,
-  changeTone,
+  tone,
 }: {
   text: ApiFormattedText;
   shouldProofread?: boolean;
   isEmojify?: boolean;
   translateToLang?: string;
-  changeTone?: string;
+  tone?: ApiInputAiComposeTone;
 }): Promise<{ result?: ApiComposedMessageWithAI; error?: 'floodPremium' | 'aiError' | 'generic' }> {
   try {
     const result = await invokeRequest(new GramJs.messages.ComposeMessageWithAI({
@@ -2814,7 +2874,7 @@ export async function composeMessageWithAI({
       proofread: shouldProofread || undefined,
       emojify: isEmojify || undefined,
       translateToLang,
-      changeTone,
+      tone: tone ? buildInputAiComposeTone(tone) : undefined,
     }), { shouldThrow: true });
 
     if (!result) return { error: 'generic' };
@@ -2831,4 +2891,130 @@ export async function composeMessageWithAI({
     }
     return { error: 'generic' };
   }
+}
+
+export async function fetchAiComposeTones({
+  hash,
+}: {
+  hash?: string;
+}) {
+  const result = await invokeRequest(new GramJs.aicompose.GetTones({
+    hash: hash ? BigInt(hash) : DEFAULT_PRIMITIVES.BIGINT,
+  }));
+
+  if (!result || result instanceof GramJs.aicompose.TonesNotModified) {
+    return undefined;
+  }
+
+  return {
+    tones: result.tones.map(buildApiAiComposeTone),
+    hash: result.hash.toString(),
+  };
+}
+
+export async function createAiTone({
+  title,
+  emojiId,
+  prompt,
+  shouldDisplayAuthor,
+}: {
+  title: string;
+  emojiId: string;
+  prompt: string;
+  shouldDisplayAuthor?: boolean;
+}) {
+  const result = await invokeRequest(new GramJs.aicompose.CreateTone({
+    title,
+    prompt,
+    emojiId: BigInt(emojiId),
+    displayAuthor: shouldDisplayAuthor || undefined,
+  }));
+
+  if (!result) return undefined;
+
+  return buildApiAiComposeTone(result);
+}
+
+export async function deleteAiTone({
+  tone,
+}: {
+  tone: ApiInputAiComposeTone;
+}) {
+  return invokeRequest(new GramJs.aicompose.DeleteTone({
+    tone: buildInputAiComposeTone(tone),
+  }));
+}
+
+export async function updateAiTone({
+  tone,
+  title,
+  emojiId,
+  prompt,
+  shouldDisplayAuthor,
+}: {
+  tone: ApiInputAiComposeTone;
+  title?: string;
+  emojiId?: string;
+  prompt?: string;
+  shouldDisplayAuthor?: boolean;
+}) {
+  const result = await invokeRequest(new GramJs.aicompose.UpdateTone({
+    tone: buildInputAiComposeTone(tone),
+    title,
+    prompt,
+    emojiId: emojiId ? BigInt(emojiId) : undefined,
+    displayAuthor: shouldDisplayAuthor,
+  }));
+
+  if (!result) return undefined;
+
+  return buildApiAiComposeTone(result);
+}
+
+export async function fetchAiTone({
+  tone,
+}: {
+  tone: ApiInputAiComposeTone;
+}) {
+  const result = await invokeRequest(new GramJs.aicompose.GetTone({
+    tone: buildInputAiComposeTone(tone),
+  }));
+
+  if (!result || !('tones' in result)) {
+    return undefined;
+  }
+
+  return {
+    tones: result.tones.map(buildApiAiComposeTone),
+  };
+}
+
+export async function fetchAiToneExample({
+  tone,
+  num,
+}: {
+  tone: ApiInputAiComposeTone;
+  num: number;
+}) {
+  const result = await invokeRequest(new GramJs.aicompose.GetToneExample({
+    tone: buildInputAiComposeTone(tone),
+    num,
+  }));
+
+  if (!result) return undefined;
+
+  return buildApiAiComposeToneExample(result);
+}
+
+export async function saveAiTone({
+  tone,
+  unsave,
+}: {
+  tone: ApiInputAiComposeTone;
+  unsave?: boolean;
+}) {
+  return invokeRequest(new GramJs.aicompose.SaveTone({
+    tone: buildInputAiComposeTone(tone),
+    unsave: Boolean(unsave),
+  }));
 }
