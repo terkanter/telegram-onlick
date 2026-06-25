@@ -83,6 +83,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       global = { ...global, isSynced: false };
       setGlobal(global);
 
+      global = getGlobal();
       onUpdateConnectionState(global, actions, {
         '@type': 'updateConnectionState',
         connectionState: 'connectionStateConnecting',

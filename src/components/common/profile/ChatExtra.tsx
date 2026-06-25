@@ -76,7 +76,6 @@ type OwnProps = {
   isOwnProfile?: boolean;
   isSavedDialog?: boolean;
   isInSettings?: boolean;
-  withIslands?: boolean;
   className?: string;
   style?: string;
 };
@@ -132,7 +131,6 @@ const ChatExtra = ({
   className,
   style,
   isInSettings,
-  withIslands,
   canViewSubscribers,
 }: OwnProps & StateProps) => {
   const {
@@ -202,6 +200,7 @@ const ChatExtra = ({
         width={width}
         height={height}
         zoom={zoom}
+        shouldShowPin
       />
     );
   }, [businessLocation, width, height, zoom]);
@@ -392,17 +391,15 @@ const ChatExtra = ({
     );
   }
 
-  const Wrapper = withIslands ? Island : 'div';
-
   return (
     <div className={buildClassName('ChatExtra', className)} style={style || createVtnStyle('chatExtra')}>
       {user && userFullInfo?.isUnofficialSecurityRisk && (
-        <Wrapper className={withIslands ? styles.securityRiskIsland : undefined}>
+        <Island className={styles.securityRiskIsland}>
           <div className={styles.unofficialSecurityRisk}>
             <Icon className={buildClassName(styles.riskIcon, 'in-text-icon')} name="info-filled" />
             {lang('UnofficialSecurityRisk', { peer: getPeerTitle(lang, user) })}
           </div>
-        </Wrapper>
+        </Island>
       )}
       {personalChannel && (
         <div className={styles.personalChannel} style={createVtnStyle('personalChannel')}>
@@ -410,7 +407,7 @@ const ChatExtra = ({
           <span className={styles.personalChannelSubscribers}>
             {oldLang('Subscribers', personalChannel.membersCount, 'i')}
           </span>
-          <Wrapper className={styles.personalChannelItem}>
+          <Island className={styles.personalChannelItem}>
             <Chat
               chatId={personalChannel.id}
               orderDiff={0}
@@ -419,10 +416,10 @@ const ChatExtra = ({
               isPreview
               previewMessageId={personalChannelMessageId}
             />
-          </Wrapper>
+          </Island>
         </div>
       )}
-      <Wrapper>
+      <Island>
         {Boolean(formattedNumber?.length) && (
           <ListItem
             icon="phone"
@@ -647,7 +644,7 @@ const ChatExtra = ({
             {botVerification.description}
           </div>
         )}
-      </Wrapper>
+      </Island>
     </div>
   );
 };

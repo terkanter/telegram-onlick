@@ -9,7 +9,7 @@ import type {
 } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
-import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
+import { ARCHIVED_FOLDER_ID, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import { areDeepEqual } from '../../../util/areDeepEqual';
 import { isUserId } from '../../../util/entities/ids';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
@@ -30,7 +30,9 @@ import {
   getMessageText,
   groupMessageIdsByThreadId,
   isActionMessage,
+  isDeletedUser,
   isMessageLocal,
+  isUserBot,
   pickMatchingTypingDraftMessage,
 } from '../../helpers';
 import { getMessageReplyInfo, getStoryReplyInfo } from '../../helpers/replies';
@@ -40,6 +42,7 @@ import {
   setGlobal,
 } from '../../index';
 import {
+  addChatListIds,
   addMessages,
   addViewportId,
   clearMessageSummary,
@@ -64,6 +67,7 @@ import {
   updateQuickReplyMessage,
   updateScheduledMessage,
 } from '../../reducers';
+import { addUnreadPollVotes } from '../../reducers/polls';
 import { addUnreadReactions, removeUnreadReactions } from '../../reducers/reactions';
 import { updateTabState } from '../../reducers/tabs';
 import {
@@ -98,6 +102,7 @@ import {
   selectTabState,
   selectTopic,
   selectTopicFromMessage,
+  selectUser,
   selectViewportIds,
 } from '../../selectors';
 import {
@@ -178,6 +183,25 @@ function removeTypingDraftEntries<T extends GlobalState>(
   return global;
 }
 
+function shouldBumpGuestBotTopPeer<T extends GlobalState>(global: T, message: ApiMessage) {
+  const { guestChatViaId, senderId } = message;
+  if (message.isOutgoing || message.content.action || guestChatViaId !== global.currentUserId || !senderId) {
+    return false;
+  }
+
+  const sender = selectUser(global, senderId);
+  return Boolean(sender?.isGuestChatBot);
+}
+
+function shouldBumpInlineBotTopPeer(message: ApiMessage) {
+  return Boolean(message.isOutgoing && !message.content.action && message.viaBotId);
+}
+
+function shouldBumpCorrespondentTopPeer<T extends GlobalState>(global: T, chatId: string) {
+  const user = selectUser(global, chatId);
+  return Boolean(user && !user.isSelf && !isUserBot(user) && !isDeletedUser(user));
+}
+
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'newMessage': {
@@ -212,6 +236,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         ...message,
         previousLocalId: matchedTypingDraftEntry.message.id,
         isTypingDraft: true,
+        wasTypingDraft: true,
       } : message;
 
       global = updateWithLocalMedia(global, chatId, id, true, nextMessage);
@@ -341,10 +366,37 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         }
       }
 
+      const chatListType = chat?.folderId === ARCHIVED_FOLDER_ID ? 'archived' : 'active';
+      const shouldRestoreChatInList = (
+        !isLocal && !isActionMessage(newMessage) && !chat?.isNotJoined
+        && !selectIsChatListed(global, chatId, chatListType)
+      );
+      if (shouldRestoreChatInList && chat) {
+        if (global.chats.listIds[chatListType]) {
+          global = addChatListIds(global, chatListType, [chatId]);
+        }
+      }
+
       setGlobal(global);
 
+      if (shouldBumpGuestBotTopPeer(global, newMessage)) {
+        actions.bumpTopPeerRating({
+          category: 'botsGuestChat',
+          peerId: newMessage.senderId!,
+          date: newMessage.date,
+        });
+      }
+
+      if (shouldBumpInlineBotTopPeer(newMessage)) {
+        actions.bumpTopPeerRating({
+          category: 'botsInline',
+          peerId: newMessage.viaBotId!,
+          date: newMessage.date,
+        });
+      }
+
       // Reload dialogs if chat is not present in the list
-      if (!isLocal && !chat?.isNotJoined && !selectIsChatListed(global, chatId)) {
+      if (shouldRestoreChatInList) {
         actions.loadTopChats();
       }
 
@@ -627,7 +679,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       const currentMessage = selectChatMessage(global, chatId, localId);
 
-      global = deleteChatMessages(global, chatId, [localId]);
+      global = deleteChatMessages(global, chatId, [localId], { shouldPreserveMedia: true });
 
       // Edge case for "Send When Online"
       if (message.isScheduled) {
@@ -688,6 +740,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       setGlobal(global);
 
+      if (shouldBumpCorrespondentTopPeer(global, chatId)) {
+        actions.bumpTopPeerRating({ category: 'correspondents', peerId: chatId });
+      }
+
       break;
     }
 
@@ -723,6 +779,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       }
 
       setGlobal(global);
+      if (shouldBumpCorrespondentTopPeer(global, chatId)) {
+        actions.bumpTopPeerRating({ category: 'correspondents', peerId: chatId });
+      }
       break;
     }
 
@@ -923,6 +982,29 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       break;
     }
 
+    case 'updateMessagePollUnread': {
+      const { chatId, messageId, threadId } = update;
+      const readState = selectThreadReadState(global, chatId, threadId);
+
+      if (!readState?.unreadPollVotes) {
+        actions.loadUnreadPollVotes({ chatId, threadId });
+        break;
+      }
+
+      if (readState.unreadPollVotes.includes(messageId)) break;
+
+      // We can't calculate threads without local messages, so reload instead.
+      if (!selectChatMessage(global, chatId, messageId)) {
+        actions.loadUnreadPollVotes({ chatId, threadId });
+        break;
+      }
+
+      global = addUnreadPollVotes({ global, chatId, ids: [messageId] });
+      setGlobal(global);
+
+      break;
+    }
+
     case 'updateServiceNotification': {
       const { message } = update;
 
@@ -1064,7 +1146,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
     }
 
     case 'updateChatTypingDraft': {
-      const { id, chatId, threadId = MAIN_THREAD_ID, text } = update;
+      const { id, chatId, threadId = MAIN_THREAD_ID, text, richMessage } = update;
       const thread = selectThread(global, chatId, threadId);
       if (!thread) return undefined;
 
@@ -1101,6 +1183,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         global = updateChatMessage(global, chatId, messageId, {
           content: {
             text,
+            richMessage,
           },
           editDate: getServerTime(),
         });
@@ -1118,6 +1201,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         chatId,
         threadId,
         text,
+        richMessage,
       });
 
       actions.apiUpdate({
@@ -1239,7 +1323,7 @@ export function updateWithLocalMedia(
   // Preserve locally uploaded media.
   if (currentMessage && messageUpdate.content && !isLocalMessageId(id)) {
     const {
-      photo, video, sticker, document,
+      photo, video, document,
     } = getMessageContent(currentMessage);
 
     if (photo && messageUpdate.content.photo) {
@@ -1247,8 +1331,6 @@ export function updateWithLocalMedia(
       messageUpdate.content.photo.thumbnail ??= photo.thumbnail;
     } else if (video && messageUpdate.content.video) {
       messageUpdate.content.video.blobUrl ??= video.blobUrl;
-    } else if (sticker && messageUpdate.content.sticker) {
-      messageUpdate.content.sticker.isPreloadedGlobally ??= sticker.isPreloadedGlobally;
     } else if (document && messageUpdate.content.document) {
       messageUpdate.content.document.previewBlobUrl ??= document.previewBlobUrl;
     }

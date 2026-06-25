@@ -11,6 +11,7 @@ import {
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import buildClassName from '../../../util/buildClassName';
+import captureKeyboardListeners from '../../../util/captureKeyboardListeners';
 import { waitForAnimationEnd } from '../../../util/cssAnimationEndListeners';
 
 import useContext from '../../../hooks/data/useContext';
@@ -43,6 +44,10 @@ export type ModalProps = {
   height?: ModalHeight;
   noBackdrop?: boolean;
   noLightDismiss?: boolean;
+  noScrollable?: boolean;
+  noContentInlinePadding?: boolean;
+  keepMounted?: boolean;
+  stickyFooter?: TeactNode;
   ariaLabel?: string;
   noContainment?: boolean;
   onClose: NoneToVoidFunction;
@@ -114,10 +119,15 @@ const Modal = ({
   height = 'regular',
   noBackdrop,
   noLightDismiss,
+  noScrollable,
+  noContentInlinePadding,
+  keepMounted,
+  stickyFooter,
   ariaLabel,
   noContainment,
   onClose,
 }: ModalProps) => {
+  const [hasEverOpened, setHasEverOpened] = useState(Boolean(isOpen));
   const [shouldRender, setShouldRender] = useState(Boolean(isOpen));
   const [isClosing, setIsClosing] = useState(false);
   const [hasTitle, setHasTitle] = useState(false);
@@ -134,11 +144,14 @@ const Modal = ({
   const frozenProps = useFrozenProps({
     header,
     children,
+    stickyFooter,
     dialogClassName,
     contentClassName,
     width,
     height,
     noBackdrop,
+    noScrollable,
+    noContentInlinePadding,
     ariaLabel,
     noContainment,
   }, !isOpen);
@@ -169,6 +182,13 @@ const Modal = ({
     onClose();
   });
 
+  const handleEsc = useLastCallback((event: KeyboardEvent) => {
+    if (noLightDismiss || !isOpen || isClosing) return;
+
+    event.preventDefault();
+    handleRequestClose();
+  });
+
   const registerTitle = useLastCallback((isPresent: boolean) => {
     setHasTitle(isPresent);
   });
@@ -192,6 +212,12 @@ const Modal = ({
     subtitleId,
     titleId,
   ]);
+
+  useEffect(() => {
+    if (isOpen && !hasEverOpened) {
+      setHasEverOpened(true);
+    }
+  }, [hasEverOpened, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -273,6 +299,14 @@ const Modal = ({
       return undefined;
     }
 
+    return captureKeyboardListeners({ onEsc: handleEsc });
+  }, [handleEsc, shouldRender]);
+
+  useEffect(() => {
+    if (!shouldRender) {
+      return undefined;
+    }
+
     return addBodyDialogClass();
   }, [shouldRender]);
 
@@ -322,7 +356,7 @@ const Modal = ({
     handleRequestClose();
   });
 
-  if (!shouldRender) {
+  if (!shouldRender && !(keepMounted && hasEverOpened)) {
     return undefined;
   }
 
@@ -355,7 +389,8 @@ const Modal = ({
             )}
 
             <Surface
-              scrollable
+              scrollable={!frozenProps.noScrollable}
+              noPadding={frozenProps.noContentInlinePadding}
               className={buildClassName(
                 styles.content,
                 shouldShowHeader && styles.withHeader,
@@ -366,6 +401,11 @@ const Modal = ({
                 {frozenProps.children}
               </div>
             </Surface>
+            {Boolean(frozenProps.stickyFooter) && (
+              <div className={styles.stickyFooter}>
+                {frozenProps.stickyFooter}
+              </div>
+            )}
           </div>
         </dialog>
       </ModalContext.Provider>
@@ -392,6 +432,14 @@ const ModalHeader = ({ className, children }: ModalSlotProps) => {
 const ModalHeaderAction = ({ className, children }: ModalSlotProps) => {
   return (
     <div className={buildClassName(styles.headerAction, className)}>
+      {children}
+    </div>
+  );
+};
+
+const ModalFooterActions = ({ className, children }: ModalSlotProps) => {
+  return (
+    <div className={buildClassName(styles.footerActions, className)}>
       {children}
     </div>
   );
@@ -471,6 +519,7 @@ export default memo(Modal);
 export {
   ModalHeader,
   ModalHeaderAction,
+  ModalFooterActions,
   ModalTitle,
   ModalSubtitle,
   ModalCloseButton,
