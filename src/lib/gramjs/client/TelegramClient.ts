@@ -385,7 +385,14 @@ class TelegramClient {
 
     transport.setUpdateHandler((updateB64) => {
       try {
-        const reader = new BinaryReader(Buffer.from(updateB64, 'base64'));
+        const bytes = Buffer.from(updateB64, 'base64');
+        // Same gzip handling as responses — update containers may be gzip-packed too.
+        let reader = new BinaryReader(bytes);
+        if (reader.readInt(false) === GZIPPacked.CONSTRUCTOR_ID) {
+          reader = new BinaryReader(GZIPPacked.ungzip(reader.tgReadBytes()));
+        } else {
+          reader = new BinaryReader(bytes);
+        }
         const update = reader.tgReadObject();
         logGateway('client: update ←', (update as { className?: string })?.className);
         this._handleUpdate(update);
