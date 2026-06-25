@@ -12,6 +12,7 @@ import type { LangCode } from '../../../types';
 import type { RequiredGlobalActions } from '../../index';
 import type { ActionReturnType, GlobalState } from '../../types';
 
+import { IS_GATEWAY } from '../../../config';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
 import { getAccountsInfo, getAccountSlotUrl } from '../../../util/multiaccount';
@@ -19,6 +20,7 @@ import { oldSetLanguage } from '../../../util/oldLangProvider';
 import { clearWebTokenAuth } from '../../../util/routing';
 import { setServerTimeOffset } from '../../../util/serverTime';
 import { updateSessionUserId } from '../../../util/sessions';
+import { markGatewayReconnect, notifyGatewayReady } from '../../../util/telegramGateway';
 import { forceWebsync } from '../../../util/websync';
 import {
   addActionHandler, getActions, getGlobal, setGlobal,
@@ -264,6 +266,11 @@ function onUpdateConnectionState<T extends GlobalState>(
   };
   setGlobal(global);
 
+  if (IS_GATEWAY && connectionState === 'connectionStateReady' && global.currentUserId) {
+    // Optional UX signal to the platform parent (spec A.6).
+    notifyGatewayReady(global.currentUserId);
+  }
+
   if (global.isSynced) {
     const channelStackIds = getOpenedShortpollChannelIds(global);
 
@@ -275,6 +282,12 @@ function onUpdateConnectionState<T extends GlobalState>(
   }
 
   if (connectionState === 'connectionStateBroken') {
+    if (IS_GATEWAY) {
+      // Gateway mode: no client session to sign out. Re-request a token and reconnect.
+      markGatewayReconnect();
+      return;
+    }
+
     actions.signOut({ forceInitApi: true });
   }
 }

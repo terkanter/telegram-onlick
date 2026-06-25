@@ -25,11 +25,66 @@ const KB_TO_BYTES = 1024;
 const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024;
 const DISCONNECT_SLEEP = 1000;
 
+// Gateway mode (variant 2): upload parts through the relayed `invoke` to the home DC
+// (no `dcId` — uploads always go to the session DC, which the backend owns). Sequential.
+async function uploadFileViaGateway(
+  client: TelegramClient,
+  fileParams: UploadFileParams,
+): Promise<Api.InputFile | Api.InputFileBig> {
+  const { file, onProgress } = fileParams;
+  const { name, size } = file;
+  const fileId = readBigIntFromBuffer(generateRandomBytes(8), true, true);
+  const isLarge = size > LARGE_FILE_THRESHOLD;
+  const partSize = getUploadPartSize(size) * KB_TO_BYTES;
+  const partCount = Math.floor((size + partSize - 1) / partSize);
+
+  let progress = 0;
+  onProgress?.(progress);
+
+  for (let i = 0; i < partCount; i++) {
+    if (onProgress?.isCanceled) {
+      throw new Error('USER_CANCELED');
+    }
+
+    const partBytes = Buffer.from(await file.slice(i * partSize, (i + 1) * partSize).arrayBuffer());
+
+    while (true) {
+      try {
+        await client.invoke(isLarge
+          ? new Api.upload.SaveBigFilePart({
+            fileId, filePart: i, fileTotalParts: partCount, bytes: partBytes,
+          })
+          : new Api.upload.SaveFilePart({ fileId, filePart: i, bytes: partBytes }));
+        break;
+      } catch (err) {
+        if (err instanceof FloodWaitError) {
+          await sleep(err.seconds * 1000);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    progress += (1 / partCount);
+    onProgress?.(progress);
+  }
+
+  return isLarge
+    ? new Api.InputFileBig({ id: fileId, parts: partCount, name })
+    : new Api.InputFile({
+      id: fileId, parts: partCount, name, md5Checksum: '',
+    });
+}
+
 export async function uploadFile(
   client: TelegramClient,
   fileParams: UploadFileParams,
   shouldDebugExportedSenders?: boolean,
 ): Promise<Api.InputFile | Api.InputFileBig> {
+  if (client.isGateway) {
+    return uploadFileViaGateway(client, fileParams);
+  }
+
   const { file, onProgress } = fileParams;
 
   const isPremium = Boolean(client.isPremium);

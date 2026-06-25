@@ -2124,6 +2124,9 @@ export interface LangPair {
   'PollModalSettingsTitle': undefined;
   'PollModalAddNoMore': undefined;
   'PollDurationOther': undefined;
+  'GatewayConnecting': undefined;
+  'GatewayRevoked': undefined;
+  'GatewayError': undefined;
 }
 
 export interface LangPairWithVariables<V = LangVariable> {

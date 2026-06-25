@@ -23,11 +23,12 @@ import {
   NetworkMigrateError,
   PhoneMigrateError,
   RPCError,
+  RPCMessageToError,
   ServerError,
   TimedOutError,
   UserMigrateError,
 } from '../errors';
-import { Logger } from '../extensions';
+import { BinaryReader, Logger } from '../extensions';
 import {
   ConnectionTCPObfuscated,
   HttpConnection,
@@ -40,6 +41,8 @@ import {
   getTmpPassword,
   updateTwoFaSettings,
 } from './2fa';
+import type { GatewayError, GatewayTransport } from './gatewayTypes';
+
 import { authFlow, checkAuthorization } from './auth';
 import { downloadFile } from './downloadFile';
 import { uploadFile } from './uploadFile';
@@ -78,6 +81,9 @@ type TelegramClientParams = {
   shouldAllowHttpTransport: boolean;
   shouldForceHttpTransport: boolean;
   shouldDebugExportedSenders: boolean;
+  // Gateway mode (variant 2): when set, the client relays requests through this transport
+  // instead of doing the MTProto handshake and talking to Telegram directly.
+  gatewayTransport?: GatewayTransport;
 };
 
 type TimeoutId = ReturnType<typeof setTimeout>;
@@ -170,6 +176,8 @@ class TelegramClient {
 
   private _fallbackConnection: typeof Connection;
 
+  private _gatewayTransport?: GatewayTransport;
+
   private _sender?: MTProtoSender;
 
   private _eventBuilders: [EventBuilder, CallableFunction][];
@@ -254,6 +262,7 @@ class TelegramClient {
 
     this._connection = args.connection;
     this._fallbackConnection = args.fallbackConnection;
+    this._gatewayTransport = args.gatewayTransport;
     // TODO add proxy support
 
     this._initWith = (x: unknown) => {
@@ -287,6 +296,11 @@ class TelegramClient {
      * @returns {Promise<void>}
      */
   async connect() {
+    if (this._gatewayTransport) {
+      await this._connectGateway();
+      return;
+    }
+
     await this._initSession();
 
     if (this._sender === undefined) {
@@ -350,6 +364,35 @@ class TelegramClient {
     // Prepare file connection on current DC to speed up initial media loading
     const mediaSender = await this._borrowExportedSender(this.session.dcId, false, undefined, 0, this.isPremium);
     if (mediaSender) this.releaseExportedSender(mediaSender);
+  }
+
+  // Gateway mode (variant 2): the client relays through the WS transport instead of MTProto.
+  get isGateway() {
+    return Boolean(this._gatewayTransport);
+  }
+
+  disconnectGateway() {
+    this._gatewayTransport?.disconnect();
+  }
+
+  // Gateway mode (variant 2): no MTProto handshake. Open the WS transport, wire updates
+  // and mark connected; the backend signs and relays everything to Telegram.
+  private async _connectGateway() {
+    const transport = this._gatewayTransport!;
+
+    transport.setUpdateHandler((updateB64) => {
+      try {
+        const reader = new BinaryReader(Buffer.from(updateB64, 'base64'));
+        this._handleUpdate(reader.tgReadObject());
+      } catch (err) {
+        this._log.warn('Failed to parse gateway update');
+      }
+    });
+
+    await transport.connect();
+
+    this._connectedDeferred.resolve();
+    this._handleUpdate(new UpdateConnectionState(UpdateConnectionState.connected));
   }
 
   async _initSession() {
@@ -1021,14 +1064,18 @@ class TelegramClient {
           limit: WEBDOCUMENT_REQUEST_PART_SIZE,
         });
 
-        const sender = await this._borrowExportedSender(
-          this._config?.webfileDcId || DEFAULT_WEBDOCUMENT_DC_ID,
-        );
-        if (!sender) {
-          throw new Error('Failed to obtain sender');
+        const webfileDcId = this._config?.webfileDcId || DEFAULT_WEBDOCUMENT_DC_ID;
+        let res: Api.upload.TypeWebFile;
+        if (this.isGateway) {
+          res = await this.invoke(downloaded, webfileDcId);
+        } else {
+          const sender = await this._borrowExportedSender(webfileDcId);
+          if (!sender) {
+            throw new Error('Failed to obtain sender');
+          }
+          res = (await sender.send(downloaded))!;
+          this.releaseExportedSender(sender);
         }
-        const res = (await sender.send(downloaded))!;
-        this.releaseExportedSender(sender);
         offset += WEBDOCUMENT_REQUEST_PART_SIZE;
         if (res.bytes.length) {
           buff.push(res.bytes);
@@ -1082,12 +1129,17 @@ class TelegramClient {
             offset,
             limit: WEBDOCUMENT_REQUEST_PART_SIZE,
           });
-          const sender = await this._borrowExportedSender(DEFAULT_WEBDOCUMENT_DC_ID);
-          if (!sender) {
-            throw new Error('Failed to obtain sender');
+          let res: Api.upload.TypeWebFile;
+          if (this.isGateway) {
+            res = await this.invoke(downloaded, DEFAULT_WEBDOCUMENT_DC_ID);
+          } else {
+            const sender = await this._borrowExportedSender(DEFAULT_WEBDOCUMENT_DC_ID);
+            if (!sender) {
+              throw new Error('Failed to obtain sender');
+            }
+            res = (await sender.send(downloaded))!;
+            this.releaseExportedSender(sender);
           }
-          const res = (await sender.send(downloaded))!;
-          this.releaseExportedSender(sender);
           offset += WEBDOCUMENT_REQUEST_PART_SIZE;
           if (res.bytes.length) {
             buff.push(res.bytes);
@@ -1117,6 +1169,43 @@ class TelegramClient {
   }
 
   // region Invoking Telegram request
+
+  // Gateway mode (variant 2): serialize the request, relay it through the WS transport and
+  // parse the returned bytes. The backend signs/sends to Telegram; no sender or DC machinery.
+  private async _gatewayInvoke<R extends Api.AnyRequest>(
+    request: R, dcId?: number, abortSignal?: AbortSignal,
+  ): Promise<R['__response']> {
+    this._lastRequest = Date.now();
+    const requestB64 = request.getBytes().toString('base64');
+
+    try {
+      const invokePromise = this._gatewayTransport!.invoke(requestB64, dcId);
+      const responseB64 = abortSignal
+        ? await Promise.race([invokePromise, new Promise<string>((_resolve, reject) => {
+          if (abortSignal.aborted) {
+            reject(new Error('USER_CANCELED'));
+            return;
+          }
+          abortSignal.addEventListener('abort', () => reject(new Error('USER_CANCELED')), { once: true });
+        })])
+        : await invokePromise;
+
+      const reader = new BinaryReader(Buffer.from(responseB64, 'base64'));
+      // `readResult` is an instance method on generated requests (typed only as static).
+      return (request as any).readResult(reader) as R['__response'];
+    } catch (err) {
+      const gatewayError = err as Partial<GatewayError>;
+      // Abort / non-gateway errors have no `errorMessage` — pass them through unchanged.
+      if (typeof gatewayError.errorMessage !== 'string') {
+        throw err;
+      }
+      throw RPCMessageToError(
+        new Api.RpcError({ errorCode: gatewayError.errorCode ?? 400, errorMessage: gatewayError.errorMessage }),
+        request,
+      );
+    }
+  }
+
   /**
      * Invokes a MTProtoRequest (sends and receives it) and returns its result
      * @param request
@@ -1131,6 +1220,10 @@ class TelegramClient {
   ): Promise<R['__response']> {
     if (request.classType !== 'request') {
       throw new Error('You can only invoke MTProtoRequests');
+    }
+
+    if (this._gatewayTransport) {
+      return this._gatewayInvoke(request, dcId, abortSignal);
     }
 
     const isExported = dcId !== undefined;
@@ -1212,6 +1305,12 @@ class TelegramClient {
   async invokeBeacon(request: Api.AnyRequest, dcId?: number) {
     if (request.classType !== 'request') {
       throw new Error('You can only invoke MTProtoRequests');
+    }
+
+    if (this._gatewayTransport) {
+      // No `sendBeacon` over WS; best-effort fire-and-forget. TODO: may not flush on page unload.
+      void this._gatewayInvoke(request, dcId).catch(() => undefined);
+      return;
     }
 
     const isExported = dcId !== undefined;

@@ -3,6 +3,7 @@ import { ManagementProgress } from '../../../types';
 
 import {
   CUSTOM_BG_CACHE_NAME,
+  IS_GATEWAY,
   LANG_CACHE_NAME,
   LOCK_SCREEN_ANIMATION_DURATION_MS,
   MEDIA_CACHE_NAME,
@@ -24,6 +25,9 @@ import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../
 import { parseInitialLocationHash, resetInitialLocationHash, resetLocationHash } from '../../../util/routing';
 import { pause } from '../../../util/schedulers';
 import {
+  consumeGatewayReconnect, initGatewayBridge, requestGatewayAuth, setGatewayAuthHandler,
+} from '../../../util/telegramGateway';
+import {
   clearStoredSession,
   loadStoredSession,
   storeSession,
@@ -44,6 +48,39 @@ import { selectSharedSettings } from '../../selectors/sharedState';
 import { destroySharedStatePort } from '../../shared/sharedStateConnector';
 
 addActionHandler('initApi', (global, actions): ActionReturnType => {
+  if (IS_GATEWAY) {
+    // Variant 2: the platform brokers a short-lived token; the fork never logins itself and
+    // stores no session. On `auth`, init the worker with the gateway endpoint + token.
+    const { language: gatewayLangCode } = selectSharedSettings(global);
+    let isGatewayInited = false;
+
+    initGatewayBridge();
+    setGatewayAuthHandler((auth) => {
+      if (!isGatewayInited) {
+        isGatewayInited = true;
+        void initApi(actions.apiUpdate, {
+          userAgent: navigator.userAgent,
+          platform: PLATFORM_ENV,
+          langCode: gatewayLangCode,
+          gatewayUrl: auth.gatewayUrl,
+          gatewayToken: auth.token,
+        });
+        return;
+      }
+
+      if (consumeGatewayReconnect()) {
+        // Same account, fresh token — reconnect in place, keep cache and update state.
+        void callApi('reinitGateway', { gatewayUrl: auth.gatewayUrl, gatewayToken: auth.token });
+        return;
+      }
+
+      // Account switch — reinit under the new account. TODO(A.5): in-place instead of reload.
+      window.location.reload();
+    });
+    requestGatewayAuth();
+    return;
+  }
+
   const initialLocationHash = parseInitialLocationHash();
   const {
     shouldAllowHttpTransport,

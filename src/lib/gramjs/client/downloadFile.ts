@@ -115,6 +115,11 @@ export async function downloadFile(
   shouldDebugExportedSenders?: boolean,
 ) {
   const { dcId } = fileParams;
+
+  if (client.isGateway) {
+    return downloadFileViaGateway(client, inputLocation, fileParams);
+  }
+
   for (let i = 0; i < SENDER_RETRIES; i++) {
     try {
       return await downloadFile2(client, inputLocation, fileParams, shouldDebugExportedSenders);
@@ -131,6 +136,92 @@ export async function downloadFile(
   }
 
   return undefined;
+}
+
+// Gateway mode (variant 2): fetch parts through the relayed `invoke` with `dcId`; the backend
+// owns the data-center connection. Sequential — the backend handles real parallelism.
+async function downloadFileViaGateway(
+  client: TelegramClient,
+  inputLocation: Api.TypeInputFileLocation,
+  fileParams: DownloadFileWithDcParams,
+) {
+  let { partSizeKb, end = 0 } = fileParams;
+  const {
+    fileSize, dcId, progressCallback, start = 0,
+  } = fileParams;
+
+  if (fileSize) {
+    end = end && end < fileSize ? end : fileSize - 1;
+  }
+
+  const rangeSize = end ? end - start + 1 : undefined;
+  if (!partSizeKb) {
+    partSizeKb = fileSize ? getDownloadPartSize(rangeSize || fileSize) : DEFAULT_CHUNK_SIZE;
+  }
+
+  const partSize = partSizeKb * 1024;
+  if (partSize % MIN_CHUNK_SIZE !== 0) {
+    throw new Error(`The part size must be evenly divisible by ${MIN_CHUNK_SIZE}`);
+  }
+
+  const partsCount = rangeSize ? Math.ceil(rangeSize / partSize) : 1;
+  const fileView = new FileView(rangeSize);
+  await fileView.init();
+
+  let offset = start;
+  let progress = 0;
+  progressCallback?.(progress);
+
+  while (true) {
+    if (progressCallback?.isCanceled) break;
+
+    let limit = partSize;
+    let isPrecise = false;
+
+    if (Math.floor(offset / ONE_MB) !== Math.floor((offset + limit - 1) / ONE_MB)) {
+      limit = ONE_MB - (offset % ONE_MB);
+      isPrecise = true;
+    }
+    if (offset % MIN_CHUNK_SIZE !== 0 || limit % MIN_CHUNK_SIZE !== 0) {
+      isPrecise = true;
+    }
+
+    const result = await (async () => {
+      while (true) {
+        try {
+          return await client.invoke(new Api.upload.GetFile({
+            location: inputLocation,
+            offset: BigInt(offset),
+            limit,
+            precise: isPrecise || undefined,
+          }), dcId);
+        } catch (err) {
+          if (err instanceof FloodWaitError) {
+            await sleep(err.seconds * 1000);
+            continue;
+          }
+          throw err;
+        }
+      }
+    })();
+
+    if (result instanceof Api.upload.FileCdnRedirect) {
+      throw new Error('CDN download not supported');
+    }
+
+    fileView.write(result.bytes, offset - start);
+
+    progress += (1 / partsCount);
+    progressCallback?.(Math.min(progress, 1));
+
+    const isLastPart = result.bytes.length < limit;
+    offset += limit;
+
+    if (!end && isLastPart) break;
+    if (end && offset > end) break;
+  }
+
+  return fileView.getData();
 }
 
 async function downloadFile2(

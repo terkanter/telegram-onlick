@@ -5,7 +5,9 @@ import type { GlobalState } from '../global/types';
 import type { ThemeKey } from '../types';
 import type { UiLoaderPage } from './common/UiLoader';
 
-import { DARK_THEME_BG_COLOR, INACTIVE_MARKER, LIGHT_THEME_BG_COLOR, PAGE_TITLE, PAGE_TITLE_TAURI } from '../config';
+import {
+  DARK_THEME_BG_COLOR, INACTIVE_MARKER, IS_GATEWAY, LIGHT_THEME_BG_COLOR, PAGE_TITLE, PAGE_TITLE_TAURI,
+} from '../config';
 import { forceMutation } from '../lib/fasterdom/stricterdom.ts';
 import { selectActionMessageBg, selectTabState, selectTheme } from '../global/selectors';
 import { IS_TAURI } from '../util/browser/globalEnvironment';
@@ -27,6 +29,8 @@ import { getIsInBackground } from '../hooks/window/useBackgroundMode';
 import Auth from './auth/Auth';
 import Notifications from './common/Notifications';
 import UiLoader from './common/UiLoader';
+import GatewayPending from './gateway/GatewayPending';
+import { withLogin } from './Login';
 import AppInactive from './main/AppInactive';
 import LockScreen from './main/LockScreen.async';
 import Main from './main/Main.async';
@@ -34,7 +38,6 @@ import Main from './main/Main.async';
 import Transition from './ui/Transition';
 
 import styles from './App.module.scss';
-import {withLogin} from "./Login.tsx";
 
 type StateProps = {
   authState: GlobalState['auth']['state'];
@@ -52,6 +55,7 @@ enum AppScreens {
   main,
   lock,
   inactive,
+  gateway,
 }
 
 const TRANSITION_RENDER_COUNT = Object.keys(AppScreens).length / 2;
@@ -141,6 +145,10 @@ const App = ({
   } else if (isScreenLocked) {
     page = 'lock';
     activeKey = AppScreens.lock;
+  } else if (IS_GATEWAY && authState !== 'authorizationStateReady') {
+    // Variant 2: never show the login form. Until the gateway signals `ready`,
+    // hold a placeholder ("waiting for signal"); login states are unreachable here.
+    activeKey = AppScreens.gateway;
   } else if (authState) {
     switch (authState) {
       case 'authorizationStateWaitPhoneNumber':
@@ -213,6 +221,8 @@ const App = ({
         return <LockScreen isLocked={isScreenLocked} />;
       case AppScreens.inactive:
         return <AppInactive inactiveReason={inactiveReason!} />;
+      case AppScreens.gateway:
+        return <GatewayPending />;
     }
   }
 

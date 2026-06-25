@@ -26,6 +26,7 @@ const {
   APP_MOCKED_CLIENT = '',
   HTTPS_CERT_PATH = '',
   HTTPS_KEY_PATH = '',
+  TG_GATEWAY = '',
 } = process.env;
 
 const DEFAULT_APP_TITLE = `UNNOFICIAL Telegram`;
@@ -40,7 +41,7 @@ const {
 
 const CSP = `
   default-src 'self';
-  connect-src 'self' wss://*.web.telegram.org blob: http: https: ${APP_ENV === 'development' ? 'wss: ipc:' : ''};
+  connect-src 'self' wss://*.web.telegram.org blob: http: https: ${(APP_ENV === 'development' || TG_GATEWAY === '1') ? 'wss:' : ''} ${APP_ENV === 'development' ? 'ipc:' : ''};
   script-src 'self' 'wasm-unsafe-eval' https://t.me/_websync_ https://telegram.me/_websync_;
   style-src 'self' 'unsafe-inline';
   img-src 'self' data: blob: https://ss3.4sqi.net/img/categories_v2/;
@@ -225,6 +226,9 @@ export default function createConfig(
         // eslint-disable-next-line no-null/no-null
         TEST_SESSION: null,
         BASE_URL,
+        // Gateway mode (variant 2): optional, off unless explicitly set at build time.
+        TG_GATEWAY: undefined,
+        TG_GATEWAY_ALLOWED_ORIGINS: undefined,
       }),
       // Updates each dev re-build to provide current git branch or commit hash
       new DefinePlugin({

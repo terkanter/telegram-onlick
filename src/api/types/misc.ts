@@ -32,6 +32,10 @@ export interface ApiInitialArgs {
   isTestServerRequested?: boolean;
   accountIds?: string[];
   hasPasskeySupport?: boolean;
+  // Gateway mode (variant 2): WS gateway endpoint and short-lived access token.
+  // The accountId is embedded inside the token; the fork never sees it directly.
+  gatewayUrl?: string;
+  gatewayToken?: string;
 }
 
 export type ApiPasskeyOption = {

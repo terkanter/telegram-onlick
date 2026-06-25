@@ -68,12 +68,18 @@ import {
   onRequestRegistration,
   onWebAuthTokenFailed,
 } from './auth';
+import GatewayTransport from './gatewayTransport';
 import downloadMediaWithClient, { parseMediaUrl } from './media';
 
 import { ChatAbortController } from '../ChatAbortController';
 
 const DEFAULT_USER_AGENT = 'Unknown UserAgent';
 const DEFAULT_PLATFORM = 'Unknown platform';
+
+// Gateway mode (variant 2): the backend runs `initConnection` with its own credentials,
+// so the fork needs only placeholders to satisfy the client constructor. They never reach Telegram.
+const GATEWAY_API_ID_PLACEHOLDER = 1;
+const GATEWAY_API_HASH_PLACEHOLDER = 'gateway';
 
 GramJsLogger.setLevel(DEBUG_GRAMJS ? 'debug' : 'warn');
 
@@ -95,7 +101,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     userAgent, platform, sessionData, isWebmSupported, maxBufferSize, webAuthToken, dcId,
     mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
     shouldDebugExportedSenders, langCode, isTestServerRequested, accountIds,
-    hasPasskeySupport,
+    hasPasskeySupport, gatewayUrl, gatewayToken,
   } = initialArgs;
 
   const session = new sessions.CallbackSession(sessionData, onSessionUpdate);
@@ -103,6 +109,13 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
   (self as any).isWebmSupported = isWebmSupported;
 
   (self as any).maxBufferSize = maxBufferSize;
+
+  if (gatewayUrl && gatewayToken) {
+    await initGatewayClient({
+      gatewayUrl, gatewayToken, userAgent, platform, langCode,
+    }, onConnected);
+    return;
+  }
 
   client = new TelegramClient(
     session,
@@ -187,6 +200,95 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     }
 
     throw err;
+  }
+}
+
+// Gateway mode (variant 2): build the client over the WS transport instead of connecting to
+// Telegram. No login flow, no session persisted; the first request (`fetchCurrentUser`)
+// confirms authorization. See `telegram-fork-spec.md`.
+
+type GatewayBaseArgs = {
+  userAgent: string;
+  platform?: string;
+  langCode: string;
+};
+
+// Retained from the first init so a reconnect can rebuild the client without re-plumbing.
+let gatewayBaseArgs: GatewayBaseArgs | undefined;
+
+// On a closed WS, surface a broken state; the main thread re-requests a token and reconnects.
+function onGatewayClose() {
+  sendApiUpdate({ '@type': 'updateConnectionState', connectionState: 'connectionStateBroken' });
+}
+
+function buildGatewayClient(transport: GatewayTransport, baseArgs: GatewayBaseArgs) {
+  client = new TelegramClient(
+    new sessions.CallbackSession(undefined, () => undefined),
+    GATEWAY_API_ID_PLACEHOLDER,
+    GATEWAY_API_HASH_PLACEHOLDER,
+    {
+      deviceModel: navigator.userAgent || baseArgs.userAgent || DEFAULT_USER_AGENT,
+      systemVersion: baseArgs.platform || DEFAULT_PLATFORM,
+      appVersion: `${APP_VERSION} ${APP_CODE_NAME}`,
+      langPack: LANG_PACK,
+      langCode: baseArgs.langCode,
+      systemLangCode: navigator.language,
+      gatewayTransport: transport,
+    } as any,
+  );
+
+  client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);
+}
+
+async function initGatewayClient(
+  args: GatewayBaseArgs & { gatewayUrl: string; gatewayToken: string },
+  onConnected?: NoneToVoidFunction,
+) {
+  const {
+    gatewayUrl, gatewayToken, userAgent, platform, langCode,
+  } = args;
+
+  gatewayBaseArgs = { userAgent, platform, langCode };
+
+  const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
+  buildGatewayClient(transport, gatewayBaseArgs);
+
+  try {
+    await client.connect();
+
+    onConnected?.();
+    onAuthReady();
+    sendApiUpdate({ '@type': 'updateApiReady' });
+    initUpdatesManager(invokeRequest);
+    void fetchCurrentUser();
+  } catch (err) {
+    if (DEBUG) {
+      log('GATEWAY CONNECTING ERROR', err);
+    }
+
+    onGatewayClose();
+  }
+}
+
+// Reconnect in place with a fresh token for the SAME account (4401 / token expiry). Keeps the
+// local cache and update state, so `getDifference` catches up. Account switch is a full reload.
+export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: string; gatewayToken: string }) {
+  if (!gatewayBaseArgs) return;
+
+  client?.disconnectGateway();
+
+  const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
+  buildGatewayClient(transport, gatewayBaseArgs);
+
+  try {
+    await client.connect();
+    void fetchCurrentUser();
+  } catch (err) {
+    if (DEBUG) {
+      log('GATEWAY RECONNECT ERROR', err);
+    }
+
+    onGatewayClose();
   }
 }
 
