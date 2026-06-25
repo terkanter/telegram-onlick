@@ -21,6 +21,7 @@ import {
   APP_CODE_NAME,
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, UPLOAD_WORKERS,
 } from '../../../config';
+import { logGateway, logGatewayError } from '../../../util/gatewayLog';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
 import {
@@ -218,6 +219,7 @@ let gatewayBaseArgs: GatewayBaseArgs | undefined;
 
 // On a closed WS, surface a broken state; the main thread re-requests a token and reconnects.
 function onGatewayClose() {
+  logGatewayError('worker: gateway closed → emit connectionStateBroken');
   sendApiUpdate({ '@type': 'updateConnectionState', connectionState: 'connectionStateBroken' });
 }
 
@@ -250,11 +252,13 @@ async function initGatewayClient(
 
   gatewayBaseArgs = { userAgent, platform, langCode };
 
+  logGateway('worker: initGatewayClient →', gatewayUrl);
   const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
   buildGatewayClient(transport, gatewayBaseArgs);
 
   try {
     await client.connect();
+    logGateway('worker: connected; fetching current user');
 
     onConnected?.();
     onAuthReady();
@@ -262,6 +266,7 @@ async function initGatewayClient(
     initUpdatesManager(invokeRequest);
     void fetchCurrentUser();
   } catch (err) {
+    logGatewayError('worker: initGatewayClient failed', err);
     if (DEBUG) {
       log('GATEWAY CONNECTING ERROR', err);
     }
@@ -275,6 +280,7 @@ async function initGatewayClient(
 export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: string; gatewayToken: string }) {
   if (!gatewayBaseArgs) return;
 
+  logGateway('worker: reinitGateway →', gatewayUrl);
   client?.disconnectGateway();
 
   const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
@@ -282,8 +288,10 @@ export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: 
 
   try {
     await client.connect();
+    logGateway('worker: reconnected');
     void fetchCurrentUser();
   } catch (err) {
+    logGatewayError('worker: reinitGateway failed', err);
     if (DEBUG) {
       log('GATEWAY RECONNECT ERROR', err);
     }

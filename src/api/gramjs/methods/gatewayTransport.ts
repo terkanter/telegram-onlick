@@ -1,6 +1,7 @@
 import type { GatewayError, GatewayTransport as IGatewayTransport } from '../../../lib/gramjs/client/gatewayTypes';
 
 import Deferred from '../../../util/Deferred';
+import { logGateway, logGatewayError } from '../../../util/gatewayLog';
 
 // WS client for the gateway (variant 2). Frames in both directions are JSON; request and
 // response payloads are base64 of serialized TL bytes. Protocol — `telegram-fork-spec.md` §B.
@@ -57,15 +58,18 @@ export default class GatewayTransport implements IGatewayTransport {
   connect() {
     // TODO(contract): app-level keepalive (ping/pong frame) to detect a silently dropped WS
     // behind the proxy — needs a backend-defined frame. Until then we rely on the `close` event.
+    logGateway('WS connecting →', this.url);
     const ws = new WebSocket(this.url);
     this.ws = ws;
 
     ws.addEventListener('open', () => {
+      logGateway('WS open; sending auth (token len', this.token.length, ')');
       ws.send(JSON.stringify({ type: 'auth', token: this.token }));
     });
     ws.addEventListener('message', (event) => this.handleMessage(event));
     ws.addEventListener('close', (event) => this.handleClose(event.code));
     ws.addEventListener('error', () => {
+      logGatewayError('WS error event', this.isReady ? '(after ready)' : '(before ready)');
       if (!this.isReady) {
         this.readyDeferred.reject(new Error('Gateway WS error'));
       }
@@ -80,10 +84,12 @@ export default class GatewayTransport implements IGatewayTransport {
 
     return new Promise<string>((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        logGatewayError('invoke dropped — WS not open', { id, readyState: this.ws?.readyState });
         reject(toGatewayError('Gateway not connected', DEFAULT_ERROR_CODE));
         return;
       }
 
+      logGateway('invoke →', { id, dcId, bytes: requestB64.length, pending: this.pending.size + 1 });
       this.pending.set(id, { resolve, reject });
       this.ws.send(JSON.stringify(frame));
     });
@@ -107,17 +113,20 @@ export default class GatewayTransport implements IGatewayTransport {
     try {
       frame = JSON.parse(event.data as string);
     } catch {
+      logGatewayError('inbound frame is not JSON', typeof event.data);
       return;
     }
 
     switch (frame.type) {
       case 'ready':
+        logGateway('← ready; accountId', frame.accountId);
         this.accountId = frame.accountId;
         this.isReady = true;
         this.readyDeferred.resolve();
         break;
       case 'result': {
         const pending = this.pending.get(frame.id);
+        logGateway('← result', { id: frame.id, bytes: frame.response?.length, matched: Boolean(pending) });
         if (!pending) return;
         this.pending.delete(frame.id);
         pending.resolve(frame.response);
@@ -125,6 +134,7 @@ export default class GatewayTransport implements IGatewayTransport {
       }
       case 'error': {
         const pending = this.pending.get(frame.id);
+        logGatewayError('← error', { id: frame.id, message: frame.message, code: frame.code });
         if (!pending) return;
         this.pending.delete(frame.id);
         pending.reject(toGatewayError(frame.message, frame.code ?? DEFAULT_ERROR_CODE));
@@ -132,12 +142,16 @@ export default class GatewayTransport implements IGatewayTransport {
       }
       case 'update':
         // TODO(contract): confirm `update` is base64 of serialized TL bytes (not JSON).
+        logGateway('← update', { bytes: frame.update?.length });
         this.updateHandler?.(frame.update);
         break;
+      default:
+        logGatewayError('← unknown frame type', (frame as { type?: unknown }).type);
     }
   }
 
   private handleClose(code: number) {
+    logGatewayError('WS closed', { code, pending: this.pending.size, wasReady: this.isReady });
     const error = toGatewayError(`Gateway closed (${code})`, DEFAULT_ERROR_CODE);
     this.pending.forEach((pending) => pending.reject(error));
     this.pending.clear();

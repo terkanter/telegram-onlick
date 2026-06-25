@@ -1,4 +1,5 @@
 import { GATEWAY_ALLOWED_ORIGINS, IS_GATEWAY } from '../config';
+import { logGateway, logGatewayError } from './gatewayLog';
 import { createSignal } from './signals';
 
 // Handshake between the fork (inside the platform iframe) and the platform parent,
@@ -34,6 +35,7 @@ let isReconnectPending = false;
 // The parent (cross-origin) does not know when the iframe is ready, so the fork
 // asks first; the parent replies with a freshly minted token (lives ~2 min).
 export function requestGatewayAuth() {
+  logGateway('→ parent: request-auth');
   postToParent({ type: 'request-auth' });
 }
 
@@ -50,6 +52,7 @@ export function notifyGatewayReady(accountId: string) {
 
 // Re-request a token after the WS dropped; the next `auth` reconnects the same account in place.
 export function markGatewayReconnect() {
+  logGateway('reconnect requested (broken WS)');
   isReconnectPending = true;
   requestGatewayAuth();
 }
@@ -66,13 +69,26 @@ export function initGatewayBridge() {
   if (!IS_GATEWAY || isBridgeInited) return;
   isBridgeInited = true;
 
+  logGateway('bridge installed; trusted origins:', GATEWAY_ALLOWED_ORIGINS);
   window.addEventListener('message', handleParentMessage);
 }
 
 function handleParentMessage(event: MessageEvent) {
-  if (!isTrustedOrigin(event.origin)) return;
-  if (!isAuthMessage(event.data)) return;
+  const data = event.data as { source?: unknown; type?: unknown } | undefined;
+  // Only trace our own messages to avoid noise from unrelated postMessage traffic.
+  if (data?.source !== 'fanbeast-tg') return;
 
+  if (!isTrustedOrigin(event.origin)) {
+    logGatewayError('rejected message from untrusted origin', event.origin, '(allowed:', GATEWAY_ALLOWED_ORIGINS, ')');
+    return;
+  }
+  if (!isAuthMessage(event.data)) {
+    logGatewayError('ignored malformed message from', event.origin, 'type:', data?.type);
+    return;
+  }
+
+  logGateway('← parent: auth accepted from', event.origin, '| gatewayUrl', event.data.gatewayUrl,
+    '| token len', event.data.token.length);
   latestAuth = { token: event.data.token, gatewayUrl: event.data.gatewayUrl };
   authHandler?.(latestAuth);
 }

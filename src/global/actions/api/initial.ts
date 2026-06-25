@@ -22,6 +22,7 @@ import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { ACCOUNT_SLOT, getAccountsInfo } from '../../../util/multiaccount';
 import { unsubscribe } from '../../../util/notifications';
 import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
+import { logGateway } from '../../../util/gatewayLog';
 import { parseInitialLocationHash, resetInitialLocationHash, resetLocationHash } from '../../../util/routing';
 import { pause } from '../../../util/schedulers';
 import {
@@ -54,10 +55,12 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
     const { language: gatewayLangCode } = selectSharedSettings(global);
     let isGatewayInited = false;
 
+    logGateway('initApi: gateway mode');
     initGatewayBridge();
     setGatewayAuthHandler((auth) => {
       if (!isGatewayInited) {
         isGatewayInited = true;
+        logGateway('auth #1 → init worker', { gatewayUrl: auth.gatewayUrl });
         void initApi(actions.apiUpdate, {
           userAgent: navigator.userAgent,
           platform: PLATFORM_ENV,
@@ -70,11 +73,13 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
 
       if (consumeGatewayReconnect()) {
         // Same account, fresh token — reconnect in place, keep cache and update state.
+        logGateway('auth → reconnect in place (reinitGateway)');
         void callApi('reinitGateway', { gatewayUrl: auth.gatewayUrl, gatewayToken: auth.token });
         return;
       }
 
       // Account switch — reinit under the new account. TODO(A.5): in-place instead of reload.
+      logGateway('auth → account switch (iframe reload)');
       window.location.reload();
     });
     requestGatewayAuth();

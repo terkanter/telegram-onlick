@@ -47,6 +47,7 @@ import { authFlow, checkAuthorization } from './auth';
 import { downloadFile } from './downloadFile';
 import { uploadFile } from './uploadFile';
 
+import { logGateway, logGatewayError } from '../../../util/gatewayLog';
 import { generateRandomBigInt, sleep } from '../Helpers';
 import RequestState from '../network/RequestState';
 import Session from '../sessions/Abstract';
@@ -379,17 +380,22 @@ class TelegramClient {
   // and mark connected; the backend signs and relays everything to Telegram.
   private async _connectGateway() {
     const transport = this._gatewayTransport!;
+    logGateway('client: _connectGateway');
 
     transport.setUpdateHandler((updateB64) => {
       try {
         const reader = new BinaryReader(Buffer.from(updateB64, 'base64'));
-        this._handleUpdate(reader.tgReadObject());
+        const update = reader.tgReadObject();
+        logGateway('client: update ←', (update as { className?: string })?.className);
+        this._handleUpdate(update);
       } catch (err) {
+        logGatewayError('client: failed to parse gateway update', err);
         this._log.warn('Failed to parse gateway update');
       }
     });
 
     await transport.connect();
+    logGateway('client: gateway connected');
 
     this._connectedDeferred.resolve();
     this._handleUpdate(new UpdateConnectionState(UpdateConnectionState.connected));
@@ -1176,6 +1182,7 @@ class TelegramClient {
     request: R, dcId?: number, abortSignal?: AbortSignal,
   ): Promise<R['__response']> {
     this._lastRequest = Date.now();
+    logGateway('client: invoke', request.className, dcId !== undefined ? `(dc=${dcId})` : '');
     const requestB64 = request.getBytes().toString('base64');
 
     try {
@@ -1192,13 +1199,17 @@ class TelegramClient {
 
       const reader = new BinaryReader(Buffer.from(responseB64, 'base64'));
       // `readResult` is an instance method on generated requests (typed only as static).
-      return (request as any).readResult(reader) as R['__response'];
+      const result = (request as any).readResult(reader) as R['__response'];
+      logGateway('client: invoke ✓', request.className);
+      return result;
     } catch (err) {
       const gatewayError = err as Partial<GatewayError>;
       // Abort / non-gateway errors have no `errorMessage` — pass them through unchanged.
       if (typeof gatewayError.errorMessage !== 'string') {
+        logGatewayError('client: invoke aborted/failed', request.className, err);
         throw err;
       }
+      logGatewayError('client: invoke RPC error', request.className, gatewayError.errorMessage, gatewayError.errorCode);
       throw RPCMessageToError(
         new Api.RpcError({ errorCode: gatewayError.errorCode ?? 400, errorMessage: gatewayError.errorMessage }),
         request,
