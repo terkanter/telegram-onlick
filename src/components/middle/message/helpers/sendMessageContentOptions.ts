@@ -2,6 +2,7 @@ import { getGlobal } from '../../../../global';
 
 import type { ApiMessage } from '../../../../api/types';
 import type { IconName } from '../../../../types/icons';
+import type { LangFn } from '../../../../util/localization';
 import { ApiMediaFormat } from '../../../../api/types';
 
 import {
@@ -17,15 +18,14 @@ import {
 } from '../../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../../global/helpers/messageSummary';
 import { selectChat, selectUser, selectWebPageFromMessage } from '../../../../global/selectors';
+import { IS_SAFARI } from '../../../../util/browser/windowEnvironment';
 import getMessageIdsForSelectedText from '../../../../util/getMessageIdsForSelectedText';
 import * as mediaLoader from '../../../../util/mediaLoader';
 import {
   blobToBase64,
   convertToBlob,
-  sendNewPost,
+  sendFormContent,
 } from '../../../../util/onlik-bridge';
-import { IS_SAFARI } from '../../../../util/browser/windowEnvironment';
-import { LangFn } from '../../../../util/localization';
 
 export type ISendOption = {
   label: string;
@@ -91,10 +91,9 @@ export function getMessageSendToParentWindowOptions(
         Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
           .then(convertToBlob)
           .then(blobToBase64)
-          .then((image) => sendNewPost({
+          .then((image) => sendFormContent({
             image,
             text: ntext,
-            message,
             chat,
             user,
           }))
@@ -118,9 +117,8 @@ export function getMessageSendToParentWindowOptions(
         Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
           .then(convertToBlob)
           .then(blobToBase64)
-          .then((image) => sendNewPost({
+          .then((image) => sendFormContent({
             image,
-            message,
             chat,
             user,
           }));
@@ -149,16 +147,14 @@ export function getMessageSendToParentWindowOptions(
         if (messageIds?.length && onCopyMessages) {
           // onCopyMessages(messageIds);
         } else if (hasSelection) {
-          sendNewPost({
+          sendFormContent({
             text: selection?.toString() || '',
-            message,
             chat,
             user,
           });
         } else {
-          sendNewPost({
+          sendFormContent({
             text: getMessageTextWithSpoilers(lang, message, undefined)!,
-            message,
             chat,
             user,
           });

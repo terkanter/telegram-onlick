@@ -1,32 +1,63 @@
-import type { ApiUser } from '../api/types';
+import { getGlobal } from '../global';
 
-const textCopyEl = document.createElement('textarea');
-textCopyEl.setAttribute('readonly', '');
-textCopyEl.tabIndex = -1;
-textCopyEl.className = 'visually-hidden';
+import type { ApiChat, ApiUser, ApiUsername } from '../api/types';
+import type { FormContentChat, FormContentUser, FormContentUsername } from './telegramGateway';
 
-type ISendMessageProps = { user?: ApiUser; image?: any; text?: string; message?: any; chat: any };
+import { selectUser } from '../global/selectors';
+import { postFormContentToParent } from './telegramGateway';
 
-export function sendNewPost(message: ISendMessageProps) {
-  console.log(message);
-  window.parent?.postMessage(
-    {
-      type: 'form-content',
-      message: {
-        ...message,
-      },
-    },
-    '*',
-  );
-  window.postMessage(
-    {
-      type: 'form-content-extension',
-      message: {
-        ...message,
-      },
-    },
-    '*',
-  );
+type SendFormContentParams = {
+  image?: string;
+  text?: string;
+  chat?: ApiChat;
+  user?: ApiUser;
+};
+
+const CHAT_TYPE_MAP: Record<ApiChat['type'], FormContentChat['type']> = {
+  chatTypePrivate: 'private',
+  chatTypeSecret: 'private',
+  chatTypeBasicGroup: 'group',
+  chatTypeSuperGroup: 'group',
+  chatTypeChannel: 'channel',
+};
+
+// Forwards content selected in a chat (photo and/or text) to the platform's post form.
+// The platform joins partial signals and opens the form, so we send whatever is selected.
+export function sendFormContent({ image, text, chat, user }: SendFormContentParams) {
+  if (!chat) return;
+
+  postFormContentToParent({
+    image,
+    text,
+    chat: buildFormContentChat(chat),
+    user: buildFormContentUser(user),
+  });
+}
+
+function buildFormContentChat(chat: ApiChat): FormContentChat {
+  const type = CHAT_TYPE_MAP[chat.type];
+  // For a private chat the interlocutor's user id equals the chat id, and their usernames
+  // live on the user rather than the chat.
+  const usernames = type === 'private'
+    ? toFormContentUsernames(selectUser(getGlobal(), chat.id)?.usernames)
+    : toFormContentUsernames(chat.usernames);
+
+  return {
+    type,
+    id: chat.id,
+    title: chat.title,
+    usernames,
+  };
+}
+
+function buildFormContentUser(user?: ApiUser): FormContentUser | undefined {
+  if (!user) return undefined;
+
+  return { usernames: toFormContentUsernames(user.usernames) };
+}
+
+function toFormContentUsernames(usernames?: ApiUsername[]): FormContentUsername[] | undefined {
+  return usernames?.map(({ username, isActive }) => ({ username, isActive }));
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {
@@ -39,7 +70,10 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 export const convertToBlob = (imageUrl?: string): Promise<Blob> => new Promise((resolve, reject) => {
-  if (!imageUrl) return;
+  if (!imageUrl) {
+    reject(new Error('No image URL'));
+    return;
+  }
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -50,7 +84,7 @@ export const convertToBlob = (imageUrl?: string): Promise<Blob> => new Promise((
       canvas.width = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0, img.width, img.height);
-      canvas.toBlob(resolve, 'image/png', 1);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Canvas is empty'))), 'image/png', 1);
     }
   };
 

@@ -22,6 +22,36 @@ type AuthMessage = {
   gatewayUrl: string;
 };
 
+export type FormContentUsername = {
+  username: string;
+  isActive?: boolean;
+};
+
+type FormContentChatType = 'private' | 'group' | 'channel';
+
+export type FormContentChat = {
+  type: FormContentChatType;
+  id: string;
+  title?: string;
+  usernames?: FormContentUsername[];
+};
+
+export type FormContentUser = {
+  usernames?: FormContentUsername[];
+};
+
+// Content selected in a chat, forwarded to the platform's post-creation form. See
+// `telegram-fork-form-content.md`. Carries conversation data, so it is only sent to a
+// verified platform origin (never `'*'`), unlike the token-less handshake messages.
+type FormContentMessage = {
+  source: typeof GATEWAY_SOURCE;
+  type: 'form-content';
+  image?: string;
+  text?: string;
+  chat: FormContentChat;
+  user?: FormContentUser;
+};
+
 const [getGatewayStatus, setGatewayStatus] = createSignal<GatewayStatus>('connecting');
 export { getGatewayStatus, setGatewayStatus };
 
@@ -31,6 +61,8 @@ let isBridgeInited = false;
 // Set when a reconnect (same account, expired/revoked token) is in flight, so the next `auth`
 // is treated as an in-place reconnect rather than an account switch.
 let isReconnectPending = false;
+// The platform origin confirmed during the auth handshake; `form-content` is posted only here.
+let verifiedParentOrigin: string | undefined;
 
 // The parent (cross-origin) does not know when the iframe is ready, so the fork
 // asks first; the parent replies with a freshly minted token (lives ~2 min).
@@ -89,8 +121,31 @@ function handleParentMessage(event: MessageEvent) {
 
   logGateway('← parent: auth accepted from', event.origin, '| gatewayUrl', event.data.gatewayUrl,
     '| token len', event.data.token.length);
+  verifiedParentOrigin = event.origin;
   latestAuth = { token: event.data.token, gatewayUrl: event.data.gatewayUrl };
   authHandler?.(latestAuth);
+}
+
+// Posts selected chat content to the platform. Strictly targeted at the verified origin
+// (falls back to the configured allow-list) — never `'*'`, since it carries conversation data.
+export function postFormContentToParent(content: Omit<FormContentMessage, 'source' | 'type'>) {
+  const origins = verifiedParentOrigin ? [verifiedParentOrigin] : GATEWAY_ALLOWED_ORIGINS;
+  if (!origins.length) {
+    logGatewayError('form-content dropped: no trusted platform origin known');
+    return;
+  }
+
+  const message: FormContentMessage = { source: GATEWAY_SOURCE, type: 'form-content', ...content };
+  for (const origin of origins) {
+    window.parent.postMessage(message, origin);
+  }
+
+  logGateway('→ parent: form-content', {
+    hasImage: Boolean(content.image),
+    hasText: Boolean(content.text),
+    chatType: content.chat.type,
+    origins,
+  });
 }
 
 function isTrustedOrigin(origin: string) {
