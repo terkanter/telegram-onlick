@@ -22,6 +22,14 @@ type AuthMessage = {
   gatewayUrl: string;
 };
 
+// Per-user platform settings pushed right after `auth` and on every toggle change.
+// Named `settings` (not `blur`) so future user settings ride the same channel.
+type SettingsMessage = {
+  source: typeof GATEWAY_SOURCE;
+  type: 'settings';
+  blurImages?: boolean;
+};
+
 export type FormContentUsername = {
   username: string;
   isActive?: boolean;
@@ -54,6 +62,13 @@ type FormContentMessage = {
 
 const [getGatewayStatus, setGatewayStatus] = createSignal<GatewayStatus>('connecting');
 export { getGatewayStatus, setGatewayStatus };
+
+// `0` means blur is off. Each enable produces a new monotonic generation, so media
+// revealed with the per-media eye control get hidden again on re-enable.
+const [getBlurImagesGeneration, setBlurImagesGeneration] = createSignal(0);
+export { getBlurImagesGeneration };
+
+let blurGenerationCounter = 0;
 
 let authHandler: ((auth: GatewayAuth) => void) | undefined;
 let latestAuth: GatewayAuth | undefined;
@@ -114,6 +129,10 @@ function handleParentMessage(event: MessageEvent) {
     logGatewayError('rejected message from untrusted origin', event.origin, '(allowed:', GATEWAY_ALLOWED_ORIGINS, ')');
     return;
   }
+  if (isSettingsMessage(event.data)) {
+    handleSettingsMessage(event.data);
+    return;
+  }
   if (!isAuthMessage(event.data)) {
     logGatewayError('ignored malformed message from', event.origin, 'type:', data?.type);
     return;
@@ -150,6 +169,27 @@ export function postFormContentToParent(content: Omit<FormContentMessage, 'sourc
 
 function isTrustedOrigin(origin: string) {
   return GATEWAY_ALLOWED_ORIGINS.includes(origin);
+}
+
+// Applies only known settings; unknown fields from newer platform versions are ignored.
+// Re-enabling blur mints a fresh generation, duplicate `blurImages: true` is a no-op.
+function handleSettingsMessage(message: SettingsMessage) {
+  logGateway('← parent: settings | blurImages', message.blurImages);
+
+  if (typeof message.blurImages !== 'boolean') return;
+
+  if (!message.blurImages) {
+    setBlurImagesGeneration(0);
+  } else if (getBlurImagesGeneration() === 0) {
+    blurGenerationCounter += 1;
+    setBlurImagesGeneration(blurGenerationCounter);
+  }
+}
+
+function isSettingsMessage(data: unknown): data is SettingsMessage {
+  if (typeof data !== 'object' || !data) return false;
+  const message = data as Partial<SettingsMessage>;
+  return message.source === GATEWAY_SOURCE && message.type === 'settings';
 }
 
 function isAuthMessage(data: unknown): data is AuthMessage {

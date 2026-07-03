@@ -2175,6 +2175,7 @@ export interface LangPair {
   'GatewayConnecting': undefined;
   'GatewayRevoked': undefined;
   'GatewayError': undefined;
+  'GatewayShowMedia': undefined;
 }
 
 export interface LangPairWithVariables<V = LangVariable> {
