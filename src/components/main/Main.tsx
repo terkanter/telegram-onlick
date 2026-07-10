@@ -12,7 +12,9 @@ import type { ApiChatFolder, ApiLimitTypeWithModal, ApiStarGiftAuctionState, Api
 import type { TabState } from '../../global/types';
 import type { ThemeKey } from '../../types';
 
-import { BASE_EMOJI_KEYWORD_LANG, DEBUG, FOLDERS_POSITION_LEFT, INACTIVE_MARKER } from '../../config';
+import {
+  BASE_EMOJI_KEYWORD_LANG, DEBUG, FOLDERS_POSITION_LEFT, INACTIVE_MARKER, IS_GATEWAY,
+} from '../../config';
 import { requestNextMutation } from '../../lib/fasterdom/fasterdom';
 import {
   selectAreFoldersPresent,
@@ -69,6 +71,7 @@ import CustomEmojiSetsModal from '../common/CustomEmojiSetsModal.async';
 import DeleteMessageModal from '../common/DeleteMessageModal.async';
 import StickerSetModal from '../common/StickerSetModal.async';
 import UnreadCount from '../common/UnreadCounter';
+import GatewayRouteReporter from '../gateway/GatewayRouteReporter';
 import LeftColumn from '../left/LeftColumn';
 import MediaViewer from '../mediaViewer/MediaViewer.async';
 import ReactionPicker from '../middle/message/reactions/ReactionPicker.async';
@@ -666,6 +669,7 @@ const Main = ({
       />
       <AttachBotRecipientPicker requestedAttachBotInChat={requestedAttachBotInChat} />
       <MessageListHistoryHandler />
+      {IS_GATEWAY && <GatewayRouteReporter />}
       <PremiumMainModal isOpen={isPremiumModalOpen} />
       <GiveawayModal isOpen={isGiveawayModalOpen} />
       <StarsGiftingPickerModal isOpen={isStarsGiftingPickerModal} />

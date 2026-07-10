@@ -19,20 +19,22 @@ import {
 } from '../../../util/browser/windowEnvironment';
 import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { logGateway } from '../../../util/gatewayLog';
 import { ACCOUNT_SLOT, getAccountsInfo } from '../../../util/multiaccount';
 import { unsubscribe } from '../../../util/notifications';
 import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
-import { logGateway } from '../../../util/gatewayLog';
-import { parseInitialLocationHash, resetInitialLocationHash, resetLocationHash } from '../../../util/routing';
-import { pause } from '../../../util/schedulers';
 import {
-  consumeGatewayReconnect, initGatewayBridge, requestGatewayAuth, setGatewayAuthHandler,
-} from '../../../util/telegramGateway';
+  parseInitialLocationHash, parseMessageListHash, resetInitialLocationHash, resetLocationHash,
+} from '../../../util/routing';
+import { pause } from '../../../util/schedulers';
 import {
   clearStoredSession,
   loadStoredSession,
   storeSession,
 } from '../../../util/sessions';
+import {
+  consumeGatewayReconnect, initGatewayBridge, requestGatewayAuth, setGatewayAuthHandler, setGatewayNavigateHandler,
+} from '../../../util/telegramGateway';
 import { forceWebsync } from '../../../util/websync';
 import {
   callApi, callApiLocal, initApi, setShouldEnableDebugLog,
@@ -81,6 +83,24 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
       // Account switch — reinit under the new account. TODO(A.5): in-place instead of reload.
       logGateway('auth → account switch (iframe reload)');
       window.location.reload();
+    });
+    // Route memory: the parent echoes the saved route after `ready`. Restoration is
+    // best effort — an unparsable route keeps the default screen, and the actual state
+    // is reported back by `GatewayRouteReporter`.
+    setGatewayNavigateHandler((route) => {
+      global = getGlobal();
+      const messageList = parseMessageListHash(route, global.currentUserId);
+      if (!messageList) {
+        logGateway('navigate: unusable route, keeping default screen');
+        return;
+      }
+
+      actions.openThread({
+        chatId: messageList.chatId,
+        threadId: messageList.threadId,
+        type: messageList.type,
+        tabId: getCurrentTabId(),
+      });
     });
     requestGatewayAuth();
     return;

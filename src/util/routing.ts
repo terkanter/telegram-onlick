@@ -31,7 +31,11 @@ export function parseLocationHash(currentUserId?: string) {
 
   if (!messageHash) return undefined;
 
-  const parts = messageHash.split('_');
+  return parseMessageListHash(messageHash, currentUserId);
+}
+
+export function parseMessageListHash(hash: string, currentUserId?: string) {
+  const parts = hash.split('_');
   let chatId: string | undefined;
   let type: string | undefined;
   let threadId: string | undefined;
