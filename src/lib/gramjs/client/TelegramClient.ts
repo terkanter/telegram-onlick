@@ -47,7 +47,7 @@ import { authFlow, checkAuthorization } from './auth';
 import { downloadFile } from './downloadFile';
 import { uploadFile } from './uploadFile';
 
-import { logGateway, logGatewayError } from '../../../util/gatewayLog';
+import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
 import { generateRandomBigInt, sleep } from '../Helpers';
 import RequestState from '../network/RequestState';
 import Session from '../sessions/Abstract';
@@ -396,7 +396,7 @@ class TelegramClient {
           reader = new BinaryReader(bytes);
         }
         const update = reader.tgReadObject();
-        logGateway('client: update ←', (update as { className?: string })?.className);
+        logGatewayVerbose('client: update ←', (update as { className?: string })?.className);
         this._handleUpdate(update);
       } catch (err) {
         logGatewayError('client: failed to parse gateway update', err);
@@ -1215,7 +1215,7 @@ class TelegramClient {
     request: R, dcId?: number, abortSignal?: AbortSignal,
   ): Promise<R['__response']> {
     this._lastRequest = Date.now();
-    logGateway('client: invoke', request.className, dcId !== undefined ? `(dc=${dcId})` : '');
+    logGatewayVerbose('client: invoke', request.className, dcId !== undefined ? `(dc=${dcId})` : '');
     const requestB64 = bufferToBase64(request.getBytes());
 
     try {
@@ -1235,14 +1235,14 @@ class TelegramClient {
       // unpacks this in `RPCResult.fromReader`; the gateway path must do the same before reading.
       let reader = new BinaryReader(responseBytes);
       if (reader.readInt(false) === GZIPPacked.CONSTRUCTOR_ID) {
-        logGateway('client: gunzip', request.className);
+        logGatewayVerbose('client: gunzip', request.className);
         reader = new BinaryReader((await GZIPPacked.fromReader(reader)).data);
       } else {
         reader = new BinaryReader(responseBytes);
       }
       // `readResult` is an instance method on generated requests (typed only as static).
       const result = (request as any).readResult(reader) as R['__response'];
-      logGateway('client: invoke ✓', request.className);
+      logGatewayVerbose('client: invoke ✓', request.className);
       return result;
     } catch (err) {
       const gatewayError = err as Partial<GatewayError>;

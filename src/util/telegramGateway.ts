@@ -121,6 +121,7 @@ export function setGatewayAuthHandler(handler: (auth: GatewayAuth) => void) {
 }
 
 export function notifyGatewayReady(accountId: string) {
+  logGateway('→ parent: ready', { accountId });
   currentAccountId = accountId;
   postToParent({ type: 'ready', accountId });
 }
@@ -136,7 +137,10 @@ export const reportGatewayRouteChange = debounce(postRouteChangeToParent, ROUTE_
 
 // Sent strictly to the verified platform origin (never `'*'`) — `route` contains private chat ids
 function postRouteChangeToParent(route: string) {
-  if (!currentAccountId) return;
+  if (!currentAccountId) {
+    logGatewayError('route-change dropped: account not announced via `ready` yet');
+    return;
+  }
   if (route.length > MAX_ROUTE_LENGTH) {
     logGatewayError('route-change dropped: route exceeds', MAX_ROUTE_LENGTH, 'chars');
     return;

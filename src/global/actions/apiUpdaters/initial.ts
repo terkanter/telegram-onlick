@@ -328,6 +328,7 @@ function onUpdateServerTimeOffset(update: ApiUpdateServerTimeOffset) {
 
 function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdateCurrentUser) {
   const { currentUser, currentUserFullInfo } = update;
+  const prevCurrentUserId = global.currentUserId;
 
   global = {
     ...updateUser(global, currentUser.id, currentUser),
@@ -337,4 +338,12 @@ function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdate
   setGlobal(global);
 
   updateSessionUserId(currentUser.id);
+
+  // In gateway mode the WS connects before `fetchCurrentUser` resolves, so the
+  // `connectionStateReady` check in `onUpdateConnectionState` misses the user id —
+  // announce `ready` from here once both are first known. Refetches of the same
+  // user must not re-announce (the platform replies to `ready` with `navigate`)
+  if (IS_GATEWAY && prevCurrentUserId !== currentUser.id && global.connectionState === 'connectionStateReady') {
+    notifyGatewayReady(currentUser.id);
+  }
 }

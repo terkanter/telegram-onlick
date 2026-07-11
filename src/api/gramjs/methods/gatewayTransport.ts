@@ -1,7 +1,7 @@
 import type { GatewayError, GatewayTransport as IGatewayTransport } from '../../../lib/gramjs/client/gatewayTypes';
 
 import Deferred from '../../../util/Deferred';
-import { logGateway, logGatewayError } from '../../../util/gatewayLog';
+import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
 
 // WS client for the gateway (variant 2). Frames in both directions are JSON; request and
 // response payloads are base64 of serialized TL bytes. Protocol — `telegram-fork-spec.md` §B.
@@ -89,7 +89,7 @@ export default class GatewayTransport implements IGatewayTransport {
         return;
       }
 
-      logGateway('invoke →', { id, dcId, bytes: requestB64.length, pending: this.pending.size + 1 });
+      logGatewayVerbose('invoke →', { id, dcId, bytes: requestB64.length, pending: this.pending.size + 1 });
       this.pending.set(id, { resolve, reject });
       this.ws.send(JSON.stringify(frame));
     });
@@ -126,7 +126,7 @@ export default class GatewayTransport implements IGatewayTransport {
         break;
       case 'result': {
         const pending = this.pending.get(frame.id);
-        logGateway('← result', { id: frame.id, bytes: frame.response?.length, matched: Boolean(pending) });
+        logGatewayVerbose('← result', { id: frame.id, bytes: frame.response?.length, matched: Boolean(pending) });
         if (!pending) return;
         this.pending.delete(frame.id);
         pending.resolve(frame.response);
@@ -142,7 +142,7 @@ export default class GatewayTransport implements IGatewayTransport {
       }
       case 'update':
         // TODO(contract): confirm `update` is base64 of serialized TL bytes (not JSON).
-        logGateway('← update', { bytes: frame.update?.length });
+        logGatewayVerbose('← update', { bytes: frame.update?.length });
         this.updateHandler?.(frame.update);
         break;
       default:

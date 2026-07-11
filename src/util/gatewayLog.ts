@@ -15,3 +15,12 @@ export function logGatewayError(...args: unknown[]) {
   // eslint-disable-next-line no-console
   console.error('%c[tg-gw]', 'color:#e53935;font-weight:bold', ...args);
 }
+
+// Per-frame RPC/WS traffic tracing (every invoke/result/update) — too chatty for regular
+// debugging. Flip the flag when diagnosing the transport itself.
+const IS_VERBOSE_GATEWAY_LOG = false;
+
+export function logGatewayVerbose(...args: unknown[]) {
+  if (!IS_VERBOSE_GATEWAY_LOG) return;
+  logGateway(...args);
+}
