@@ -3,6 +3,7 @@ import type {
   ApiUpdateAuthorizationState,
   ApiUpdateConnectionState,
   ApiUpdateCurrentUser,
+  ApiUpdateGatewayAccountId,
   ApiUpdatePasskeyOption,
   ApiUpdateServerTimeOffset,
   ApiUpdateSession,
@@ -14,15 +15,19 @@ import type { ActionReturnType, GlobalState } from '../../types';
 
 import { IS_GATEWAY } from '../../../config';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { logGateway } from '../../../util/gatewayLog';
+import { logGateway, logGatewayError } from '../../../util/gatewayLog';
 import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
 import { getAccountsInfo, getAccountSlotUrl } from '../../../util/multiaccount';
 import { oldSetLanguage } from '../../../util/oldLangProvider';
 import { clearWebTokenAuth } from '../../../util/routing';
 import { setServerTimeOffset } from '../../../util/serverTime';
 import { updateSessionUserId } from '../../../util/sessions';
-import { markGatewayReconnect, notifyGatewayReady } from '../../../util/telegramGateway';
+import {
+  getGatewayAnnouncedAccountId, markGatewayReconnect, notifyGatewayReady,
+} from '../../../util/telegramGateway';
 import { forceWebsync } from '../../../util/websync';
+import { callApi } from '../../../api/gramjs';
+import { applyGatewayCache, dropGatewayCache } from '../../cache';
 import {
   addActionHandler, getActions, getGlobal, setGlobal,
 } from '../../index';
@@ -41,6 +46,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
     case 'updateApiReady':
       onUpdateApiReady(global);
+      break;
+
+    case 'updateGatewayAccountId':
+      void onUpdateGatewayAccountId(update);
       break;
 
     case 'updateAuthorizationState':
@@ -134,6 +143,20 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
 function onUpdateApiReady<T extends GlobalState>(global: T) {
   void oldSetLanguage(selectSharedSettings(global).language as LangCode);
+}
+
+// Applies the per-account cache, then releases the worker barrier so the post-connect
+// phase (auth ready, sync) starts over the cached state. The barrier must be released
+// even if the cache fails — the worker would otherwise wait out its safety timeout.
+async function onUpdateGatewayAccountId(update: ApiUpdateGatewayAccountId) {
+  try {
+    await applyGatewayCache(update.accountId);
+    logGateway('gateway cache applied for', update.accountId);
+  } catch (err) {
+    logGatewayError('failed to apply gateway cache', err);
+  } finally {
+    void callApi('continueGatewayInit');
+  }
 }
 
 function onUpdateAuthorizationState<T extends GlobalState>(global: T, update: ApiUpdateAuthorizationState) {
@@ -328,7 +351,14 @@ function onUpdateServerTimeOffset(update: ApiUpdateServerTimeOffset) {
 
 function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdateCurrentUser) {
   const { currentUser, currentUserFullInfo } = update;
-  const prevCurrentUserId = global.currentUserId;
+
+  // The cached snapshot pre-filled `currentUserId`; if the fetched user differs, the
+  // cache belongs to another account (gateway rebound the id) — drop it and boot clean
+  if (IS_GATEWAY && global.currentUserId && global.currentUserId !== currentUser.id) {
+    logGatewayError('cached account mismatch: cached', global.currentUserId, '| fetched', currentUser.id);
+    void dropGatewayCache().finally(() => window.location.reload());
+    return;
+  }
 
   global = {
     ...updateUser(global, currentUser.id, currentUser),
@@ -343,7 +373,8 @@ function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdate
   // `connectionStateReady` check in `onUpdateConnectionState` misses the user id —
   // announce `ready` from here once both are first known. Refetches of the same
   // user must not re-announce (the platform replies to `ready` with `navigate`)
-  if (IS_GATEWAY && prevCurrentUserId !== currentUser.id && global.connectionState === 'connectionStateReady') {
+  if (IS_GATEWAY && global.connectionState === 'connectionStateReady'
+    && getGatewayAnnouncedAccountId() !== currentUser.id) {
     notifyGatewayReady(currentUser.id);
   }
 }

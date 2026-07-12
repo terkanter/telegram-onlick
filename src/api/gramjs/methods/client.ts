@@ -21,6 +21,7 @@ import {
   APP_CODE_NAME,
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, TELEGRAM_API_HASH, TELEGRAM_API_ID, UPLOAD_WORKERS,
 } from '../../../config';
+import Deferred from '../../../util/Deferred';
 import { logGateway, logGatewayError } from '../../../util/gatewayLog';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
@@ -217,6 +218,18 @@ type GatewayBaseArgs = {
 // Retained from the first init so a reconnect can rebuild the client without re-plumbing.
 let gatewayBaseArgs: GatewayBaseArgs | undefined;
 
+// The main thread applies the per-account global cache between WS connect and the
+// post-connect phase (auth ready, updates manager, sync) — otherwise the first sync data
+// would land in an empty global and get clobbered by the later cache merge. The timeout
+// keeps the app booting if the main thread never answers.
+const GATEWAY_CACHE_BARRIER_TIMEOUT = 3000;
+let gatewayCacheBarrier: Deferred<void> | undefined;
+
+// Called by the main thread once the per-account cache is applied (or skipped)
+export function continueGatewayInit() {
+  gatewayCacheBarrier?.resolve();
+}
+
 // On a closed WS, surface a broken state; the main thread re-requests a token and reconnects.
 function onGatewayClose() {
   logGatewayError('worker: gateway closed → emit connectionStateBroken');
@@ -258,8 +271,17 @@ async function initGatewayClient(
 
   try {
     await client.connect();
-    logGateway('worker: connected; fetching current user');
 
+    const accountId = transport.getAccountId();
+    if (accountId) {
+      logGateway('worker: connected as', accountId, '; waiting for cache barrier');
+      gatewayCacheBarrier = new Deferred<void>();
+      sendApiUpdate({ '@type': 'updateGatewayAccountId', accountId });
+      await Promise.race([gatewayCacheBarrier.promise, pause(GATEWAY_CACHE_BARRIER_TIMEOUT)]);
+      gatewayCacheBarrier = undefined;
+    }
+
+    logGateway('worker: proceeding to ready; fetching current user');
     onConnected?.();
     onAuthReady();
     sendApiUpdate({ '@type': 'updateApiReady' });

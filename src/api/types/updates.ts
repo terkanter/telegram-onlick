@@ -56,6 +56,13 @@ export type ApiUpdateReady = {
   '@type': 'updateApiReady';
 };
 
+// Gateway mode: the account confirmed by the gateway WS `ready` frame. Sent before the
+// post-connect phase so the main thread can apply the per-account cache first.
+export type ApiUpdateGatewayAccountId = {
+  '@type': 'updateGatewayAccountId';
+  accountId: string;
+};
+
 export type ApiUpdateAuthorizationStateType = (
   'authorizationStateLoggingOut' |
   'authorizationStateWaitPhoneNumber' |
@@ -957,7 +964,8 @@ export type ApiUpdateWebPage = {
 };
 
 export type ApiUpdate = (
-  ApiUpdateReady | ApiUpdateSession | ApiUpdateWebAuthTokenFailed | ApiUpdateRequestUserUpdate |
+  ApiUpdateReady | ApiUpdateGatewayAccountId | ApiUpdateSession | ApiUpdateWebAuthTokenFailed |
+  ApiUpdateRequestUserUpdate |
   ApiUpdateAuthorizationState | ApiUpdateAuthorizationError | ApiUpdateConnectionState | ApiUpdateCurrentUser |
   ApiUpdateChat | ApiUpdateChatTypingStatus | ApiUpdateChatFullInfo | ApiUpdatePinnedChatIds |
   ApiUpdateChatMembers | ApiUpdateChatParticipantRank | ApiUpdateChatJoin | ApiUpdateChatLeave

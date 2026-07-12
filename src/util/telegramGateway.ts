@@ -126,6 +126,11 @@ export function notifyGatewayReady(accountId: string) {
   postToParent({ type: 'ready', accountId });
 }
 
+// The account already announced via `ready`, if any — lets callers avoid duplicate announces
+export function getGatewayAnnouncedAccountId() {
+  return currentAccountId;
+}
+
 // Registers the handler invoked for every valid `navigate` addressed to the current account
 export function setGatewayNavigateHandler(handler: (route: string) => void) {
   navigateHandler = handler;

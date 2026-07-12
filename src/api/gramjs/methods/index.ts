@@ -1,7 +1,7 @@
 export {
   destroy, disconnect, downloadMedia, fetchCurrentUser, repairFileReference, abortChatRequests, abortRequestGroup,
   setForceHttpTransport, setShouldDebugExportedSenders, setAllowHttpTransport, requestChannelDifference,
-  setOpenedChannelIds, reinitGateway,
+  setOpenedChannelIds, reinitGateway, continueGatewayInit,
 } from './client';
 
 export {
