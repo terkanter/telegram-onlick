@@ -1,9 +1,15 @@
 import { getGlobal } from '../global';
 
-import type { ApiChat, ApiUser, ApiUsername } from '../api/types';
-import type { FormContentChat, FormContentUser, FormContentUsername } from './telegramGateway';
+import type {
+  ApiChat, ApiPeer, ApiUser, ApiUsername,
+} from '../api/types';
+import type {
+  FormContentChat, FormContentSender, FormContentUser, FormContentUsername,
+} from './telegramGateway';
 
+import { getPeerTitle, isApiPeerUser } from '../global/helpers/peers';
 import { selectUser } from '../global/selectors';
+import { getTranslationFn } from './localization';
 import { postFormContentToParent } from './telegramGateway';
 
 type SendFormContentParams = {
@@ -11,6 +17,8 @@ type SendFormContentParams = {
   text?: string;
   chat?: ApiChat;
   user?: ApiUser;
+  sender?: ApiPeer;
+  isSenderSelf?: boolean;
 };
 
 const CHAT_TYPE_MAP: Record<ApiChat['type'], FormContentChat['type']> = {
@@ -23,7 +31,9 @@ const CHAT_TYPE_MAP: Record<ApiChat['type'], FormContentChat['type']> = {
 
 // Forwards content selected in a chat (photo and/or text) to the platform's post form.
 // The platform joins partial signals and opens the form, so we send whatever is selected.
-export function sendFormContent({ image, text, chat, user }: SendFormContentParams) {
+export function sendFormContent({
+  image, text, chat, user, sender, isSenderSelf,
+}: SendFormContentParams) {
   if (!chat) return;
 
   postFormContentToParent({
@@ -31,6 +41,7 @@ export function sendFormContent({ image, text, chat, user }: SendFormContentPara
     text,
     chat: buildFormContentChat(chat),
     user: buildFormContentUser(user),
+    sender: sender ? buildFormContentSender(sender, Boolean(isSenderSelf)) : undefined,
   });
 }
 
@@ -54,6 +65,18 @@ function buildFormContentUser(user?: ApiUser): FormContentUser | undefined {
   if (!user) return undefined;
 
   return { usernames: toFormContentUsernames(user.usernames) };
+}
+
+// `selectSender` resolves a channel author to the channel peer itself (broadcast posts have
+// no public author), so a non-user peer is reported as `kind: 'channel'`.
+function buildFormContentSender(sender: ApiPeer, isSelf: boolean): FormContentSender {
+  return {
+    kind: isApiPeerUser(sender) ? 'user' : 'channel',
+    id: sender.id,
+    title: getPeerTitle(getTranslationFn(), sender),
+    usernames: toFormContentUsernames(sender.usernames),
+    isSelf: isSelf || undefined,
+  };
 }
 
 function toFormContentUsernames(usernames?: ApiUsername[]): FormContentUsername[] | undefined {

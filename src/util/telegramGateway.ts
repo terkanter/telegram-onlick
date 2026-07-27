@@ -70,6 +70,18 @@ export type FormContentUser = {
   usernames?: FormContentUsername[];
 };
 
+// The author of the picked message — distinct from `user` (the manager's own account) and
+// from `chat` (the conversation). In a channel/group the author is neither, so it needs its
+// own slot. `kind: 'channel'` means the message was posted as the channel (anonymous admin
+// or broadcast), where the individual author has no public profile.
+export type FormContentSender = {
+  kind: 'user' | 'channel';
+  id: string;
+  title?: string;
+  usernames?: FormContentUsername[];
+  isSelf?: boolean;
+};
+
 // Content selected in a chat, forwarded to the platform's post-creation form. See
 // `telegram-fork-form-content.md`. Carries conversation data, so it is only sent to a
 // verified platform origin (never `'*'`), unlike the token-less handshake messages.
@@ -80,6 +92,7 @@ type FormContentMessage = {
   text?: string;
   chat: FormContentChat;
   user?: FormContentUser;
+  sender?: FormContentSender;
 };
 
 const [getGatewayStatus, setGatewayStatus] = createSignal<GatewayStatus>('connecting');

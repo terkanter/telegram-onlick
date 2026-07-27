@@ -17,7 +17,9 @@ import {
   hasMediaLocalBlobUrl,
 } from '../../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../../global/helpers/messageSummary';
-import { selectChat, selectUser, selectWebPageFromMessage } from '../../../../global/selectors';
+import {
+  selectChat, selectSender, selectUser, selectWebPageFromMessage,
+} from '../../../../global/selectors';
 import { IS_SAFARI } from '../../../../util/browser/windowEnvironment';
 import getMessageIdsForSelectedText from '../../../../util/getMessageIdsForSelectedText';
 import * as mediaLoader from '../../../../util/mediaLoader';
@@ -56,6 +58,9 @@ export function getMessageSendToParentWindowOptions(
   const selection = window.getSelection();
   const chat = selectChat(global, message.chatId);
   const user = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
+  // The account owner is `user`; `sender` is who authored the picked message (the counterpart,
+  // a group member, or the channel itself) — the platform reads them into separate fields.
+  const sender = selectSender(global, message);
   const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document))
     && !IS_SAFARI;
 
@@ -96,6 +101,8 @@ export function getMessageSendToParentWindowOptions(
             text: ntext,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           }))
           .then(() => {
             afterEffect?.();
@@ -121,6 +128,8 @@ export function getMessageSendToParentWindowOptions(
             image,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           }));
 
         afterEffect?.();
@@ -151,12 +160,16 @@ export function getMessageSendToParentWindowOptions(
             text: selection?.toString() || '',
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           });
         } else {
           sendFormContent({
             text: getMessageTextWithSpoilers(lang, message, undefined)!,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           });
         }
 
