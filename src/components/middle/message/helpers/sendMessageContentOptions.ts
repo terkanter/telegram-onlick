@@ -20,7 +20,6 @@ import { getMessageTextWithSpoilers } from '../../../../global/helpers/messageSu
 import {
   selectChat, selectSender, selectUser, selectWebPageFromMessage,
 } from '../../../../global/selectors';
-import { IS_SAFARI } from '../../../../util/browser/windowEnvironment';
 import getMessageIdsForSelectedText from '../../../../util/getMessageIdsForSelectedText';
 import * as mediaLoader from '../../../../util/mediaLoader';
 import {
@@ -54,15 +53,17 @@ export function getMessageSendToParentWindowOptions(
   const document = getMessageDocument(message);
   const mediaHash = photo ? getPhotoMediaHash(photo, 'inline') : undefined;
   const documentMediaHash = document ? getDocumentMediaHash(document, 'full') : undefined;
-  const canImageBeCopied = canCopy && photo && (mediaHash || hasMediaLocalBlobUrl(photo)) && !IS_SAFARI;
+  // Unlike clipboard copy (`copyOptions.ts`), this path serializes the image via
+  // `canvas → base64 → postMessage`, which works on Safari — so no `IS_SAFARI` gate here,
+  // otherwise the К/ТК buttons never appear on iOS (every iOS browser reports as Safari).
+  const canImageBeCopied = canCopy && photo && (mediaHash || hasMediaLocalBlobUrl(photo));
   const selection = window.getSelection();
   const chat = selectChat(global, message.chatId);
   const user = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
   // The account owner is `user`; `sender` is who authored the picked message (the counterpart,
   // a group member, or the channel itself) — the platform reads them into separate fields.
   const sender = selectSender(global, message);
-  const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document))
-    && !IS_SAFARI;
+  const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document));
 
   if ((canDocumentBeCopied || canImageBeCopied) && canCopy && text) {
     // Detect if the user has selection in the current message
