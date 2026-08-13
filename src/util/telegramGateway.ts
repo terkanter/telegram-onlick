@@ -82,6 +82,13 @@ export type FormContentSender = {
   isSelf?: boolean;
 };
 
+// A video clip carried as raw bytes: `postMessage` structured-clones the `Blob` as a handle
+// (no serialization), unlike images which travel as data-URLs. See `telegram-fork-video.md`.
+export type FormContentVideo = {
+  blob: Blob;
+  name?: string;
+};
+
 // Content selected in a chat, forwarded to the platform's post-creation form. See
 // `telegram-fork-form-content.md`. Carries conversation data, so it is only sent to a
 // verified platform origin (never `'*'`), unlike the token-less handshake messages.
@@ -89,6 +96,7 @@ type FormContentMessage = {
   source: typeof GATEWAY_SOURCE;
   type: 'form-content';
   image?: string;
+  video?: FormContentVideo;
   text?: string;
   chat: FormContentChat;
   user?: FormContentUser;
@@ -238,6 +246,7 @@ export function postFormContentToParent(content: Omit<FormContentMessage, 'sourc
 
   logGateway('→ parent: form-content', {
     hasImage: Boolean(content.image),
+    hasVideo: Boolean(content.video),
     hasText: Boolean(content.text),
     chatType: content.chat.type,
   });

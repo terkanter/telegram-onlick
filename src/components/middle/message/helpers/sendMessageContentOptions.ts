@@ -1,6 +1,8 @@
-import { getGlobal } from '../../../../global';
+import { getActions, getGlobal } from '../../../../global';
 
-import type { ApiMessage } from '../../../../api/types';
+import type {
+  ApiChat, ApiMessage, ApiPeer, ApiUser, ApiVideo,
+} from '../../../../api/types';
 import type { IconName } from '../../../../types/icons';
 import type { LangFn } from '../../../../util/localization';
 import { ApiMediaFormat } from '../../../../api/types';
@@ -11,7 +13,9 @@ import {
   getMessageHtmlId,
   getMessagePhoto,
   getMessageText,
+  getMessageVideo,
   getPhotoMediaHash,
+  getVideoMediaHash,
   getWebPagePhoto,
   getWebPageVideo,
   hasMediaLocalBlobUrl,
@@ -32,10 +36,15 @@ export type ISendOption = {
   label: string;
   icon: IconName;
   short: string;
-  handler: (callback?: () => void) => void;
+  handler: (callback?: (isSuccess?: boolean) => void) => void;
 };
 
 export type ISendOptions = ISendOption[];
+
+// Platform acceptance limits (see `telegram-fork-video.md`) — checked before sending so the
+// manager gets a clear refusal instead of the platform silently dropping the signal.
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 
 export function getMessageSendToParentWindowOptions(
   lang: LangFn,
@@ -139,6 +148,33 @@ export function getMessageSendToParentWindowOptions(
     });
   }
 
+  // Video travels as a `Blob` (never a data-URL — a 100MB clip is a ~133MB string). Mirrors the
+  // image buttons: with a caption → combined ТВ (replaces the rest), otherwise video-only В.
+  const video = getMessageVideo(message);
+  const canVideoBeSent = Boolean(canCopy && video && !video.isRound);
+
+  if (canVideoBeSent && text) {
+    options.push({
+      label: 'Отправить текст и видео',
+      short: 'ТВ',
+      icon: 'copy-media',
+      handler: createVideoSendHandler(
+        video!, getMessageTextWithSpoilers(lang, message, undefined), message, chat, user, sender, afterEffect,
+      ),
+    });
+
+    return options;
+  }
+
+  if (canVideoBeSent) {
+    options.push({
+      label: 'Отправить видео',
+      short: 'В',
+      icon: 'copy-media',
+      handler: createVideoSendHandler(video!, undefined, message, chat, user, sender, afterEffect),
+    });
+  }
+
   if (canCopy && text) {
     // Detect if the user has selection in the current message
     const hasSelection = Boolean((
@@ -181,6 +217,61 @@ export function getMessageSendToParentWindowOptions(
   }
   return options;
 }
+// Validates the clip against the platform limits, downloads its bytes, then sends one signal.
+// `afterEffectInternal(false)` on any failure keeps the button from flashing success.
+function createVideoSendHandler(
+  video: ApiVideo,
+  text: string | undefined,
+  message: ApiMessage,
+  chat?: ApiChat,
+  user?: ApiUser,
+  sender?: ApiPeer,
+  afterEffect?: () => void,
+): ISendOption['handler'] {
+  return (afterEffectInternal) => {
+    const { showNotification } = getActions();
+
+    if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType)) {
+      showNotification({ message: 'Формат видео не поддерживается — платформа не примет' });
+      afterEffectInternal?.(false);
+      return;
+    }
+    if (video.size > MAX_VIDEO_SIZE) {
+      showNotification({ message: 'Видео больше 100 МБ — платформа не примет' });
+      afterEffectInternal?.(false);
+      return;
+    }
+
+    // The full clip must be downloaded before the signal is sent (reuse the already-loaded
+    // blob if the video was played). The button shows a loading state meanwhile.
+    const blobUrlPromise: Promise<string | undefined> = video.blobUrl
+      ? Promise.resolve(video.blobUrl)
+      : mediaLoader.fetch(getVideoMediaHash(video, 'download')!, ApiMediaFormat.BlobUrl);
+
+    blobUrlPromise
+      .then((blobUrl) => {
+        if (!blobUrl) throw new Error('video download failed');
+        return fetch(blobUrl).then((response) => response.blob());
+      })
+      .then((blob) => sendFormContent({
+        video: { blob, name: video.fileName },
+        text,
+        chat,
+        user,
+        sender,
+        isSenderSelf: message.isOutgoing,
+      }))
+      .then(() => {
+        afterEffect?.();
+        afterEffectInternal?.(true);
+      })
+      .catch(() => {
+        showNotification({ message: 'Не удалось загрузить видео' });
+        afterEffectInternal?.(false);
+      });
+  };
+}
+
 function checkMessageHasSelection(message: ApiMessage): boolean {
   const selection = window.getSelection();
   const selectionParentNode = selection?.anchorNode?.parentNode as HTMLElement;

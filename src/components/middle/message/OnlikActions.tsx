@@ -5,10 +5,10 @@ import type { ISendOption } from './helpers/sendMessageContentOptions';
 
 import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
 import Button from '../../ui/Button';
-import useLang from '../../../hooks/useLang';
 
 type OwnProps = {
   message: ApiMessage;
@@ -28,9 +28,9 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
 
   const handleClick = useLastCallback(() => {
     setIsLoading(true);
-    option.handler(() => {
+    option.handler((isDone = true) => {
       setIsLoading(false);
-      setIsSuccess(true);
+      setIsSuccess(isDone);
     });
   });
 

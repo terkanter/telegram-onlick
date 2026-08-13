@@ -4,7 +4,7 @@ import type {
   ApiChat, ApiPeer, ApiUser, ApiUsername,
 } from '../api/types';
 import type {
-  FormContentChat, FormContentSender, FormContentUser, FormContentUsername,
+  FormContentChat, FormContentSender, FormContentUser, FormContentUsername, FormContentVideo,
 } from './telegramGateway';
 
 import { getPeerTitle, isApiPeerUser } from '../global/helpers/peers';
@@ -14,6 +14,7 @@ import { postFormContentToParent } from './telegramGateway';
 
 type SendFormContentParams = {
   image?: string;
+  video?: FormContentVideo;
   text?: string;
   chat?: ApiChat;
   user?: ApiUser;
@@ -32,12 +33,13 @@ const CHAT_TYPE_MAP: Record<ApiChat['type'], FormContentChat['type']> = {
 // Forwards content selected in a chat (photo and/or text) to the platform's post form.
 // The platform joins partial signals and opens the form, so we send whatever is selected.
 export function sendFormContent({
-  image, text, chat, user, sender, isSenderSelf,
+  image, video, text, chat, user, sender, isSenderSelf,
 }: SendFormContentParams) {
   if (!chat) return;
 
   postFormContentToParent({
     image,
+    video,
     text,
     chat: buildFormContentChat(chat),
     user: buildFormContentUser(user),
