@@ -33,9 +33,10 @@ import {
 } from '../../../../util/onlik-bridge';
 
 export type ISendOption = {
+  // Localized, doubles as the button's `aria-label`; the inline buttons render `icon`, the
+  // context menu shows this text.
   label: string;
   icon: IconName;
-  short: string;
   handler: (callback?: (isSuccess?: boolean) => void) => void;
 };
 
@@ -84,9 +85,8 @@ export function getMessageSendToParentWindowOptions(
     ));
 
     options.push({
-      label: `${getCopyLabel(hasSelection)} и картинку`,
-      short: 'ТК',
-      icon: 'copy',
+      label: lang('OnlikSendTextAndImage'),
+      icon: 'photo',
       handler: (afterEffectInternal?: () => void) => {
         // @ts-ignore
         function getText() {
@@ -126,9 +126,8 @@ export function getMessageSendToParentWindowOptions(
 
   if (canImageBeCopied || canDocumentBeCopied) {
     options.push({
-      label: 'Отправить картинку',
-      short: 'К',
-      icon: 'copy-media',
+      label: lang('OnlikSendImage'),
+      icon: 'photo',
       handler: (afterEffectInternal?: () => void) => {
         const hash = documentMediaHash || mediaHash;
         Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
@@ -155,11 +154,10 @@ export function getMessageSendToParentWindowOptions(
 
   if (canVideoBeSent && text) {
     options.push({
-      label: 'Отправить текст и видео',
-      short: 'ТВ',
-      icon: 'copy-media',
+      label: lang('OnlikSendTextAndVideo'),
+      icon: 'video',
       handler: createVideoSendHandler(
-        video!, getMessageTextWithSpoilers(lang, message, undefined), message, chat, user, sender, afterEffect,
+        lang, video!, getMessageTextWithSpoilers(lang, message, undefined), message, chat, user, sender, afterEffect,
       ),
     });
 
@@ -168,10 +166,9 @@ export function getMessageSendToParentWindowOptions(
 
   if (canVideoBeSent) {
     options.push({
-      label: 'Отправить видео',
-      short: 'В',
-      icon: 'copy-media',
-      handler: createVideoSendHandler(video!, undefined, message, chat, user, sender, afterEffect),
+      label: lang('OnlikSendVideo'),
+      icon: 'video',
+      handler: createVideoSendHandler(lang, video!, undefined, message, chat, user, sender, afterEffect),
     });
   }
 
@@ -185,9 +182,8 @@ export function getMessageSendToParentWindowOptions(
     ));
 
     options.push({
-      label: getCopyLabel(hasSelection),
-      short: 'Т',
-      icon: 'copy',
+      label: getCopyLabel(lang, hasSelection),
+      icon: 'quote-text',
       handler: (afterEffectInternal?: () => void) => {
         const messageIds = getMessageIdsForSelectedText();
         if (messageIds?.length && onCopyMessages) {
@@ -220,6 +216,7 @@ export function getMessageSendToParentWindowOptions(
 // Validates the clip against the platform limits, downloads its bytes, then sends one signal.
 // `afterEffectInternal(false)` on any failure keeps the button from flashing success.
 function createVideoSendHandler(
+  lang: LangFn,
   video: ApiVideo,
   text: string | undefined,
   message: ApiMessage,
@@ -232,12 +229,12 @@ function createVideoSendHandler(
     const { showNotification } = getActions();
 
     if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType)) {
-      showNotification({ message: 'Формат видео не поддерживается — платформа не примет' });
+      showNotification({ message: lang('OnlikVideoUnsupportedFormat') });
       afterEffectInternal?.(false);
       return;
     }
     if (video.size > MAX_VIDEO_SIZE) {
-      showNotification({ message: 'Видео больше 100 МБ — платформа не примет' });
+      showNotification({ message: lang('OnlikVideoTooLarge') });
       afterEffectInternal?.(false);
       return;
     }
@@ -266,7 +263,7 @@ function createVideoSendHandler(
         afterEffectInternal?.(true);
       })
       .catch(() => {
-        showNotification({ message: 'Не удалось загрузить видео' });
+        showNotification({ message: lang('OnlikVideoDownloadFailed') });
         afterEffectInternal?.(false);
       });
   };
@@ -278,9 +275,6 @@ function checkMessageHasSelection(message: ApiMessage): boolean {
   const selectedMessageElement = selectionParentNode?.closest<HTMLDivElement>('.Message.message-list-item');
   return getMessageHtmlId(message.id) === selectedMessageElement?.id;
 }
-function getCopyLabel(hasSelection: boolean): string {
-  if (hasSelection) {
-    return 'Отправить выделенный текст';
-  }
-  return 'Отправить текст';
+function getCopyLabel(lang: LangFn, hasSelection: boolean): string {
+  return hasSelection ? lang('OnlikSendSelectedText') : lang('OnlikSendText');
 }

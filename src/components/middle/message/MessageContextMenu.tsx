@@ -495,7 +495,7 @@ const MessageContextMenu: FC<OwnProps> = ({
             onClick={() => option.handler()}
             withPreventDefaultOnMouseDown
           >
-            {oldLang(option.label)}
+            {option.label}
           </MenuItem>
         ))}
         {copyOptions.map((option) => (
