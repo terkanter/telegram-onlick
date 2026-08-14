@@ -5,6 +5,7 @@ import type { ApiMessage, ApiMessageWebPage, ApiTypeStory, ApiWebPage, ApiWebPag
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import { AudioOrigin, type ThemeKey, type WebPageMediaSize } from '../../../types';
 
+import { RE_TME_LINK } from '../../../config';
 import { getPhotoFullDimensions } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
 import { tryParseDeepLink } from '../../../util/deepLinkParser';
@@ -14,6 +15,7 @@ import { getWebpageButtonIcon, getWebpageButtonLangKey } from './helpers/webpage
 
 import useDynamicColorListener from '../../../hooks/stickers/useDynamicColorListener';
 import useEnsureStory from '../../../hooks/useEnsureStory';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
@@ -97,6 +99,7 @@ const WebPage = ({
   const stickersRef = useRef<HTMLDivElement>();
 
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const handleMediaClick = useLastCallback(() => {
     onMediaClick!();
@@ -157,6 +160,9 @@ const WebPage = ({
     document,
   } = webPage;
   const { mediaSize } = messageWebPage;
+  // A t.me/username preview exposes the username via its link text/href — hide it when the
+  // role forbids usernames (see `telegram-fork-roles.md` §1).
+  const isTgUsernameLinkHidden = !canViewUsernames && Boolean(url) && RE_TME_LINK.test(url);
   const isStory = type === WEBPAGE_STORY_TYPE;
   const isGift = type === WEBPAGE_GIFT_TYPE;
   const isAuction = type === WEBPAGE_AUCTION_TYPE;
@@ -252,7 +258,9 @@ const WebPage = ({
             className={buildClassName('WebPage-text', 'WebPage-text_interactive')}
             onClick={handleArticleClick}
           >
-            <SafeLink className="site-name" url={url} text={siteName || displayUrl} />
+            {!isTgUsernameLinkHidden && (
+              <SafeLink className="site-name" url={url} text={siteName || displayUrl} />
+            )}
             {title && (
               <p className="site-title">{renderText(title)}</p>
             )}

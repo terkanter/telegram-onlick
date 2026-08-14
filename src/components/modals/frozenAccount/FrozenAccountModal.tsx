@@ -9,6 +9,7 @@ import { formatDateToString } from '../../../util/dates/oldDateFormat';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 import formatUsername from '../../common/helpers/formatUsername';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
@@ -42,6 +43,7 @@ const FrozenAccountModal = ({
     openUrl,
   } = getActions();
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const isOpen = Boolean(modal);
 
@@ -97,8 +99,9 @@ const FrozenAccountModal = ({
     const date = new Date(freezeUntilDate * 1000);
 
     const botLink = (
+      // Keep the appeal actionable but hide the bot's @username when usernames are forbidden
       <Link onClick={handleAppeal} isPrimary>
-        {formatUsername(botFreezeAppealUsername)}
+        {canViewUsernames ? formatUsername(botFreezeAppealUsername) : '@…'}
       </Link>
     );
 
@@ -113,7 +116,7 @@ const FrozenAccountModal = ({
           withNodes: true,
         })],
     ] satisfies TableAboutData;
-  }, [lang, botFreezeAppealUsername, freezeUntilDate]);
+  }, [lang, botFreezeAppealUsername, freezeUntilDate, canViewUsernames]);
 
   if (!listItemData) return undefined;
 

@@ -27,6 +27,7 @@ import buildClassName from '../../util/buildClassName';
 import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 
@@ -117,6 +118,7 @@ const GroupChatInfo = ({
   const chat = !withMonoforumStatus && monoforumChannel ? monoforumChannel : realChat;
 
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const isSuperGroup = chat && isChatSuperGroup(chat);
   const isTopic = Boolean(chat?.isForum && topic);
@@ -144,7 +146,10 @@ const GroupChatInfo = ({
     },
   );
 
-  const mainUsername = useMemo(() => chat && withUsername && getMainUsername(chat), [chat, withUsername]);
+  const mainUsername = useMemo(
+    () => chat && withUsername && canViewUsernames && getMainUsername(chat),
+    [chat, withUsername, canViewUsernames],
+  );
 
   if (!chat) {
     return undefined;

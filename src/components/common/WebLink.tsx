@@ -6,6 +6,7 @@ import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 import type { TextPart } from '../../types';
 import type { MenuItemContextAction } from '../ui/ListItem';
 
+import { RE_TME_LINK } from '../../config';
 import {
   getFirstLinkInMessage,
   getMessageTextWithFallback,
@@ -19,6 +20,7 @@ import { renderMessageSummary } from './helpers/renderMessageText';
 import renderText from './helpers/renderText';
 
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
@@ -58,6 +60,7 @@ const WebLink = ({
   const menuRef = useRef<HTMLDivElement>();
   const lang = useLang();
   const oldLang = useOldLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const handleMessageClick = useLastCallback(() => {
     onMessageClick(message);
@@ -130,12 +133,14 @@ const WebLink = ({
 
   if (!url) return undefined;
 
+  // A t.me/username link exposes a username — drop the copy affordance when usernames are forbidden
+  const canCopyUrl = canViewUsernames || !RE_TME_LINK.test(url);
   const mergedContextActions: MenuItemContextAction[] | undefined = contextActions && [
-    {
+    ...(canCopyUrl ? [{
       title: lang('CopyLink'),
       icon: 'copy',
       handler: () => copyTextToClipboard(url),
-    },
+    } satisfies MenuItemContextAction] : []),
     ...contextActions,
   ];
 

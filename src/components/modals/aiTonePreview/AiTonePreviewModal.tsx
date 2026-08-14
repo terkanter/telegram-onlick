@@ -10,6 +10,7 @@ import calcTextLineHeightAndCount from '../../../util/element/calcTextLineHeight
 import formatUsername from '../../common/helpers/formatUsername';
 import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
@@ -46,6 +47,7 @@ const AiTonePreviewModal = ({ modal, author, maxExamples = DEFAULT_MAX_EXAMPLES 
   } = getActions();
 
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const isOpen = Boolean(modal);
   const tone = modal?.tone;
@@ -112,7 +114,7 @@ const AiTonePreviewModal = ({ modal, author, maxExamples = DEFAULT_MAX_EXAMPLES 
     if (!tone) return undefined;
 
     const installsCount = tone.installsCount || 0;
-    const authorName = author?.usernames?.[0]?.username;
+    const authorName = canViewUsernames ? author?.usernames?.[0]?.username : undefined;
 
     if (!installsCount && !authorName) return undefined;
 

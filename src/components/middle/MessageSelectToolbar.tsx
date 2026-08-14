@@ -21,6 +21,7 @@ import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
 
 import useFlag from '../../hooks/useFlag';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
@@ -82,6 +83,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
     setSharedSettingOption,
   } = getActions();
   const lang = useOldLang();
+  const { canForwardMessages: canForwardByRole } = useGatewayPermissions();
 
   useCopySelectedMessages(isActive);
 
@@ -200,7 +202,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
 
           {Boolean(selectedMessagesCount) && (
             <div className="MessageSelectToolbar-actions">
-              {messageListType !== 'scheduled' && canForwardMessages && (
+              {messageListType !== 'scheduled' && canForwardMessages && canForwardByRole && (
                 renderButton(
                   'forward', lang('Chat.ForwardActionHeader'), openForwardMenuForSelectedMessages,
                 )

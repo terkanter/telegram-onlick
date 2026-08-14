@@ -11,6 +11,8 @@ import { ensureProtocol } from '../../../util/browser/url';
 import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
 import { buildFormattedDateHtml } from '../../../util/dates/formattedDate';
+import { getGatewayPermissions } from '../../../util/telegramGateway';
+import { isTelegramUsernameLink, maskTelegramUsernameLink } from '../../../util/telegramLinks';
 import { escapeHtmlAttribute } from '../../middle/composer/helpers/cleanHtml';
 import { buildCustomEmojiHtmlFromEntity } from '../../middle/composer/helpers/customEmoji';
 import renderText from './renderText';
@@ -514,6 +516,16 @@ function processEntity({
       return <FormattedDate entity={entity} asPreview>{text}</FormattedDate>;
     }
 
+    // Previews/quotes bypass MentionLink & SafeLink, so mask usernames here too (roles spec §1)
+    if (getGatewayPermissions()?.viewUsernames === false) {
+      if (entity.type === ApiMessageEntityTypes.Mention) {
+        return '@…';
+      }
+      if (typeof entityText === 'string' && isTelegramUsernameLink(entityText)) {
+        return maskTelegramUsernameLink(entityText);
+      }
+    }
+
     return text;
   }
 
@@ -539,27 +551,31 @@ function processEntity({
       );
     case ApiMessageEntityTypes.Hashtag: {
       const [tag, username] = entityContent.split('@');
+      // A channel-scoped tag (`#tag@username`) exposes a username — drop the `@username` part
+      // and its navigation when the role forbids usernames (fail-open otherwise)
+      const isUsernameHidden = Boolean(username) && getGatewayPermissions()?.viewUsernames === false;
       return (
         <a
-          onClick={() => handleHashtagClick(tag, username)}
+          onClick={() => handleHashtagClick(tag, isUsernameHidden ? undefined : username)}
           className="text-entity-link"
           dir="auto"
           data-entity-type={entity.type}
         >
-          {renderNestedMessagePart()}
+          {isUsernameHidden ? tag : renderNestedMessagePart()}
         </a>
       );
     }
     case ApiMessageEntityTypes.Cashtag: {
       const [tag, username] = entityContent.split('@');
+      const isUsernameHidden = Boolean(username) && getGatewayPermissions()?.viewUsernames === false;
       return (
         <a
-          onClick={() => handleHashtagClick(tag, username)}
+          onClick={() => handleHashtagClick(tag, isUsernameHidden ? undefined : username)}
           className="text-entity-link"
           dir="auto"
           data-entity-type={entity.type}
         >
-          {renderNestedMessagePart()}
+          {isUsernameHidden ? tag : renderNestedMessagePart()}
         </a>
       );
     }

@@ -26,12 +26,21 @@ type AuthMessage = {
   gatewayUrl: string;
 };
 
+// Per-user role flags (see `telegram-fork-roles.md` §1). Absent block or field → fail-open
+// (feature visible), matching the pre-load moment and the old platform.
+export type GatewayPermissions = {
+  search: boolean;
+  viewUsernames: boolean;
+  forwardMessages: boolean;
+};
+
 // Per-user platform settings pushed right after `auth` and on every toggle change.
 // Named `settings` (not `blur`) so future user settings ride the same channel.
 type SettingsMessage = {
   source: typeof GATEWAY_SOURCE;
   type: 'settings';
   blurImages?: boolean;
+  permissions?: GatewayPermissions;
 };
 
 // Route memory (see `telegram-fork-route-memory.md`): the platform stores `route` verbatim
@@ -110,6 +119,10 @@ export { getGatewayStatus, setGatewayStatus };
 // revealed with the per-media eye control get hidden again on re-enable.
 const [getBlurImagesGeneration, setBlurImagesGeneration] = createSignal(0);
 export { getBlurImagesGeneration };
+
+// Undefined until the platform pushes `permissions` — until then, fail-open (all allowed).
+const [getGatewayPermissions, setGatewayPermissions] = createSignal<GatewayPermissions | undefined>(undefined);
+export { getGatewayPermissions };
 
 let blurGenerationCounter = 0;
 
@@ -272,13 +285,21 @@ function isTrustedOrigin(origin: string) {
 }
 
 // Applies only known settings; unknown fields from newer platform versions are ignored.
-// Re-enabling blur mints a fresh generation, duplicate `blurImages: true` is a no-op.
+// Each push replaces the previous state (incl. the permissions block appearing/disappearing).
 function handleSettingsMessage(message: SettingsMessage) {
-  logGateway('← parent: settings | blurImages', message.blurImages);
+  logGateway('← parent: settings | blurImages', message.blurImages, '| permissions', message.permissions);
 
-  if (typeof message.blurImages !== 'boolean') return;
+  applyBlurImagesSetting(message.blurImages);
 
-  if (!message.blurImages) {
+  // Missing block → undefined → fail-open (see `getGatewayPermissions` consumers)
+  setGatewayPermissions(message.permissions);
+}
+
+// Re-enabling blur mints a fresh generation, duplicate `blurImages: true` is a no-op.
+function applyBlurImagesSetting(blurImages?: boolean) {
+  if (typeof blurImages !== 'boolean') return;
+
+  if (!blurImages) {
     setBlurImagesGeneration(0);
   } else if (getBlurImagesGeneration() === 0) {
     blurGenerationCounter += 1;

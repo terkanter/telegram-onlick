@@ -7,6 +7,7 @@ import { getMessageSenderName, isApiPeerChat } from '../../../global/helpers/pee
 import buildClassName from '../../../util/buildClassName';
 import renderText from '../../common/helpers/renderText';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
@@ -41,13 +42,14 @@ const MiddleSearchResult = ({
   onClick,
 }: OwnProps) => {
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const handleClick = useLastCallback(() => {
     onClick(message);
   });
 
   if (peer && !message) {
-    const username = getMainUsername(peer);
+    const username = canViewUsernames ? getMainUsername(peer) : undefined;
 
     const handlePeerClick = () => {
       onClick(peer.id);

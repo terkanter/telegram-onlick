@@ -49,6 +49,7 @@ import useCanvasBlur from '../../hooks/useCanvasBlur';
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
 import useFlag from '../../hooks/useFlag';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useLongPress from '../../hooks/useLongPress';
@@ -164,6 +165,7 @@ function Story({
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canForwardMessages, canViewUsernames } = useGatewayPermissions();
   const { isMobile } = useAppLayout();
   const [isComposerHasFocus, markComposerHasFocus, unmarkComposerHasFocus] = useFlag(false);
   const [isStoryPlaybackRequested, playStory, pauseStory] = useFlag(false);
@@ -215,14 +217,16 @@ function Story({
     : (isLoadedStory && story.forwardInfo?.fromName);
 
   const canCopyLink = Boolean(
-    isLoadedStory
+    canViewUsernames
+    && isLoadedStory
     && story.isPublic
     && !isChangelog
     && peer?.hasUsername,
   );
 
   const canShare = Boolean(
-    isLoadedStory
+    canForwardMessages
+    && isLoadedStory
     && story.isPublic
     && !story.noForwards
     && !isChangelog

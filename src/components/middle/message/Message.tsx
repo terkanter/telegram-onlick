@@ -151,6 +151,7 @@ import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
 import useEnsureMessage from '../../../hooks/useEnsureMessage';
 import useEnsureStory from '../../../hooks/useEnsureStory';
 import useFlag from '../../../hooks/useFlag';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import { useOnIntersect } from '../../../hooks/useIntersectionObserver';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -204,6 +205,7 @@ import MessageAppendix from './MessageAppendix';
 import MessageEffect from './MessageEffect';
 import MessageMeta from './MessageMeta';
 import MessagePhoneCall from './MessagePhoneCall';
+import { OnlikActionsButtons } from './OnlikActions';
 import PaidMediaOverlay from './PaidMediaOverlay';
 import Photo from './Photo';
 import Poll from './poll/Poll';
@@ -215,7 +217,6 @@ import StoryMention from './StoryMention';
 import TodoList from './TodoList';
 import Video from './Video';
 import WebPage from './WebPage';
-import { OnlikActionsButtons } from './OnlikActions';
 
 import './Message.scss';
 
@@ -507,6 +508,7 @@ const Message = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canForwardMessages, canViewUsernames } = useGatewayPermissions();
   const {
     id: messageId, chatId, forwardInfo, viaBotId, guestChatViaId, isTranscriptionError, factCheck,
     isTypingDraft, previousLocalId, fromRank,
@@ -1832,7 +1834,7 @@ const Message = ({
         ) : (!botSender && !guestFromSender) ? (
           NBSP
         ) : undefined}
-        {botSender?.hasUsername && (
+        {botSender?.hasUsername && canViewUsernames && (
           <span className="interactive via-sender">
             <span className="via">{lang('ViaBot')}</span>
             <span
@@ -2027,7 +2029,7 @@ const Message = ({
                     isCustomShape
                   />
                 )}
-                {canForward && (
+                {canForward && canForwardMessages && (
                   <Button
                     className="message-action-button"
                     color="translucent-white"

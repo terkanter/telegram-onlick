@@ -23,6 +23,7 @@ import { formatStarsAsIcon, formatStarsAsText } from '../../util/localization/fo
 
 import useFlag from '../../hooks/useFlag';
 import useFrozenProps from '../../hooks/useFrozenProps';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
@@ -77,6 +78,7 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
 
   const lang = useLang();
   const oldLang = useOldLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const renderingIsStory = usePreviousDeprecated(isStory, true);
   const [isShown, markIsShown, unmarkIsShown] = useFlag();
@@ -109,7 +111,8 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
   }, [selectedIds, messageCount, caption]);
 
   const canCopyLink = useMemo(() => {
-    if (!fromChatId || forwardMessageIds?.length !== 1) return false;
+    // A message link is a public t.me/username/id — hide it when usernames are forbidden
+    if (!canViewUsernames || !fromChatId || forwardMessageIds?.length !== 1) return false;
 
     const global = getGlobal();
     const chatMessages = selectChatMessages(global, fromChatId);
@@ -117,7 +120,7 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
 
     const message = chatMessages[forwardMessageIds[0]];
     return message && selectCanCopyMessageLink(global, message);
-  }, [fromChatId, forwardMessageIds]);
+  }, [canViewUsernames, fromChatId, forwardMessageIds]);
 
   useEffect(() => {
     if (isOpen) {

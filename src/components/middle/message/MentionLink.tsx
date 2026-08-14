@@ -7,6 +7,7 @@ import { ApiMessageEntityTypes } from '../../../api/types';
 import { selectUser } from '../../../global/selectors';
 
 import useAppLayout from '../../../hooks/useAppLayout';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 
 type OwnProps = {
   userId?: string;
@@ -32,6 +33,12 @@ const MentionLink = ({
   } = getActions();
 
   const { isMobile } = useAppLayout();
+  const { canViewUsernames } = useGatewayPermissions();
+
+  // A username mention (`@handle`) reveals a username — fully mask it and drop the click when
+  // the role forbids usernames. A `userId` mention shows a display name (not a username) and
+  // leads to a profile where the username is already gated, so it stays interactive.
+  const isUsernameHidden = Boolean(username) && !canViewUsernames;
 
   const handleClick = () => {
     if (isMobile) {
@@ -47,6 +54,10 @@ const MentionLink = ({
       openChatByUsername({ username: username.substring(1) });
     }
   };
+
+  if (isUsernameHidden) {
+    return <span dir="auto">@…</span>;
+  }
 
   return (
     <a

@@ -11,6 +11,7 @@ import { isUserId } from '../../../util/entities/ids';
 import { formatPhoneNumberWithCode } from '../../../util/phoneNumber';
 
 import useFlag from '../../../hooks/useFlag';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useOldLang from '../../../hooks/useOldLang';
 
@@ -48,6 +49,7 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
   const { unblockUser } = getActions();
 
   const lang = useOldLang();
+  const { canViewUsernames } = useGatewayPermissions();
   const [isBlockUserModalOpen, openBlockUserModal, closeBlockUserModal] = useFlag();
   const handleUnblockClick = useCallback((userId: string) => {
     unblockUser({ userId });
@@ -59,6 +61,8 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
   });
 
   const blockedUsernamesById = useMemo(() => {
+    if (!canViewUsernames) return {};
+
     return blockedIds.reduce((acc, userId) => {
       const isPrivate = isUserId(userId);
       const user = isPrivate ? usersByIds[userId] : undefined;
@@ -70,7 +74,7 @@ const SettingsPrivacyBlockedUsers: FC<OwnProps & StateProps> = ({
 
       return acc;
     }, {} as Record<string, string>);
-  }, [blockedIds, usersByIds]);
+  }, [blockedIds, usersByIds, canViewUsernames]);
 
   function renderContact(contactId: string, i: number, viewportOffset: number) {
     const isPrivate = isUserId(contactId);

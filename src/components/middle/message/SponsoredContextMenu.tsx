@@ -5,6 +5,7 @@ import {
 
 import type { IAnchorPosition } from '../../../types';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
@@ -45,6 +46,8 @@ const SponsoredContextMenu: FC<OwnProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>();
   const lang = useOldLang();
+  // Sponsor info is free text that routinely carries the advertiser's @username / t.me link
+  const { canViewUsernames } = useGatewayPermissions();
 
   const getTriggerElement = useLastCallback(() => triggerRef.current);
   const getLayout = useLastCallback(() => ({ withPortal: true }));
@@ -67,7 +70,7 @@ const SponsoredContextMenu: FC<OwnProps> = ({
       onClose={onClose}
       onCloseAnimationEnd={onCloseAnimationEnd}
     >
-      {sponsorInfo && onSponsorInfo && (
+      {sponsorInfo && onSponsorInfo && canViewUsernames && (
         <MenuItem icon="channel" onClick={onSponsorInfo}>{lang('SponsoredMessageSponsor')}</MenuItem>
       )}
       {!shouldSkipAbout && (

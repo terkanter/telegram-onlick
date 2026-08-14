@@ -7,7 +7,9 @@ import { ApiMessageEntityTypes, type LinkContext } from '../../api/types';
 import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import { ensureProtocol, getUnicodeUrl, isMixedScriptUrl } from '../../util/browser/url';
 import buildClassName from '../../util/buildClassName';
+import { isTelegramUsernameLink, maskTelegramUsernameLink } from '../../util/telegramLinks';
 
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLastCallback from '../../hooks/useLastCallback';
 
 type OwnProps = {
@@ -41,6 +43,7 @@ const SafeLink = ({
   entityType = ApiMessageEntityTypes.Url,
 }: OwnProps) => {
   const { openUrl } = getActions();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const content = children || text;
   const isRegularLink = url === text;
@@ -73,6 +76,17 @@ const SafeLink = ({
     className || 'text-entity-link',
     isRegularLink && 'word-break-all',
   );
+
+  // A t.me/username link reveals a username via its text, its href and its hover title. When the
+  // role forbids usernames, render it non-clickable with no title; mask the text if it is the URL
+  // itself (a custom label carries no username, so it is kept).
+  if (!canViewUsernames && isTelegramUsernameLink(url)) {
+    return (
+      <span className={classNames} dir={isRtl ? 'rtl' : 'auto'}>
+        {isRegularLink ? maskTelegramUsernameLink(text) : content}
+      </span>
+    );
+  }
 
   return (
     <a

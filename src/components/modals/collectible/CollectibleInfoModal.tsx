@@ -16,6 +16,7 @@ import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 import formatUsername from '../../common/helpers/formatUsername';
 import renderText from '../../common/helpers/renderText';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
@@ -47,8 +48,11 @@ const CollectibleInfoModal: FC<OwnProps & StateProps> = ({
     showNotification,
   } = getActions();
   const lang = useOldLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const isUsername = modal?.type === 'username';
+  // A collectible username is a literal @username — mask it and drop copy when usernames are forbidden
+  const isUsernameHidden = isUsername && !canViewUsernames;
 
   const handleClose = useLastCallback(() => {
     closeCollectibleInfoModal();
@@ -67,6 +71,7 @@ const CollectibleInfoModal: FC<OwnProps & StateProps> = ({
   });
 
   const handleCopy = useLastCallback(() => {
+    if (isUsernameHidden) return;
     const text = isUsername ? formatUsername(modal.collectible)
       : formatPhoneNumberWithCode(phoneCodeList, modal!.collectible);
     copyTextToClipboard(text);
@@ -80,10 +85,10 @@ const CollectibleInfoModal: FC<OwnProps & StateProps> = ({
     if (!modal) return undefined;
     const key = isUsername ? 'FragmentUsernameTitle' : 'FragmentPhoneTitle';
     const formattedCollectible = isUsername
-      ? formatUsername(modal.collectible)
+      ? (isUsernameHidden ? '@…' : formatUsername(modal.collectible))
       : formatPhoneNumberWithCode(phoneCodeList, modal.collectible);
     return lang(key, formattedCollectible);
-  }, [modal, isUsername, phoneCodeList, lang]);
+  }, [modal, isUsername, isUsernameHidden, phoneCodeList, lang]);
 
   const description = useMemo(() => {
     if (!modal) return undefined;
