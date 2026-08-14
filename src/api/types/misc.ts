@@ -179,6 +179,9 @@ export type ApiDialog = ApiDialogError | ApiDialogMessage | ApiDialogContact | A
 export type ApiError = {
   message: string;
   code?: number;
+  // Gateway machine tag (e.g. `TELEGRAM_MESSAGE_BLOCKED`) used to branch the UI; when set, the
+  // human `message` is shown directly instead of the error-key lookup. See roles spec §2.
+  errorCode?: string;
   entities?: ApiMessageEntity[];
   hasErrorKey?: boolean;
   isSlowMode?: boolean;

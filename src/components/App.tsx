@@ -18,10 +18,12 @@ import { ACCOUNT_SLOT, getAccountsInfo, getAccountSlotUrl } from '../util/multia
 import { hasEncryptedSession } from '../util/passcode';
 import { getInitialLocationHash, parseInitialLocationHash } from '../util/routing';
 import { checkSessionLocked, hasStoredSession } from '../util/sessions';
+import { getGatewayStatus } from '../util/telegramGateway';
 import { updateSizes } from '../util/windowSize';
 
 import useTauriDrag from '../hooks/tauri/useTauriDrag';
 import useAppLayout from '../hooks/useAppLayout';
+import useDerivedState from '../hooks/useDerivedState';
 import usePrevious from '../hooks/usePrevious';
 import { useSignalEffect } from '../hooks/useSignalEffect';
 import { getIsInBackground } from '../hooks/window/useBackgroundMode';
@@ -74,6 +76,10 @@ const App = ({
 }: StateProps) => {
   const { isMobile } = useAppLayout();
   const isMobileOs = PLATFORM_ENV === 'iOS' || PLATFORM_ENV === 'Android';
+  // Gateway access can be revoked mid-session (WS 4403); the screen must appear even once
+  // `authState` is ready, so gate on the status signal here rather than only on auth state
+  const gatewayStatus = useDerivedState(getGatewayStatus);
+  const isGatewayRevoked = IS_GATEWAY && gatewayStatus === 'revoked';
 
   useEffect(() => {
     if (IS_INSTALL_PROMPT_SUPPORTED) {
@@ -145,9 +151,9 @@ const App = ({
   } else if (isScreenLocked) {
     page = 'lock';
     activeKey = AppScreens.lock;
-  } else if (IS_GATEWAY && authState !== 'authorizationStateReady') {
-    // Variant 2: never show the login form. Until the gateway signals `ready`,
-    // hold a placeholder ("waiting for signal"); login states are unreachable here.
+  } else if (IS_GATEWAY && (isGatewayRevoked || authState !== 'authorizationStateReady')) {
+    // Variant 2: never show the login form. Until the gateway signals `ready` (or after access
+    // is revoked mid-session), hold the placeholder; login states are unreachable here.
     activeKey = AppScreens.gateway;
   } else if (authState) {
     switch (authState) {

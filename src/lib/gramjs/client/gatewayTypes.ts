@@ -16,7 +16,10 @@ export interface GatewayTransport {
 }
 
 // Rejection shape from `invoke`, carrying the fields needed to rebuild a gramjs `RPCError`.
+// `gatewayErrorCode` is the backend's machine tag (e.g. `TELEGRAM_MESSAGE_BLOCKED`) used to
+// branch the UI; absent for untagged errors. See `telegram-fork-roles.md` §2.
 export type GatewayError = Error & {
   errorMessage: string;
   errorCode: number;
+  gatewayErrorCode?: string;
 };

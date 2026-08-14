@@ -230,9 +230,19 @@ export function continueGatewayInit() {
   gatewayCacheBarrier?.resolve();
 }
 
-// On a closed WS, surface a broken state; the main thread re-requests a token and reconnects.
-function onGatewayClose() {
-  logGatewayError('worker: gateway closed → emit connectionStateBroken');
+// WS close 4403 means access was revoked — the main thread must show the "revoked" screen
+// and NOT reconnect. Every other code (4401 token/session, 4408 token late, …) is a broken
+// connection: the main thread re-requests a token and reconnects.
+const GATEWAY_CLOSE_REVOKED = 4403;
+
+function onGatewayClose(code?: number) {
+  if (code === GATEWAY_CLOSE_REVOKED) {
+    logGatewayError('worker: gateway closed 4403 → access revoked, no reconnect');
+    sendApiUpdate({ '@type': 'updateGatewayRevoked' });
+    return;
+  }
+
+  logGatewayError('worker: gateway closed → emit connectionStateBroken', { code });
   sendApiUpdate({ '@type': 'updateConnectionState', connectionState: 'connectionStateBroken' });
 }
 
@@ -586,7 +596,7 @@ export async function fetchCurrentUser() {
 }
 
 export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, request: T) {
-  const { message, code } = buildApiError(err);
+  const { message, code, errorCode } = buildApiError(err);
 
   const isSlowMode = err instanceof errors.FloodError && (
     request instanceof GramJs.messages.SendMessage
@@ -599,10 +609,21 @@ export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, req
     error: {
       message,
       code,
+      errorCode,
       isSlowMode,
       hasErrorKey: true,
     },
   });
+}
+
+// `send*`/`forward*` swallow errors into `updateMessageSendFailed`, so a tagged gateway refusal
+// (blocked word, forwarding not allowed, session dead, …) would otherwise be invisible. Surface
+// its human message; untagged errors stay as-is (no dialog on send failure). See roles spec §2.
+export function dispatchGatewayRefusalError(err: Error) {
+  const error = buildApiError(err);
+  if (!error.errorCode) return;
+
+  sendApiUpdate({ '@type': 'error', error });
 }
 
 function dispatchNotSupportedInFrozenAccountUpdate<T extends GramJs.AnyRequest>(err: Error, request: T) {

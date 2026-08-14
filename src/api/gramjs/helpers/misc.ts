@@ -114,11 +114,13 @@ export function checkErrorType(error: unknown): error is Error {
   return true;
 }
 
-export function buildApiError(error: Error): Pick<ApiError, 'message' | 'code' | 'hasErrorKey'> {
+export function buildApiError(error: Error): Pick<ApiError, 'message' | 'code' | 'errorCode' | 'hasErrorKey'> {
   if (error instanceof errors.RPCError) {
     return {
       message: error.errorMessage,
       code: error.code,
+      // Gateway attaches its machine tag onto the rebuilt RPCError (see roles spec §2)
+      errorCode: (error as { gatewayErrorCode?: string }).gatewayErrorCode,
       hasErrorKey: true,
     };
   }

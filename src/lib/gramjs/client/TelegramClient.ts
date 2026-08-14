@@ -1252,10 +1252,12 @@ class TelegramClient {
         throw err;
       }
       logGatewayError('client: invoke RPC error', request.className, gatewayError.errorMessage, gatewayError.errorCode);
-      throw RPCMessageToError(
+      const rpcError = RPCMessageToError(
         new Api.RpcError({ errorCode: gatewayError.errorCode ?? 400, errorMessage: gatewayError.errorMessage }),
         request,
       );
+      // Carry the backend's machine tag so the app layer can branch the UI (roles spec §2)
+      throw Object.assign(rpcError, { gatewayErrorCode: gatewayError.gatewayErrorCode });
     }
   }
 

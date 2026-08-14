@@ -123,7 +123,9 @@ import { sendApiUpdate } from '../updates/apiUpdateEmitter';
 import { processMessageAndUpdateThreadInfo } from '../updates/entityProcessor';
 import { processAffectedHistory, updateChannelState } from '../updates/updateManager';
 import { requestChatUpdate } from './chats';
-import { handleGramJsUpdate, invokeRequest, uploadFile } from './client';
+import {
+  dispatchGatewayRefusalError, handleGramJsUpdate, invokeRequest, uploadFile,
+} from './client';
 
 const FAST_SEND_TIMEOUT = 1000;
 const INPUT_WAVEFORM_LENGTH = 63;
@@ -618,6 +620,8 @@ export function sendApiMessage(
       if (error.errorMessage === 'PRIVACY_PREMIUM_REQUIRED') {
         sendApiUpdate({ '@type': 'updateRequestUserUpdate', id: chat.id });
       }
+
+      dispatchGatewayRefusalError(error);
 
       sendApiUpdate({
         '@type': localMessage.isScheduled ? 'updateScheduledMessageSendFailed' : 'updateMessageSendFailed',
@@ -2117,6 +2121,8 @@ export async function forwardApiMessages(params: ForwardMessagesParams) {
     });
     if (update) handleMultipleLocalMessagesUpdate(messagesForUpdate, update);
   } catch (error: any) {
+    dispatchGatewayRefusalError(error);
+
     Object.values(localMessages).forEach((localMessage) => {
       sendApiUpdate({
         '@type': localMessage.isScheduled ? 'updateScheduledMessageSendFailed' : 'updateMessageSendFailed',

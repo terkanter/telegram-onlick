@@ -23,7 +23,7 @@ import { clearWebTokenAuth } from '../../../util/routing';
 import { setServerTimeOffset } from '../../../util/serverTime';
 import { updateSessionUserId } from '../../../util/sessions';
 import {
-  getGatewayAnnouncedAccountId, markGatewayReconnect, notifyGatewayReady,
+  getGatewayAnnouncedAccountId, markGatewayReconnect, notifyGatewayReady, setGatewayStatus,
 } from '../../../util/telegramGateway';
 import { forceWebsync } from '../../../util/websync';
 import { callApi } from '../../../api/gramjs';
@@ -50,6 +50,12 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'updateGatewayAccountId':
       void onUpdateGatewayAccountId(update);
+      break;
+
+    case 'updateGatewayRevoked':
+      // Access revoked (WS 4403): show the terminal "revoked" screen, no reconnect
+      logGateway('gateway access revoked');
+      setGatewayStatus('revoked');
       break;
 
     case 'updateAuthorizationState':
@@ -112,6 +118,12 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       break;
 
     case 'error': {
+      // A gateway refusal carries a human `message` under a machine `errorCode`; render it
+      // directly (the error-key lookup only maps raw Telegram strings). Untagged errors — as before.
+      const errorData = update.error.errorCode
+        ? { ...update.error, hasErrorKey: false }
+        : update.error;
+
       Object.values(global.byTabId).forEach(({ id: tabId }) => {
         const paymentShippingError = getShippingError(update.error);
         if (paymentShippingError) {
@@ -119,7 +131,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         } else if (shouldClosePaymentModal(update.error)) {
           actions.closePaymentModal({ tabId });
         } else if (actions.showDialog) {
-          actions.showDialog({ data: { type: 'error', ...update.error }, tabId });
+          actions.showDialog({ data: { type: 'error', ...errorData }, tabId });
         }
       });
 

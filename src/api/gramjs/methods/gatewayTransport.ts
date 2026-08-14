@@ -19,7 +19,7 @@ type PendingRequest = {
 type GatewayInboundFrame =
   | { type: 'ready'; accountId: string }
   | { type: 'result'; id: number; response: string }
-  | { type: 'error'; id: number; message: string; code?: number }
+  | { type: 'error'; id: number; message: string; code?: number; errorCode?: string }
   | { type: 'update'; update: string };
 
 type GatewayTransportOptions = {
@@ -134,10 +134,12 @@ export default class GatewayTransport implements IGatewayTransport {
       }
       case 'error': {
         const pending = this.pending.get(frame.id);
-        logGatewayError('← error', { id: frame.id, message: frame.message, code: frame.code });
+        logGatewayError('← error', {
+          id: frame.id, message: frame.message, code: frame.code, errorCode: frame.errorCode,
+        });
         if (!pending) return;
         this.pending.delete(frame.id);
-        pending.reject(toGatewayError(frame.message, frame.code ?? DEFAULT_ERROR_CODE));
+        pending.reject(toGatewayError(frame.message, frame.code ?? DEFAULT_ERROR_CODE, frame.errorCode));
         break;
       }
       case 'update':
@@ -165,6 +167,6 @@ export default class GatewayTransport implements IGatewayTransport {
   }
 }
 
-function toGatewayError(message: string, code: number): GatewayError {
-  return Object.assign(new Error(message), { errorMessage: message, errorCode: code });
+function toGatewayError(message: string, code: number, gatewayErrorCode?: string): GatewayError {
+  return Object.assign(new Error(message), { errorMessage: message, errorCode: code, gatewayErrorCode });
 }
