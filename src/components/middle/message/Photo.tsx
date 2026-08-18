@@ -19,6 +19,7 @@ import { calculateMediaDimensions, MIN_MEDIA_HEIGHT } from './helpers/mediaDimen
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useFlag from '../../../hooks/useFlag';
+import useGatewayMediaBlur from '../../../hooks/useGatewayMediaBlur';
 import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useLayoutEffectWithPrevDeps from '../../../hooks/useLayoutEffectWithPrevDeps';
@@ -32,6 +33,7 @@ import useBlurredMediaThumbRef from './hooks/useBlurredMediaThumbRef';
 import Icon from '../../common/icons/Icon';
 import MediaSpoiler from '../../common/MediaSpoiler';
 import SensitiveContentConfirmModal from '../../common/SensitiveContentConfirmModal';
+import MediaBlurCover from '../../gateway/MediaBlurCover';
 import ProgressSpinner from '../../ui/ProgressSpinner';
 import MediaBadge from './MediaBadge';
 
@@ -127,6 +129,7 @@ const Photo = <T,>({
   const thumbDataUri = getMediaThumbUri(photo);
 
   const { updateContentSettings, openAgeVerificationModal } = getActions();
+  const { isMediaBlurred, revealMedia } = useGatewayMediaBlur();
   const [isNsfwModalOpen, openNsfwModal, closeNsfwModal] = useFlag();
   const [shouldAlwaysShowNsfw, setShouldAlwaysShowNsfw] = useState(false);
 
@@ -321,6 +324,7 @@ const Photo = <T,>({
           {`${Math.round(transferProgress * 100)}%`}
         </MediaBadge>
       )}
+      {isMediaBlurred && <MediaBlurCover isInSelectMode={isInSelectMode} onReveal={revealMedia} />}
       <SensitiveContentConfirmModal
         isOpen={isNsfwModalOpen}
         onClose={closeNsfwModal}

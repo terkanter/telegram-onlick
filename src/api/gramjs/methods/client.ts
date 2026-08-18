@@ -21,6 +21,8 @@ import {
   APP_CODE_NAME,
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, TELEGRAM_API_HASH, TELEGRAM_API_ID, UPLOAD_WORKERS,
 } from '../../../config';
+import Deferred from '../../../util/Deferred';
+import { logGateway, logGatewayError } from '../../../util/gatewayLog';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
 import {
@@ -68,12 +70,18 @@ import {
   onRequestRegistration,
   onWebAuthTokenFailed,
 } from './auth';
+import GatewayTransport from './gatewayTransport';
 import downloadMediaWithClient, { parseMediaUrl } from './media';
 
 import { ChatAbortController } from '../ChatAbortController';
 
 const DEFAULT_USER_AGENT = 'Unknown UserAgent';
 const DEFAULT_PLATFORM = 'Unknown platform';
+
+// Gateway mode (variant 2): the backend runs `initConnection` with its own credentials,
+// so the fork needs only placeholders to satisfy the client constructor. They never reach Telegram.
+const GATEWAY_API_ID_PLACEHOLDER = 1;
+const GATEWAY_API_HASH_PLACEHOLDER = 'gateway';
 
 GramJsLogger.setLevel(DEBUG_GRAMJS ? 'debug' : 'warn');
 
@@ -95,7 +103,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     userAgent, platform, sessionData, isWebmSupported, maxBufferSize, webAuthToken, dcId,
     mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
     shouldDebugExportedSenders, langCode, isTestServerRequested, accountIds,
-    hasPasskeySupport,
+    hasPasskeySupport, gatewayUrl, gatewayToken,
   } = initialArgs;
 
   const session = new sessions.CallbackSession(sessionData, onSessionUpdate);
@@ -103,6 +111,13 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
   (self as any).isWebmSupported = isWebmSupported;
 
   (self as any).maxBufferSize = maxBufferSize;
+
+  if (gatewayUrl && gatewayToken) {
+    await initGatewayClient({
+      gatewayUrl, gatewayToken, userAgent, platform, langCode,
+    }, onConnected);
+    return;
+  }
 
   client = new TelegramClient(
     session,
@@ -187,6 +202,133 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     }
 
     throw err;
+  }
+}
+
+// Gateway mode (variant 2): build the client over the WS transport instead of connecting to
+// Telegram. No login flow, no session persisted; the first request (`fetchCurrentUser`)
+// confirms authorization. See `telegram-fork-spec.md`.
+
+type GatewayBaseArgs = {
+  userAgent: string;
+  platform?: string;
+  langCode: string;
+};
+
+// Retained from the first init so a reconnect can rebuild the client without re-plumbing.
+let gatewayBaseArgs: GatewayBaseArgs | undefined;
+
+// The main thread applies the per-account global cache between WS connect and the
+// post-connect phase (auth ready, updates manager, sync) — otherwise the first sync data
+// would land in an empty global and get clobbered by the later cache merge. The timeout
+// keeps the app booting if the main thread never answers.
+const GATEWAY_CACHE_BARRIER_TIMEOUT = 3000;
+let gatewayCacheBarrier: Deferred<void> | undefined;
+
+// Called by the main thread once the per-account cache is applied (or skipped)
+export function continueGatewayInit() {
+  gatewayCacheBarrier?.resolve();
+}
+
+// WS close 4403 means access was revoked — the main thread must show the "revoked" screen
+// and NOT reconnect. Every other code (4401 token/session, 4408 token late, …) is a broken
+// connection: the main thread re-requests a token and reconnects.
+const GATEWAY_CLOSE_REVOKED = 4403;
+
+function onGatewayClose(code?: number) {
+  if (code === GATEWAY_CLOSE_REVOKED) {
+    logGatewayError('worker: gateway closed 4403 → access revoked, no reconnect');
+    sendApiUpdate({ '@type': 'updateGatewayRevoked' });
+    return;
+  }
+
+  logGatewayError('worker: gateway closed → emit connectionStateBroken', { code });
+  sendApiUpdate({ '@type': 'updateConnectionState', connectionState: 'connectionStateBroken' });
+}
+
+function buildGatewayClient(transport: GatewayTransport, baseArgs: GatewayBaseArgs) {
+  client = new TelegramClient(
+    new sessions.CallbackSession(undefined, () => undefined),
+    GATEWAY_API_ID_PLACEHOLDER,
+    GATEWAY_API_HASH_PLACEHOLDER,
+    {
+      deviceModel: navigator.userAgent || baseArgs.userAgent || DEFAULT_USER_AGENT,
+      systemVersion: baseArgs.platform || DEFAULT_PLATFORM,
+      appVersion: `${APP_VERSION} ${APP_CODE_NAME}`,
+      langPack: LANG_PACK,
+      langCode: baseArgs.langCode,
+      systemLangCode: navigator.language,
+      gatewayTransport: transport,
+    } as any,
+  );
+
+  client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);
+}
+
+async function initGatewayClient(
+  args: GatewayBaseArgs & { gatewayUrl: string; gatewayToken: string },
+  onConnected?: NoneToVoidFunction,
+) {
+  const {
+    gatewayUrl, gatewayToken, userAgent, platform, langCode,
+  } = args;
+
+  gatewayBaseArgs = { userAgent, platform, langCode };
+
+  logGateway('worker: initGatewayClient →', gatewayUrl);
+  const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
+  buildGatewayClient(transport, gatewayBaseArgs);
+
+  try {
+    await client.connect();
+
+    const accountId = transport.getAccountId();
+    if (accountId) {
+      logGateway('worker: connected as', accountId, '; waiting for cache barrier');
+      gatewayCacheBarrier = new Deferred<void>();
+      sendApiUpdate({ '@type': 'updateGatewayAccountId', accountId });
+      await Promise.race([gatewayCacheBarrier.promise, pause(GATEWAY_CACHE_BARRIER_TIMEOUT)]);
+      gatewayCacheBarrier = undefined;
+    }
+
+    logGateway('worker: proceeding to ready; fetching current user');
+    onConnected?.();
+    onAuthReady();
+    sendApiUpdate({ '@type': 'updateApiReady' });
+    initUpdatesManager(invokeRequest);
+    void fetchCurrentUser();
+  } catch (err) {
+    logGatewayError('worker: initGatewayClient failed', err);
+    if (DEBUG) {
+      log('GATEWAY CONNECTING ERROR', err);
+    }
+
+    onGatewayClose();
+  }
+}
+
+// Reconnect in place with a fresh token for the SAME account (4401 / token expiry). Keeps the
+// local cache and update state, so `getDifference` catches up. Account switch is a full reload.
+export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: string; gatewayToken: string }) {
+  if (!gatewayBaseArgs) return;
+
+  logGateway('worker: reinitGateway →', gatewayUrl);
+  client?.disconnectGateway();
+
+  const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
+  buildGatewayClient(transport, gatewayBaseArgs);
+
+  try {
+    await client.connect();
+    logGateway('worker: reconnected');
+    void fetchCurrentUser();
+  } catch (err) {
+    logGatewayError('worker: reinitGateway failed', err);
+    if (DEBUG) {
+      log('GATEWAY RECONNECT ERROR', err);
+    }
+
+    onGatewayClose();
   }
 }
 
@@ -454,7 +596,7 @@ export async function fetchCurrentUser() {
 }
 
 export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, request: T) {
-  const { message, code } = buildApiError(err);
+  const { message, code, errorCode } = buildApiError(err);
 
   const isSlowMode = err instanceof errors.FloodError && (
     request instanceof GramJs.messages.SendMessage
@@ -467,10 +609,21 @@ export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, req
     error: {
       message,
       code,
+      errorCode,
       isSlowMode,
       hasErrorKey: true,
     },
   });
+}
+
+// `send*`/`forward*` swallow errors into `updateMessageSendFailed`, so a tagged gateway refusal
+// (blocked word, forwarding not allowed, session dead, …) would otherwise be invisible. Surface
+// its human message; untagged errors stay as-is (no dialog on send failure). See roles spec §2.
+export function dispatchGatewayRefusalError(err: Error) {
+  const error = buildApiError(err);
+  if (!error.errorCode) return;
+
+  sendApiUpdate({ '@type': 'error', error });
 }
 
 function dispatchNotSupportedInFrozenAccountUpdate<T extends GramJs.AnyRequest>(err: Error, request: T) {

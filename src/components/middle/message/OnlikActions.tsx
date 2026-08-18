@@ -5,10 +5,11 @@ import type { ISendOption } from './helpers/sendMessageContentOptions';
 
 import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
-import useLang from '../../../hooks/useLang';
 
 type OwnProps = {
   message: ApiMessage;
@@ -28,9 +29,9 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
 
   const handleClick = useLastCallback(() => {
     setIsLoading(true);
-    option.handler(() => {
+    option.handler((isDone = true) => {
       setIsLoading(false);
-      setIsSuccess(true);
+      setIsSuccess(isDone);
     });
   });
 
@@ -40,9 +41,10 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
       size="tiny"
       color={isSuccess ? 'primary' : 'secondary'}
       onClick={handleClick}
+      ariaLabel={option.label}
       style="width: 32px; height: 32px;"
     >
-      {isLoading ? '...' : option.short}
+      {isLoading ? '...' : <Icon name={option.icon} />}
     </Button>
   );
 }

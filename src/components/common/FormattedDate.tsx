@@ -13,6 +13,7 @@ import { getServerTime } from '../../util/serverTime';
 
 import useInterval from '../../hooks/schedulers/useInterval';
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useSchedule from '../../hooks/useSchedule';
@@ -52,7 +53,9 @@ const FormattedDate = ({
     entity.relative && getUpdateInterval(Math.abs(entity.date - getServerTime())),
   );
 
-  const canSetReminder = Boolean(chatId && messageId);
+  // "Set reminder" forwards the message to Saved Messages — blocked when forwarding is off
+  const { canForwardMessages } = useGatewayPermissions();
+  const canSetReminder = Boolean(chatId && messageId && canForwardMessages);
 
   const { formattedDate, canonicalDate } = useMemo(() => {
     void cacheBreaker;

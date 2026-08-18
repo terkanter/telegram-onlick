@@ -39,6 +39,7 @@ import { ARE_CALLS_SUPPORTED, IS_APP } from '../../util/browser/windowEnvironmen
 import { isUserId } from '../../util/entities/ids';
 import focusNoScroll from '../../util/focusNoScroll';
 
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import { useHotkeys } from '../../hooks/useHotkeys';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
@@ -107,7 +108,7 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
   canRestartBot,
   canUnblock,
   canSubscribe,
-  canSearch,
+  canSearch: canSearchProp,
   canCall,
   canMute,
   canViewStatistics,
@@ -157,6 +158,9 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
   const menuButtonRef = useRef<HTMLButtonElement>();
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canSearch: canSearchByRole } = useGatewayPermissions();
+  // In-chat message search is gated by the role too (see roles spec §1)
+  const canSearch = canSearchProp && canSearchByRole;
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<IAnchorPosition | undefined>(undefined);

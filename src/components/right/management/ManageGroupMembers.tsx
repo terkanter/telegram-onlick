@@ -18,6 +18,7 @@ import { unique } from '../../../util/iteratees';
 import sortChatIds from '../../common/helpers/sortChatIds';
 
 import usePeerStoriesPolling from '../../../hooks/polling/usePeerStoriesPolling';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
 import useKeyboardListNavigation from '../../../hooks/useKeyboardListNavigation';
@@ -90,6 +91,7 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
   } = getActions();
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canSearch } = useGatewayPermissions();
   const inputRef = useRef<HTMLInputElement>();
   const containerRef = useRef<HTMLDivElement>();
 
@@ -210,7 +212,7 @@ const ManageGroupMembers: FC<OwnProps & StateProps> = ({
   return (
     <div className="Management ManageGroupMembers">
       <div className="panel-content">
-        {noAdmins && renderSearchField()}
+        {noAdmins && canSearch && renderSearchField()}
         {canHideParticipants && !isChannel && (
           <>
             <Island>

@@ -19,6 +19,9 @@ interface ImportMetaEnv {
   readonly TG_TELEGRAM_API_HASH?: string;
   readonly TG_TELEGRAM_API_ID?: string;
   readonly TG_TEST_SESSION?: string;
+  // Gateway mode (variant 2): enable flag + trusted platform origins (comma-separated).
+  readonly TG_GATEWAY?: string;
+  readonly TG_GATEWAY_ALLOWED_ORIGINS?: string;
 }
 
 declare namespace React {

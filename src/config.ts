@@ -21,6 +21,15 @@ export const IS_TEST = APP_ENV === 'test';
 export const IS_PERF = APP_ENV === 'perf';
 export const IS_BETA = APP_ENV === 'staging';
 
+// Gateway mode: the fork runs embedded in the platform iframe and talks to our
+// WS gateway instead of Telegram directly. Build-time flag; off for the regular build.
+export const IS_GATEWAY = import.meta.env.TG_GATEWAY === '1';
+// Trusted platform origins allowed to send `auth` messages to the fork.
+export const GATEWAY_ALLOWED_ORIGINS = (import.meta.env.TG_GATEWAY_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 export const PAID_MESSAGES_PURPOSE = 'paid_messages';
 
 export const DEBUG = APP_ENV !== 'production';

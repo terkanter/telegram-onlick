@@ -1,7 +1,10 @@
-import { getGlobal } from '../../../../global';
+import { getActions, getGlobal } from '../../../../global';
 
-import type { ApiMessage } from '../../../../api/types';
+import type {
+  ApiChat, ApiMessage, ApiPeer, ApiUser, ApiVideo,
+} from '../../../../api/types';
 import type { IconName } from '../../../../types/icons';
+import type { LangFn } from '../../../../util/localization';
 import { ApiMediaFormat } from '../../../../api/types';
 
 import {
@@ -10,31 +13,39 @@ import {
   getMessageHtmlId,
   getMessagePhoto,
   getMessageText,
+  getMessageVideo,
   getPhotoMediaHash,
+  getVideoMediaHash,
   getWebPagePhoto,
   getWebPageVideo,
   hasMediaLocalBlobUrl,
 } from '../../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../../global/helpers/messageSummary';
-import { selectChat, selectUser, selectWebPageFromMessage } from '../../../../global/selectors';
+import {
+  selectChat, selectSender, selectUser, selectWebPageFromMessage,
+} from '../../../../global/selectors';
 import getMessageIdsForSelectedText from '../../../../util/getMessageIdsForSelectedText';
 import * as mediaLoader from '../../../../util/mediaLoader';
 import {
   blobToBase64,
   convertToBlob,
-  sendNewPost,
+  sendFormContent,
 } from '../../../../util/onlik-bridge';
-import { IS_SAFARI } from '../../../../util/browser/windowEnvironment';
-import { LangFn } from '../../../../util/localization';
 
 export type ISendOption = {
+  // Localized, doubles as the button's `aria-label`; the inline buttons render `icon`, the
+  // context menu shows this text.
   label: string;
   icon: IconName;
-  short: string;
-  handler: (callback?: () => void) => void;
+  handler: (callback?: (isSuccess?: boolean) => void) => void;
 };
 
 export type ISendOptions = ISendOption[];
+
+// Platform acceptance limits (see `telegram-fork-video.md`) — checked before sending so the
+// manager gets a clear refusal instead of the platform silently dropping the signal.
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 
 export function getMessageSendToParentWindowOptions(
   lang: LangFn,
@@ -52,12 +63,17 @@ export function getMessageSendToParentWindowOptions(
   const document = getMessageDocument(message);
   const mediaHash = photo ? getPhotoMediaHash(photo, 'inline') : undefined;
   const documentMediaHash = document ? getDocumentMediaHash(document, 'full') : undefined;
-  const canImageBeCopied = canCopy && photo && (mediaHash || hasMediaLocalBlobUrl(photo)) && !IS_SAFARI;
+  // Unlike clipboard copy (`copyOptions.ts`), this path serializes the image via
+  // `canvas → base64 → postMessage`, which works on Safari — so no `IS_SAFARI` gate here,
+  // otherwise the К/ТК buttons never appear on iOS (every iOS browser reports as Safari).
+  const canImageBeCopied = canCopy && photo && (mediaHash || hasMediaLocalBlobUrl(photo));
   const selection = window.getSelection();
   const chat = selectChat(global, message.chatId);
   const user = global.currentUserId ? selectUser(global, global.currentUserId) : undefined;
-  const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document))
-    && !IS_SAFARI;
+  // The account owner is `user`; `sender` is who authored the picked message (the counterpart,
+  // a group member, or the channel itself) — the platform reads them into separate fields.
+  const sender = selectSender(global, message);
+  const canDocumentBeCopied = canCopy && document && (documentMediaHash || hasMediaLocalBlobUrl(document));
 
   if ((canDocumentBeCopied || canImageBeCopied) && canCopy && text) {
     // Detect if the user has selection in the current message
@@ -69,9 +85,8 @@ export function getMessageSendToParentWindowOptions(
     ));
 
     options.push({
-      label: `${getCopyLabel(hasSelection)} и картинку`,
-      short: 'ТК',
-      icon: 'copy',
+      label: lang('OnlikSendTextAndImage'),
+      icon: 'photo',
       handler: (afterEffectInternal?: () => void) => {
         // @ts-ignore
         function getText() {
@@ -91,12 +106,13 @@ export function getMessageSendToParentWindowOptions(
         Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
           .then(convertToBlob)
           .then(blobToBase64)
-          .then((image) => sendNewPost({
+          .then((image) => sendFormContent({
             image,
             text: ntext,
-            message,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           }))
           .then(() => {
             afterEffect?.();
@@ -110,24 +126,49 @@ export function getMessageSendToParentWindowOptions(
 
   if (canImageBeCopied || canDocumentBeCopied) {
     options.push({
-      label: 'Отправить картинку',
-      short: 'К',
-      icon: 'copy-media',
+      label: lang('OnlikSendImage'),
+      icon: 'photo',
       handler: (afterEffectInternal?: () => void) => {
         const hash = documentMediaHash || mediaHash;
         Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
           .then(convertToBlob)
           .then(blobToBase64)
-          .then((image) => sendNewPost({
+          .then((image) => sendFormContent({
             image,
-            message,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           }));
 
         afterEffect?.();
         afterEffectInternal?.();
       },
+    });
+  }
+
+  // Video travels as a `Blob` (never a data-URL — a 100MB clip is a ~133MB string). Mirrors the
+  // image buttons: with a caption → combined ТВ (replaces the rest), otherwise video-only В.
+  const video = getMessageVideo(message);
+  const canVideoBeSent = Boolean(canCopy && video && !video.isRound);
+
+  if (canVideoBeSent && text) {
+    options.push({
+      label: lang('OnlikSendTextAndVideo'),
+      icon: 'video',
+      handler: createVideoSendHandler(
+        lang, video!, getMessageTextWithSpoilers(lang, message, undefined), message, chat, user, sender, afterEffect,
+      ),
+    });
+
+    return options;
+  }
+
+  if (canVideoBeSent) {
+    options.push({
+      label: lang('OnlikSendVideo'),
+      icon: 'video',
+      handler: createVideoSendHandler(lang, video!, undefined, message, chat, user, sender, afterEffect),
     });
   }
 
@@ -141,26 +182,27 @@ export function getMessageSendToParentWindowOptions(
     ));
 
     options.push({
-      label: getCopyLabel(hasSelection),
-      short: 'Т',
-      icon: 'copy',
+      label: getCopyLabel(lang, hasSelection),
+      icon: 'quote-text',
       handler: (afterEffectInternal?: () => void) => {
         const messageIds = getMessageIdsForSelectedText();
         if (messageIds?.length && onCopyMessages) {
           // onCopyMessages(messageIds);
         } else if (hasSelection) {
-          sendNewPost({
+          sendFormContent({
             text: selection?.toString() || '',
-            message,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           });
         } else {
-          sendNewPost({
+          sendFormContent({
             text: getMessageTextWithSpoilers(lang, message, undefined)!,
-            message,
             chat,
             user,
+            sender,
+            isSenderSelf: message.isOutgoing,
           });
         }
 
@@ -171,15 +213,68 @@ export function getMessageSendToParentWindowOptions(
   }
   return options;
 }
+// Validates the clip against the platform limits, downloads its bytes, then sends one signal.
+// `afterEffectInternal(false)` on any failure keeps the button from flashing success.
+function createVideoSendHandler(
+  lang: LangFn,
+  video: ApiVideo,
+  text: string | undefined,
+  message: ApiMessage,
+  chat?: ApiChat,
+  user?: ApiUser,
+  sender?: ApiPeer,
+  afterEffect?: () => void,
+): ISendOption['handler'] {
+  return (afterEffectInternal) => {
+    const { showNotification } = getActions();
+
+    if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType)) {
+      showNotification({ message: lang('OnlikVideoUnsupportedFormat') });
+      afterEffectInternal?.(false);
+      return;
+    }
+    if (video.size > MAX_VIDEO_SIZE) {
+      showNotification({ message: lang('OnlikVideoTooLarge') });
+      afterEffectInternal?.(false);
+      return;
+    }
+
+    // The full clip must be downloaded before the signal is sent (reuse the already-loaded
+    // blob if the video was played). The button shows a loading state meanwhile.
+    const blobUrlPromise: Promise<string | undefined> = video.blobUrl
+      ? Promise.resolve(video.blobUrl)
+      : mediaLoader.fetch(getVideoMediaHash(video, 'download')!, ApiMediaFormat.BlobUrl);
+
+    blobUrlPromise
+      .then((blobUrl) => {
+        if (!blobUrl) throw new Error('video download failed');
+        return fetch(blobUrl).then((response) => response.blob());
+      })
+      .then((blob) => sendFormContent({
+        video: { blob, name: video.fileName },
+        text,
+        chat,
+        user,
+        sender,
+        isSenderSelf: message.isOutgoing,
+      }))
+      .then(() => {
+        afterEffect?.();
+        afterEffectInternal?.(true);
+      })
+      .catch(() => {
+        showNotification({ message: lang('OnlikVideoDownloadFailed') });
+        afterEffectInternal?.(false);
+      });
+  };
+}
+
 function checkMessageHasSelection(message: ApiMessage): boolean {
   const selection = window.getSelection();
   const selectionParentNode = selection?.anchorNode?.parentNode as HTMLElement;
   const selectedMessageElement = selectionParentNode?.closest<HTMLDivElement>('.Message.message-list-item');
   return getMessageHtmlId(message.id) === selectedMessageElement?.id;
 }
-function getCopyLabel(hasSelection: boolean): string {
-  if (hasSelection) {
-    return 'Отправить выделенный текст';
-  }
-  return 'Отправить текст';
+function getCopyLabel(lang: LangFn, hasSelection: boolean): string {
+  return hasSelection ? lang('OnlikSendSelectedText') : lang('OnlikSendText');
 }

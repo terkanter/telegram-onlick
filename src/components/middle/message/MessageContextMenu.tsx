@@ -19,7 +19,6 @@ import type {
   ApiWebPage,
 } from '../../../api/types';
 import type { IAnchorPosition, TranslationTone } from '../../../types';
-import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
 import {
   getUserFullName,
@@ -31,9 +30,11 @@ import { disableScrolling } from '../../../util/scrollLock';
 import { REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
 import { getMessageCopyOptions } from './helpers/copyOptions';
+import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useFlag from '../../../hooks/useFlag';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
@@ -247,6 +248,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   const scrollableRef = useRef<HTMLDivElement>();
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canForwardMessages, canViewUsernames } = useGatewayPermissions();
   const noReactions = !isPrivate && !enabledReactions;
   const areReactionsPossible = message.areReactionsPossible;
   const withReactions = (canShowReactionList && !noReactions) || areReactionsPossible;
@@ -315,7 +317,8 @@ const MessageContextMenu: FC<OwnProps> = ({
     targetHref,
     canCopy,
     handleAfterCopy,
-    canCopyLink ? onCopyLink : undefined,
+    // A message link is a public t.me/username/id — hide it when usernames are forbidden
+    canCopyLink && canViewUsernames ? onCopyLink : undefined,
     onCopyMessages,
     onCopyNumber,
   );
@@ -495,7 +498,7 @@ const MessageContextMenu: FC<OwnProps> = ({
             onClick={() => option.handler()}
             withPreventDefaultOnMouseDown
           >
-            {oldLang(option.label)}
+            {option.label}
           </MenuItem>
         ))}
         {copyOptions.map((option) => (
@@ -518,7 +521,8 @@ const MessageContextMenu: FC<OwnProps> = ({
             {isDownloading ? oldLang('lng_context_cancel_download') : oldLang('lng_media_download')}
           </MenuItem>
         )}
-        {canForward && <MenuItem icon="forward" onClick={onForward}>{oldLang('Forward')}</MenuItem>}
+        {canForward && canForwardMessages
+          && <MenuItem icon="forward" onClick={onForward}>{oldLang('Forward')}</MenuItem>}
         {canSelect && <MenuItem icon="select" onClick={onSelect}>{oldLang('Common.Select')}</MenuItem>}
         {canReport && <MenuItem icon="flag" onClick={onReport}>{oldLang('lng_context_report_msg')}</MenuItem>}
         {canDelete && <MenuItem destructive icon="delete" onClick={onDelete}>{oldLang('Delete')}</MenuItem>}

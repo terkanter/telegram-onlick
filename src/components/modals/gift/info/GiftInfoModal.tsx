@@ -29,6 +29,7 @@ import { renderTextWithEntities } from '../../../common/helpers/renderTextWithEn
 
 import useCurrentOrPrev from '../../../../hooks/useCurrentOrPrev';
 import useFlag from '../../../../hooks/useFlag';
+import useGatewayPermissions from '../../../../hooks/useGatewayPermissions';
 import useLang from '../../../../hooks/useLang';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
@@ -103,6 +104,7 @@ const GiftInfoModal = ({
   const [isConvertConfirmOpen, openConvertConfirm, closeConvertConfirm] = useFlag();
 
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
   const oldLang = useOldLang();
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [shouldPayInTon, setShouldPayInTon] = useState<boolean>(false);
@@ -288,7 +290,8 @@ const GiftInfoModal = ({
     if (!gift || gift.type !== 'starGiftUnique') return undefined;
 
     if (releasedByPeer) {
-      const releasedByUsername = `@${getMainUsername(releasedByPeer)}`;
+      // Show the release peer's title (name) instead of its `@username` when usernames are forbidden
+      const releasedByUsername = canViewUsernames ? `@${getMainUsername(releasedByPeer)}` : undefined;
       const ownerTitle = releasedByUsername || getPeerTitle(lang, releasedByPeer);
       const fallbackText = isApiPeerUser(releasedByPeer)
         ? lang('ActionFallbackUser')
@@ -300,7 +303,7 @@ const GiftInfoModal = ({
     const modelName = giftAttributes?.model?.name;
 
     return modelName;
-  }, [gift, giftAttributes, releasedByPeer, lang]);
+  }, [gift, giftAttributes, releasedByPeer, lang, canViewUsernames]);
 
   const renderFooterButton = useLastCallback(() => {
     if (canBuyGift) {

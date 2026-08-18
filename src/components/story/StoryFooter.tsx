@@ -10,6 +10,7 @@ import {
 import buildClassName from '../../util/buildClassName';
 import { isUserId } from '../../util/entities/ids';
 
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
@@ -40,8 +41,10 @@ const StoryFooter = ({
 
   const isSentStoryReactionHeart = sentReaction && isSameReaction(sentReaction, HEART_REACTION);
 
+  const { canForwardMessages } = useGatewayPermissions();
   const canForward = Boolean(
-    (isOut || isChannel)
+    canForwardMessages
+    && (isOut || isChannel)
     && story.isPublic
     && !story.noForwards,
   );

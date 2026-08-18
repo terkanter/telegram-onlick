@@ -3,6 +3,7 @@ import { ManagementProgress } from '../../../types';
 
 import {
   CUSTOM_BG_CACHE_NAME,
+  IS_GATEWAY,
   LANG_CACHE_NAME,
   LOCK_SCREEN_ANIMATION_DURATION_MS,
   MEDIA_CACHE_NAME,
@@ -18,16 +19,22 @@ import {
 } from '../../../util/browser/windowEnvironment';
 import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import { logGateway } from '../../../util/gatewayLog';
 import { ACCOUNT_SLOT, getAccountsInfo } from '../../../util/multiaccount';
 import { unsubscribe } from '../../../util/notifications';
 import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
-import { parseInitialLocationHash, resetInitialLocationHash, resetLocationHash } from '../../../util/routing';
+import {
+  parseInitialLocationHash, parseMessageListHash, resetInitialLocationHash, resetLocationHash,
+} from '../../../util/routing';
 import { pause } from '../../../util/schedulers';
 import {
   clearStoredSession,
   loadStoredSession,
   storeSession,
 } from '../../../util/sessions';
+import {
+  consumeGatewayReconnect, initGatewayBridge, requestGatewayAuth, setGatewayAuthHandler, setGatewayNavigateHandler,
+} from '../../../util/telegramGateway';
 import { forceWebsync } from '../../../util/websync';
 import {
   callApi, callApiLocal, initApi, setShouldEnableDebugLog,
@@ -44,6 +51,61 @@ import { selectSharedSettings } from '../../selectors/sharedState';
 import { destroySharedStatePort } from '../../shared/sharedStateConnector';
 
 addActionHandler('initApi', (global, actions): ActionReturnType => {
+  if (IS_GATEWAY) {
+    // Variant 2: the platform brokers a short-lived token; the fork never logins itself and
+    // stores no session. On `auth`, init the worker with the gateway endpoint + token.
+    const { language: gatewayLangCode } = selectSharedSettings(global);
+    let isGatewayInited = false;
+
+    logGateway('initApi: gateway mode');
+    initGatewayBridge();
+    setGatewayAuthHandler((auth) => {
+      if (!isGatewayInited) {
+        isGatewayInited = true;
+        logGateway('auth #1 → init worker', { gatewayUrl: auth.gatewayUrl });
+        void initApi(actions.apiUpdate, {
+          userAgent: navigator.userAgent,
+          platform: PLATFORM_ENV,
+          langCode: gatewayLangCode,
+          gatewayUrl: auth.gatewayUrl,
+          gatewayToken: auth.token,
+        });
+        return;
+      }
+
+      if (consumeGatewayReconnect()) {
+        // Same account, fresh token — reconnect in place, keep cache and update state.
+        logGateway('auth → reconnect in place (reinitGateway)');
+        void callApi('reinitGateway', { gatewayUrl: auth.gatewayUrl, gatewayToken: auth.token });
+        return;
+      }
+
+      // Account switch — reinit under the new account. TODO(A.5): in-place instead of reload.
+      logGateway('auth → account switch (iframe reload)');
+      window.location.reload();
+    });
+    // Route memory: the parent echoes the saved route after `ready`. Restoration is
+    // best effort — an unparsable route keeps the default screen, and the actual state
+    // is reported back by `GatewayRouteReporter`.
+    setGatewayNavigateHandler((route) => {
+      global = getGlobal();
+      const messageList = parseMessageListHash(route, global.currentUserId);
+      if (!messageList) {
+        logGateway('navigate: unusable route, keeping default screen');
+        return;
+      }
+
+      actions.openThread({
+        chatId: messageList.chatId,
+        threadId: messageList.threadId,
+        type: messageList.type,
+        tabId: getCurrentTabId(),
+      });
+    });
+    requestGatewayAuth();
+    return;
+  }
+
   const initialLocationHash = parseInitialLocationHash();
   const {
     shouldAllowHttpTransport,

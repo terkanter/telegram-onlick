@@ -16,6 +16,7 @@ import focusNoScroll from '../../../util/focusNoScroll';
 import { buildCollectionByKey } from '../../../util/iteratees';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -135,6 +136,7 @@ const PeerPicker = <CategoryType extends string = CustomPeerType>({
 }: OwnProps<CategoryType>) => {
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const itemIds = useMemo(() => {
     if (itemIdsProp) return itemIdsProp;
@@ -310,7 +312,7 @@ const PeerPicker = <CategoryType extends string = CustomPeerType>({
       if (isAlwaysUnselected) return [lockedUnselectedSubtitle];
       if (!peer) return undefined;
 
-      if (withPeerUsernames) {
+      if (withPeerUsernames && canViewUsernames) {
         const username = getMainUsername(peer);
         if (username) {
           return [`@${username}`];
@@ -367,7 +369,7 @@ const PeerPicker = <CategoryType extends string = CustomPeerType>({
   }, [
     categoriesByType, forceShowSelf, isViewOnly, itemClassName, itemInputType, oldLang, lockedSelectedIdsSet,
     lockedUnselectedIdsSet, lockedUnselectedSubtitle, onDisabledClick, selectedCategories, selectedIds,
-    withPeerTypes, withStatus, withPeerUsernames, lang,
+    withPeerTypes, withStatus, withPeerUsernames, lang, canViewUsernames,
   ]);
 
   const beforeChildren = useMemo(() => {

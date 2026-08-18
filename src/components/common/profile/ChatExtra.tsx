@@ -53,6 +53,7 @@ import { useViewTransition } from '../../../hooks/animations/useViewTransition';
 import { useVtn } from '../../../hooks/animations/useVtn';
 import useCollapsibleLines from '../../../hooks/element/useCollapsibleLines';
 import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
@@ -164,6 +165,7 @@ const ChatExtra = ({
   } = userFullInfo || {};
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const { startViewTransition } = useViewTransition();
   const { createVtnStyle } = useVtn();
@@ -434,7 +436,7 @@ const ChatExtra = ({
             <span className="subtitle">{oldLang('Phone')}</span>
           </ListItem>
         )}
-        {activeUsernames && renderUsernames(activeUsernames)}
+        {activeUsernames && canViewUsernames && renderUsernames(activeUsernames)}
         {description && Boolean(description.length) && (
           <ListItem
             icon="info"
@@ -457,8 +459,8 @@ const ChatExtra = ({
             <span className="subtitle">{oldLang(userId ? 'UserBio' : 'Info')}</span>
           </ListItem>
         )}
-        {activeChatUsernames && !isTopicInfo && renderUsernames(activeChatUsernames, true)}
-        {((!activeChatUsernames && canInviteUsers) || isTopicInfo) && link && (
+        {activeChatUsernames && !isTopicInfo && canViewUsernames && renderUsernames(activeChatUsernames, true)}
+        {((!activeChatUsernames && canInviteUsers) || isTopicInfo) && link && canViewUsernames && (
           <ListItem
             icon="link"
             multiline

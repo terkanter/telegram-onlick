@@ -24,6 +24,7 @@ import { captureControlledSwipe } from '../../util/swipeController';
 import { isComposerHasSelection } from '../middle/composer/helpers/selection';
 
 import useFoldersReducer from '../../hooks/reducers/useFoldersReducer';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import { useHotkeys } from '../../hooks/useHotkeys';
 import useLastCallback from '../../hooks/useLastCallback';
 import usePrevious from '../../hooks/usePrevious';
@@ -119,6 +120,7 @@ function LeftColumn({
 
   const [contactsFilter, setContactsFilter] = useState<string>('');
   const [foldersState, foldersDispatch] = useFoldersReducer();
+  const { canSearch } = useGatewayPermissions();
 
   // Used to reset child components in background.
   const [lastResetTime, setLastResetTime] = useState<number>(0);
@@ -418,7 +420,7 @@ function LeftColumn({
   );
 
   const handleHotkeySearch = useLastCallback((e: KeyboardEvent) => {
-    if (contentKey === LeftColumnContent.GlobalSearch) {
+    if (!canSearch || contentKey === LeftColumnContent.GlobalSearch) {
       return;
     }
 

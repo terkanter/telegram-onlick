@@ -27,6 +27,7 @@ import selectViewableMedia from './helpers/getViewableMedia';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useFlag from '../../hooks/useFlag';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLastCallback from '../../hooks/useLastCallback';
 import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
 import useOldLang from '../../hooks/useOldLang';
@@ -154,6 +155,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
   });
 
   const lang = useOldLang();
+  const { canForwardMessages } = useGatewayPermissions();
 
   const MenuButton: FC<{ onTrigger: () => void; isOpen?: boolean }> = useMemo(() => {
     return ({ onTrigger, isOpen }) => (
@@ -228,7 +230,8 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 
   if (isMobile) {
     const menuItems: MenuItemProps[] = [];
-    if (isMessage && item.message.isForwardingAllowed && !item.message.content.action && !isChatProtected) {
+    if (isMessage && canForwardMessages && item.message.isForwardingAllowed
+      && !item.message.content.action && !isChatProtected) {
       menuItems.push({
         icon: 'forward',
         onClick: onForward,
@@ -310,7 +313,7 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="MediaViewerActions">
-      {isMessage && item.message.isForwardingAllowed && !isChatProtected && (
+      {isMessage && canForwardMessages && item.message.isForwardingAllowed && !isChatProtected && (
         <Button
           round
           size="smaller"

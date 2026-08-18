@@ -2985,3 +2985,16 @@
 "PollModalAddMoreText_other" = "You can add {count} more options.";
 "PollModalAddNoMore" = "You have added the maximum number of options.";
 "PollDurationOther" = "Other";
+"GatewayConnecting" = "Connecting to your account…";
+"GatewayRevoked" = "Access to this account was revoked";
+"GatewayError" = "Couldn’t connect to the account";
+"GatewayShowMedia" = "Show media";
+"OnlikSendText" = "Send text";
+"OnlikSendSelectedText" = "Send selected text";
+"OnlikSendImage" = "Send image";
+"OnlikSendTextAndImage" = "Send text and image";
+"OnlikSendVideo" = "Send video";
+"OnlikSendTextAndVideo" = "Send text and video";
+"OnlikVideoUnsupportedFormat" = "This video format is not supported — the platform won’t accept it";
+"OnlikVideoTooLarge" = "The video is larger than 100 MB — the platform won’t accept it";
+"OnlikVideoDownloadFailed" = "Couldn’t load the video";

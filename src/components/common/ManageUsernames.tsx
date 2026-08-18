@@ -10,6 +10,7 @@ import buildClassName from '../../util/buildClassName';
 import { copyTextToClipboard } from '../../util/clipboard';
 import { isBetween } from '../../util/math';
 
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
@@ -49,6 +50,7 @@ const ManageUsernames: FC<OwnProps> = ({
   } = getActions();
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
   const [usernameForConfirm, setUsernameForConfirm] = useState<ApiUsername | undefined>();
 
   const usernameList = useMemo(() => usernames.map(({ username }) => username), [usernames]);
@@ -72,11 +74,13 @@ const ManageUsernames: FC<OwnProps> = ({
   }, [prevUsernameList, usernameList]);
 
   const handleCopyUsername = useCallback((value: string) => {
+    // Copying a username exposes it — no-op when the role forbids usernames
+    if (!canViewUsernames) return;
     copyTextToClipboard(`@${value}`);
     showNotification({
       message: oldLang('UsernameCopied'),
     });
-  }, [oldLang, showNotification]);
+  }, [canViewUsernames, oldLang, showNotification]);
 
   const handleUsernameClick = useCallback((data: ApiUsername) => {
     if (data.isEditable) {

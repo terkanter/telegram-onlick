@@ -21,7 +21,9 @@ import {
   GLOBAL_STATE_CACHE_CHAT_LIST_LIMIT,
   GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT,
   GLOBAL_STATE_CACHE_DISABLED,
+  GLOBAL_STATE_CACHE_PREFIX,
   GLOBAL_STATE_CACHE_USER_LIST_LIMIT,
+  IS_GATEWAY,
   IS_SCREEN_LOCKED_CACHE_KEY,
   SAVED_FOLDER_ID,
   SHARED_STATE_CACHE_KEY,
@@ -37,7 +39,7 @@ import { encryptSession } from '../util/passcode';
 import { onBeforeUnload, throttle } from '../util/schedulers';
 import { hasStoredSession } from '../util/sessions';
 import { selectThreadInfo } from './selectors/threads';
-import { addActionHandler, getGlobal } from './index';
+import { addActionHandler, getGlobal, setGlobal } from './index';
 import { INITIAL_GLOBAL_STATE, INITIAL_PERFORMANCE_STATE_MED } from './initialState';
 import { clearGlobalForLockScreen, clearSharedStateForLockScreen } from './reducers';
 import {
@@ -54,6 +56,8 @@ import {
 import { getIsMobile } from '../hooks/useAppLayout';
 
 const UPDATE_THROTTLE = 5000;
+const GATEWAY_CACHE_INDEX_KEY = 'tt-global-state-gw-index';
+const GATEWAY_CACHE_MAX_ACCOUNTS = 5;
 
 const updateCacheThrottled = throttle(() => onFullyIdle(() => updateCache()), UPDATE_THROTTLE, false);
 const updateCacheForced = () => updateCache(true);
@@ -62,9 +66,18 @@ let isCaching = false;
 let isRemovingCache = false;
 let cacheUpdateSuspensionTimestamp = 0;
 let unsubscribeFromBeforeUnload: NoneToVoidFunction | undefined;
+let gatewayAccountId: string | undefined;
+
+// In gateway mode the cache is keyed per account (`applyGatewayCache`); the regular build
+// keeps using the static multiaccount slot key
+let gatewayCacheKey: string | undefined;
+
+function getGlobalStateCacheKey() {
+  return gatewayCacheKey || GLOBAL_STATE_CACHE_KEY;
+}
 
 export function cacheGlobal(global: GlobalState) {
-  return MAIN_IDB_STORE.set(GLOBAL_STATE_CACHE_KEY, global);
+  return MAIN_IDB_STORE.set(getGlobalStateCacheKey(), global);
 }
 
 export function cacheSharedState(state: SharedState) {
@@ -72,7 +85,7 @@ export function cacheSharedState(state: SharedState) {
 }
 
 export function loadCachedGlobal() {
-  return MAIN_IDB_STORE.get<GlobalState>(GLOBAL_STATE_CACHE_KEY);
+  return MAIN_IDB_STORE.get<GlobalState>(getGlobalStateCacheKey());
 }
 
 export function loadCachedSharedState() {
@@ -80,7 +93,7 @@ export function loadCachedSharedState() {
 }
 
 export function removeGlobalFromCache() {
-  return MAIN_IDB_STORE.del(GLOBAL_STATE_CACHE_KEY);
+  return MAIN_IDB_STORE.del(getGlobalStateCacheKey());
 }
 
 export function removeSharedStateFromCache() {
@@ -126,6 +139,12 @@ export async function loadCache(initialState: GlobalState): Promise<GlobalState 
     return undefined;
   }
 
+  // Gateway mode: there is no stored session and the cache is keyed per account, which is
+  // only known after the WS handshake — applied later via `applyGatewayCache`
+  if (IS_GATEWAY) {
+    return undefined;
+  }
+
   const cache = await readCache(initialState);
 
   if (cache.passcode.hasPasscode || hasStoredSession()) {
@@ -137,6 +156,75 @@ export async function loadCache(initialState: GlobalState): Promise<GlobalState 
 
     return undefined;
   }
+}
+
+// Loads and applies the per-account cached global in gateway mode. Runs in the window
+// between the WS connect and the worker's post-connect phase (auth ready, sync) — the
+// GatewayPending overlay is still on screen and global holds no account data yet. The
+// worker resumes once the caller releases the barrier (`continueGatewayInit`).
+export async function applyGatewayCache(accountId: string) {
+  if (GLOBAL_STATE_CACHE_DISABLED) {
+    return;
+  }
+
+  // Reconnect of the same account — the cache is already applied and being written
+  if (gatewayAccountId === accountId) {
+    return;
+  }
+
+  gatewayAccountId = accountId;
+  gatewayCacheKey = `${GLOBAL_STATE_CACHE_PREFIX}_gw_${accountId}`;
+
+  void updateGatewayCacheIndex(accountId);
+
+  const [cached, cachedSharedState] = await Promise.all([loadCachedGlobal(), loadCachedSharedState()]);
+
+  let global = getGlobal();
+  // If the worker barrier timed out while the cache was loading, the post-connect phase
+  // (auth ready, sync) is already running — applying the stale snapshot now would clobber
+  // freshly synced data. Keep writing under the account key, but skip the merge.
+  const isWorkerAhead = global.auth.state === 'authorizationStateReady';
+
+  if (cached && !isWorkerAhead) {
+    migrateCache(cached, INITIAL_GLOBAL_STATE);
+
+    global = {
+      ...INITIAL_GLOBAL_STATE,
+      ...cached,
+      sharedState: cachedSharedState || global.sharedState,
+      // Runtime state of the current boot must survive the merge — the snapshot's
+      // values are from the previous session
+      byTabId: global.byTabId,
+      auth: global.auth,
+      connectionState: global.connectionState,
+    };
+    setGlobal(global);
+  }
+
+  setupCaching();
+}
+
+// Wipes the cache of the current gateway account and stops writing it. Used when the
+// fetched user does not match the cached snapshot (backend rebound the account id)
+export function dropGatewayCache() {
+  clearCaching();
+  return removeGlobalFromCache();
+}
+
+async function updateGatewayCacheIndex(accountId: string) {
+  const index = (await MAIN_IDB_STORE.get<Record<string, number>>(GATEWAY_CACHE_INDEX_KEY)) || {};
+  index[accountId] = Date.now();
+
+  const staleAccountIds = Object.keys(index)
+    .sort((a, b) => index[b] - index[a])
+    .slice(GATEWAY_CACHE_MAX_ACCOUNTS);
+
+  await Promise.all(staleAccountIds.map((id) => {
+    delete index[id];
+    return MAIN_IDB_STORE.del(`${GLOBAL_STATE_CACHE_PREFIX}_gw_${id}`);
+  }));
+
+  await MAIN_IDB_STORE.set(GATEWAY_CACHE_INDEX_KEY, index);
 }
 
 export function setupCaching() {

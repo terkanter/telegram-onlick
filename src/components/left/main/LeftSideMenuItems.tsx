@@ -13,6 +13,7 @@ import {
   BETA_CHANGELOG_URL,
   FEEDBACK_URL,
   IS_BETA,
+  IS_GATEWAY,
   IS_TEST,
   PRODUCTION_HOSTNAME,
   WEB_VERSION_BASE,
@@ -145,7 +146,7 @@ const LeftSideMenuItems = ({
 
   return (
     <>
-      {IS_MULTIACCOUNT_SUPPORTED && currentUser && (
+      {IS_MULTIACCOUNT_SUPPORTED && !IS_GATEWAY && currentUser && (
         <>
           <AccountMenuItems
             currentUser={currentUser}

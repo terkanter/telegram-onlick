@@ -15,6 +15,7 @@ import { resolveTransitionName } from '../../../util/resolveTransitionName.ts';
 import { formatInteger } from '../../../util/textFormat';
 import { getBoostProgressInfo } from '../../common/helpers/boostInfo';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
@@ -77,6 +78,7 @@ const BoostStatistics = ({
     openChat, loadMoreBoosters, closeBoostStatistics, openGiveawayModal, showNotification,
   } = getActions();
   const lang = useOldLang();
+  const { canViewUsernames } = useGatewayPermissions();
   const transitionRef = useRef<HTMLDivElement>();
 
   const isLoaded = boostStatistics?.boostStatus;
@@ -409,10 +411,14 @@ const BoostStatistics = ({
               )}
             </>
           )}
-          <IslandTitle>{lang('LinkForBoosting')}</IslandTitle>
-          <Island>
-            <LinkField link={status!.boostUrl} withShare noTitle />
-          </Island>
+          {canViewUsernames && (
+            <>
+              <IslandTitle>{lang('LinkForBoosting')}</IslandTitle>
+              <Island>
+                <LinkField link={status!.boostUrl} withShare noTitle />
+              </Island>
+            </>
+          )}
           {isGiveawayAvailable && (
             <>
               <Island>

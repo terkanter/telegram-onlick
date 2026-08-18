@@ -25,6 +25,7 @@ import { formatDateToString } from '../../../util/dates/oldDateFormat';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useConnectionStatus from '../../../hooks/useConnectionStatus';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import { useHotkeys } from '../../../hooks/useHotkeys';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -111,6 +112,7 @@ const LeftMainHeader = ({
   const oldLang = useOldLang();
   const lang = useLang();
   const { isMobile } = useAppLayout();
+  const { canSearch } = useGatewayPermissions();
 
   const areContactsVisible = content === LeftColumnContent.Contacts;
   const hasMenu = content === LeftColumnContent.ChatList;
@@ -260,33 +262,37 @@ const LeftMainHeader = ({
             isSearchButton && 'forum-search-button',
           )}
         />
-        <SearchInput
-          inputId="telegram-search-input"
-          resultsItemSelector=".LeftSearch .ListItem-button"
-          className={buildClassName(
-            (globalSearchChatId || searchDate) ? 'with-picker-item' : undefined,
-            shouldHideSearch && 'SearchInput--hidden',
-            hasMenu && isFoldersSidebarShown && !IS_WITH_WINDOW_BUTTONS && 'SearchInput--no-left-margin',
-          )}
-          value={isClosingSearch ? undefined : (contactsFilter || searchQuery)}
-          focused={isSearchFocused}
-          isLoading={isLoading || connectionStatusPosition === 'minimized'}
-          spinnerColor={connectionStatusPosition === 'minimized' ? 'yellow' : undefined}
-          spinnerBackgroundColor={connectionStatusPosition === 'minimized' && theme === 'light' ? 'light' : undefined}
-          placeholder={searchInputPlaceholder}
-          autoComplete="off"
-          canClose={Boolean(globalSearchChatId || searchDate)}
-          onChange={onSearchQuery}
-          onReset={onReset}
-          onFocus={handleSearchFocus}
-          onSpinnerClick={connectionStatusPosition === 'minimized' ? toggleConnectionStatus : undefined}
-          onEnter={handleSearchEnter}
-        >
-          {searchContent}
-          <StoryToggler
-            canShow={withStoryToggler}
-          />
-        </SearchInput>
+        {/* Not rendered at all when the role forbids search — a hidden-but-focusable input
+            would still open search on keyboard input */}
+        {canSearch && (
+          <SearchInput
+            inputId="telegram-search-input"
+            resultsItemSelector=".LeftSearch .ListItem-button"
+            className={buildClassName(
+              (globalSearchChatId || searchDate) ? 'with-picker-item' : undefined,
+              shouldHideSearch && 'SearchInput--hidden',
+              hasMenu && isFoldersSidebarShown && !IS_WITH_WINDOW_BUTTONS && 'SearchInput--no-left-margin',
+            )}
+            value={isClosingSearch ? undefined : (contactsFilter || searchQuery)}
+            focused={isSearchFocused}
+            isLoading={isLoading || connectionStatusPosition === 'minimized'}
+            spinnerColor={connectionStatusPosition === 'minimized' ? 'yellow' : undefined}
+            spinnerBackgroundColor={connectionStatusPosition === 'minimized' && theme === 'light' ? 'light' : undefined}
+            placeholder={searchInputPlaceholder}
+            autoComplete="off"
+            canClose={Boolean(globalSearchChatId || searchDate)}
+            onChange={onSearchQuery}
+            onReset={onReset}
+            onFocus={handleSearchFocus}
+            onSpinnerClick={connectionStatusPosition === 'minimized' ? toggleConnectionStatus : undefined}
+            onEnter={handleSearchEnter}
+          >
+            {searchContent}
+            <StoryToggler
+              canShow={withStoryToggler}
+            />
+          </SearchInput>
+        )}
         {isCurrentUserPremium && <StatusButton />}
         {hasPasscode && (
           <Button

@@ -24,6 +24,7 @@ import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
 import useIntervalForceUpdate from '../../hooks/schedulers/useIntervalForceUpdate';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
@@ -143,6 +144,7 @@ const PrivateChatInfo = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canViewUsernames } = useGatewayPermissions();
 
   const isTopic = Boolean(user?.isBotForum && topic);
   const hasAvatarMediaViewer = withMediaViewer && !isSavedMessages;
@@ -170,7 +172,10 @@ const PrivateChatInfo = ({
     },
   );
 
-  const mainUsername = useMemo(() => user && withUsername && getMainUsername(user), [user, withUsername]);
+  const mainUsername = useMemo(
+    () => user && withUsername && canViewUsernames && getMainUsername(user),
+    [user, withUsername, canViewUsernames],
+  );
 
   if (!user && !customPeer) {
     return undefined;

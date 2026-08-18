@@ -2172,6 +2172,19 @@ export interface LangPair {
   'PollModalSettingsTitle': undefined;
   'PollModalAddNoMore': undefined;
   'PollDurationOther': undefined;
+  'GatewayConnecting': undefined;
+  'GatewayRevoked': undefined;
+  'GatewayError': undefined;
+  'GatewayShowMedia': undefined;
+  'OnlikSendText': undefined;
+  'OnlikSendSelectedText': undefined;
+  'OnlikSendImage': undefined;
+  'OnlikSendTextAndImage': undefined;
+  'OnlikSendVideo': undefined;
+  'OnlikSendTextAndVideo': undefined;
+  'OnlikVideoUnsupportedFormat': undefined;
+  'OnlikVideoTooLarge': undefined;
+  'OnlikVideoDownloadFailed': undefined;
 }
 
 export interface LangPairWithVariables<V = LangVariable> {

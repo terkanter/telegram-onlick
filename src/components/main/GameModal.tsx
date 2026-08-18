@@ -10,6 +10,7 @@ import { selectChat, selectChatFullInfo } from '../../global/selectors';
 import { isMessageFromIframe } from '../../util/browser/iframe';
 
 import useInterval from '../../hooks/schedulers/useInterval';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useOldLang from '../../hooks/useOldLang';
 import useSendMessageAction from '../../hooks/useSendMessageAction';
 
@@ -33,6 +34,7 @@ type StateProps = {
 const GameModal: FC<OwnProps & StateProps> = ({ openedGame, gameTitle, canPost }) => {
   const { closeGame, openForwardMenu } = getActions();
   const lang = useOldLang();
+  const { canForwardMessages } = useGatewayPermissions();
   const { url, chatId, messageId } = openedGame || {};
   const isOpen = Boolean(url);
   const frameRef = useRef<HTMLIFrameElement>();
@@ -49,6 +51,12 @@ const GameModal: FC<OwnProps & StateProps> = ({ openedGame, gameTitle, canPost }
 
     try {
       const data = JSON.parse(event.data) as GameEvents;
+      const isShare = data.eventType === 'share_score' || data.eventType === 'share_game';
+      // Sharing a game/score forwards it — blocked when the role forbids forwarding
+      if (isShare && !canForwardMessages) {
+        return;
+      }
+
       if (data.eventType === 'share_score') {
         openForwardMenu({ fromChatId: chatId, messageIds: [messageId], withMyScore: true });
         closeGame();
@@ -61,7 +69,7 @@ const GameModal: FC<OwnProps & StateProps> = ({ openedGame, gameTitle, canPost }
     } catch (e) {
       // Ignore other messages
     }
-  }, [chatId, closeGame, messageId, openForwardMenu]);
+  }, [canForwardMessages, chatId, closeGame, messageId, openForwardMenu]);
 
   const handleLoad = useCallback((event: React.SyntheticEvent<HTMLIFrameElement>) => {
     event.currentTarget.focus();
