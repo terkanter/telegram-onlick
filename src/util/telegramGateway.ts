@@ -291,8 +291,9 @@ function handleSettingsMessage(message: SettingsMessage) {
 
   applyBlurImagesSetting(message.blurImages);
 
-  // Missing block → undefined → fail-open (see `getGatewayPermissions` consumers)
-  setGatewayPermissions(message.permissions);
+  // TEMP: ignore the platform's permissions block so everything stays fail-open (search,
+  // usernames, forwarding all visible). Revert to `setGatewayPermissions(message.permissions)`.
+  setGatewayPermissions(undefined);
 }
 
 // Re-enabling blur mints a fresh generation, duplicate `blurImages: true` is a no-op.
