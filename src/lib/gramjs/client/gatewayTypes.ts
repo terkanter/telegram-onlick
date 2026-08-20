@@ -12,6 +12,8 @@ export interface GatewayTransport {
   invoke(requestB64: string, dcId?: number): Promise<string>;
   // Registers the handler for incoming updates (base64 of a serialized TL object).
   setUpdateHandler(handler: (updateB64: string) => void): void;
+  // Fire-and-forget frame (analytics `events`/`unread`) over the same WS; false if not open.
+  sendData(frame: Record<string, unknown>): boolean;
   disconnect(): void;
 }
 

@@ -95,6 +95,19 @@ export default class GatewayTransport implements IGatewayTransport {
     });
   }
 
+  // Fire-and-forget frame (analytics `events`/`unread`) over the same WS. No response is
+  // expected; silently dropped if the socket is not open (the next flush retries). See
+  // `telegram-analytics-tasks.md`.
+  sendData(frame: Record<string, unknown>) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      logGatewayVerbose('sendData dropped — WS not open', { type: frame.type });
+      return false;
+    }
+
+    this.ws.send(JSON.stringify(frame));
+    return true;
+  }
+
   setUpdateHandler(handler: (updateB64: string) => void) {
     this.updateHandler = handler;
   }

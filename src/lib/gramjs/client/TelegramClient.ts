@@ -10,10 +10,12 @@ import type {
   TwoFaParams } from './2fa';
 import type { UserAuthParams } from './auth';
 import type { DownloadFileParams, DownloadFileWithDcParams, DownloadMediaParams } from './downloadFile';
+import type { GatewayError, GatewayTransport } from './gatewayTypes';
 import type { UploadFileParams } from './uploadFile';
 
 import Deferred from '../../../util/Deferred';
 import { bufferFromBase64, bufferToBase64, concat } from '../../../util/encoding/buffer';
+import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
 import { toJSNumber } from '../../../util/numbers';
 import {
   FloodTestPhoneWaitError,
@@ -41,13 +43,10 @@ import {
   getTmpPassword,
   updateTwoFaSettings,
 } from './2fa';
-import type { GatewayError, GatewayTransport } from './gatewayTypes';
-
 import { authFlow, checkAuthorization } from './auth';
 import { downloadFile } from './downloadFile';
 import { uploadFile } from './uploadFile';
 
-import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
 import { generateRandomBigInt, sleep } from '../Helpers';
 import RequestState from '../network/RequestState';
 import Session from '../sessions/Abstract';
@@ -377,6 +376,11 @@ class TelegramClient {
 
   disconnectGateway() {
     this._gatewayTransport?.disconnect();
+  }
+
+  // Relay an analytics frame over the gateway WS (variant A, `telegram-analytics-tasks.md`)
+  sendGatewayData(frame: Record<string, unknown>) {
+    return Boolean(this._gatewayTransport?.sendData(frame));
   }
 
   // Gateway mode (variant 2): no MTProto handshake. Open the WS transport, wire updates

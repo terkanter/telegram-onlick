@@ -6,6 +6,7 @@ import type { ActionReturnType, GlobalState } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
 import { DEBUG, MESSAGE_LIST_SLICE, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
+import { backfillHistory } from '../../../util/analytics';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { init as initFolderManager } from '../../../util/folderManager';
 import {
@@ -97,6 +98,10 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
         // eslint-disable-next-line no-console
         console.log('>>> FINISH SYNC');
       }
+
+      // Analytics: backfill history after each sync (incl. reconnect/account switch) — dedup keeps
+      // it idempotent against live events. No-op unless in gateway mode. See `telegram-fork-events.md`.
+      backfillHistory();
 
       loadAllChats({ listType: 'archived' });
       preloadTopChatMessages();

@@ -137,7 +137,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
       langCode,
       systemLangCode: navigator.language,
       isTestServerRequested,
-    } as any,
+    },
   );
 
   client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);
@@ -230,6 +230,18 @@ export function continueGatewayInit() {
   gatewayCacheBarrier?.resolve();
 }
 
+// Analytics transport (variant A): the main thread produces the frames, the worker relays them
+// over the already-open gateway WS. See `telegram-analytics-tasks.md` / `telegram-fork-events.md`.
+export function sendGatewayEvents({ events }: { events: object[] }) {
+  return client?.sendGatewayData({ type: 'events', events });
+}
+
+export function sendGatewayUnread({ at, chats, messages }: { at: number; chats: number; messages: number }) {
+  return client?.sendGatewayData({
+    type: 'unread', at, chats, messages,
+  });
+}
+
 // WS close 4403 means access was revoked — the main thread must show the "revoked" screen
 // and NOT reconnect. Every other code (4401 token/session, 4408 token late, …) is a broken
 // connection: the main thread re-requests a token and reconnects.
@@ -259,7 +271,7 @@ function buildGatewayClient(transport: GatewayTransport, baseArgs: GatewayBaseAr
       langCode: baseArgs.langCode,
       systemLangCode: navigator.language,
       gatewayTransport: transport,
-    } as any,
+    },
   );
 
   client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);

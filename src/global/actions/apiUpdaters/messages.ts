@@ -10,6 +10,7 @@ import type {
 import { MAIN_THREAD_ID } from '../../../api/types';
 
 import { ARCHIVED_FOLDER_ID, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
+import reportMessage from '../../../util/analytics/reportMessage';
 import { areDeepEqual } from '../../../util/areDeepEqual';
 import { isUserId } from '../../../util/entities/ids';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
@@ -208,6 +209,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const {
         chatId, id, message, shouldForceReply, wasDrafted, poll, webPage,
       } = update;
+      // Analytics: incoming server messages (local outgoing echoes have no server key yet and
+      // are skipped here — the outgoing one is reported on `updateMessageSendSucceeded`)
+      reportMessage(message);
       const chat = selectChat(global, chatId);
       const isLocal = isMessageLocal(message);
       const threadId = selectThreadIdFromMessage(global, message) || MAIN_THREAD_ID;
@@ -674,6 +678,9 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const {
         chatId, localId, message, poll,
       } = update;
+
+      // Analytics: our sent message now has a server id — reported by the sender tab only
+      reportMessage(message);
 
       global = updateListedAndViewportIds(global, message);
 

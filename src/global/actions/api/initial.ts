@@ -10,6 +10,7 @@ import {
   MEDIA_CACHE_NAME_AVATARS,
   MEDIA_PROGRESSIVE_CACHE_NAME,
 } from '../../../config';
+import { startAnalytics } from '../../../util/analytics';
 import { updateAppBadge } from '../../../util/appBadge';
 import { PASSCODE_IDB_STORE } from '../../../util/browser/idb';
 import { toCredentialRequestOptions } from '../../../util/browser/passkeys';
@@ -59,6 +60,9 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
 
     logGateway('initApi: gateway mode');
     initGatewayBridge();
+    // Analytics telemetry (variant A): presence/unread timers start once; `message` events and
+    // history backfill flow through the update/sync handlers. See `telegram-fork-events.md`.
+    startAnalytics();
     setGatewayAuthHandler((auth) => {
       if (!isGatewayInited) {
         isGatewayInited = true;
