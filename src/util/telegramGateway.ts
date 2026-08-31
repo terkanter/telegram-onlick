@@ -31,7 +31,9 @@ type AuthMessage = {
 export type GatewayPermissions = {
   search: boolean;
   viewUsernames: boolean;
+  viewAvatars: boolean;
   forwardMessages: boolean;
+  deleteMessages: boolean;
 };
 
 // Per-user platform settings pushed right after `auth` and on every toggle change.

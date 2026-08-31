@@ -248,7 +248,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   const scrollableRef = useRef<HTMLDivElement>();
   const oldLang = useOldLang();
   const lang = useLang();
-  const { canForwardMessages, canViewUsernames } = useGatewayPermissions();
+  const { canForwardMessages, canViewUsernames, canDeleteMessages } = useGatewayPermissions();
   const noReactions = !isPrivate && !enabledReactions;
   const areReactionsPossible = message.areReactionsPossible;
   const withReactions = (canShowReactionList && !noReactions) || areReactionsPossible;
@@ -525,7 +525,8 @@ const MessageContextMenu: FC<OwnProps> = ({
           && <MenuItem icon="forward" onClick={onForward}>{oldLang('Forward')}</MenuItem>}
         {canSelect && <MenuItem icon="select" onClick={onSelect}>{oldLang('Common.Select')}</MenuItem>}
         {canReport && <MenuItem icon="flag" onClick={onReport}>{oldLang('lng_context_report_msg')}</MenuItem>}
-        {canDelete && <MenuItem destructive icon="delete" onClick={onDelete}>{oldLang('Delete')}</MenuItem>}
+        {canDelete && canDeleteMessages
+          && <MenuItem destructive icon="delete" onClick={onDelete}>{oldLang('Delete')}</MenuItem>}
         {hasCustomEmoji && (
           <>
             <MenuSeparator size="thick" />

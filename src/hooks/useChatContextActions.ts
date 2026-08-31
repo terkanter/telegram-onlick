@@ -13,6 +13,7 @@ import { IS_OPEN_IN_NEW_TAB_SUPPORTED } from '../util/browser/windowEnvironment'
 import { isUserId } from '../util/entities/ids';
 import { buildCollectionByCallback, compact } from '../util/iteratees';
 import useSelector, { useShallowSelector } from './data/useSelector';
+import useGatewayPermissions from './useGatewayPermissions';
 import useLang from './useLang';
 
 const useChatContextActions = ({
@@ -59,6 +60,7 @@ const useChatContextActions = ({
   } = getActions();
 
   const lang = useLang();
+  const { canDeleteMessages } = useGatewayPermissions();
 
   const { isSelf } = user || {};
   const isServiceNotifications = user?.id === SERVICE_NOTIFICATIONS_USER_ID;
@@ -146,7 +148,11 @@ const useChatContextActions = ({
         handler: togglePinned,
       };
 
-    const actionDelete = deleteTitle ? {
+    // The entry is "delete chat" / "clear history" for deletable chats, but plain "leave" for a
+    // channel/group you can't delete. Only deletion is a blocked command — hide it under the role,
+    // keep leaving (roles spec §3).
+    const isChatDeletion = isSavedDialog || isUserId(chat.id) || getCanDeleteChat(chat);
+    const actionDelete = (deleteTitle && (canDeleteMessages || !isChatDeletion)) ? {
       title: deleteTitle,
       icon: 'delete',
       destructive: true,
@@ -154,7 +160,7 @@ const useChatContextActions = ({
     } satisfies MenuItemContextAction : undefined;
 
     if (isSavedDialog) {
-      return compact([actionOpenInNewTab, actionQuickPreview, actionPin, actionDelete]) as MenuItemContextAction[];
+      return compact([actionOpenInNewTab, actionQuickPreview, actionPin, actionDelete]);
     }
 
     const actionAddToFolder = canChangeFolder ? {
@@ -178,7 +184,7 @@ const useChatContextActions = ({
     if (isInSearch) {
       return compact([
         actionOpenInNewTab, actionQuickPreview, actionPin, actionAddToFolder, actionMute,
-      ]) as MenuItemContextAction[];
+      ]);
     }
 
     const actionMarkAsRead = (
@@ -222,7 +228,7 @@ const useChatContextActions = ({
   }, [
     chat, isPreview, lang, isSavedDialog, isPinned, deleteTitle, handleDelete, canChangeFolder,
     handleChatFolderChange, isMuted, handleUnmute, handleMute, isInSearch, chatReadState, topicsReadStates,
-    handleReport, user, folderId, isSelf, isServiceNotifications, currentUserId,
+    handleReport, user, folderId, isSelf, isServiceNotifications, currentUserId, canDeleteMessages,
   ]);
 
   return preparedActions;

@@ -10,6 +10,8 @@ export default function useGatewayPermissions() {
   return {
     canSearch: permissions?.search !== false,
     canViewUsernames: permissions?.viewUsernames !== false,
+    canViewAvatars: permissions?.viewAvatars !== false,
     canForwardMessages: permissions?.forwardMessages !== false,
+    canDeleteMessages: permissions?.deleteMessages !== false,
   };
 }

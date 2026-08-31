@@ -1,7 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { TeactNode } from '../../lib/teact/teact';
 import { memo, useMemo, useRef } from '../../lib/teact/teact';
-import { getActions } from '../../global';
+import { getActions, getGlobal } from '../../global';
 
 import type {
   ApiPeer, ApiPhoto, ApiWebDocument,
@@ -32,6 +32,7 @@ import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
 import { useFastClick } from '../../hooks/useFastClick';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLastCallback from '../../hooks/useLastCallback';
 import useMedia from '../../hooks/useMedia';
 import useMediaTransition from '../../hooks/useMediaTransition';
@@ -137,6 +138,13 @@ const Avatar = ({
   const isAnonymousForwards = realPeer && isAnonymousForwardsChat(realPeer.id);
   const isForum = chat?.isForum;
 
+  // Under the role, interlocutors' avatar photos are hidden — the initials placeholder shows
+  // instead (roles spec). The manager's own avatar stays so they know which account they post
+  // from; Saved Messages and special icons are not interlocutor faces.
+  const { canViewAvatars } = useGatewayPermissions();
+  const isSelfPeer = Boolean(user && user.id === getGlobal().currentUserId);
+  const shouldHidePhoto = !canViewAvatars && !isSavedMessages && !isSelfPeer;
+
   const peerColorKey = getPeerColorKey(peer, true);
   const peerColorClass = peerColorKey !== undefined ? getPeerColorClass(peerColorKey) : undefined;
 
@@ -150,7 +158,7 @@ const Avatar = ({
   const shouldLoadVideo = withVideo && photo?.isVideo;
 
   const isBig = pxSize >= AVATAR_SIZES.jumbo;
-  if (!isSavedMessages && !isDeleted) {
+  if (!isSavedMessages && !isDeleted && !shouldHidePhoto) {
     if ((user && !noPersonalPhoto) || chat) {
       imageHash = getChatAvatarHash(peer as ApiPeer, isBig ? 'big' : undefined);
     } else if (photo) {
@@ -189,7 +197,8 @@ const Avatar = ({
 
   const imgBlobUrl = useMedia(imageHash, false, ApiMediaFormat.BlobUrl);
   const videoBlobUrl = useMedia(videoHash, !shouldLoadVideo, ApiMediaFormat.BlobUrl);
-  const imgUrl = imgBlobUrl || previewUrl;
+  // `previewUrl` bypasses `imageHash`, so suppress it too when the photo is hidden
+  const imgUrl = shouldHidePhoto ? undefined : (imgBlobUrl || previewUrl);
   const hasBlobUrl = Boolean(imgUrl || videoBlobUrl);
   // `videoBlobUrl` can be taken from memory cache, so we need to check `shouldLoadVideo` again
   const shouldPlayVideo = Boolean(videoBlobUrl && shouldLoadVideo);

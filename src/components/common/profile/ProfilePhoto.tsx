@@ -2,6 +2,7 @@ import type { TeactNode } from '../../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useRef,
 } from '../../../lib/teact/teact';
+import { getGlobal } from '../../../global';
 
 import type { ApiChat, ApiPhoto, ApiUser } from '../../../api/types';
 import type { ThemeKey } from '../../../types';
@@ -27,6 +28,7 @@ import renderText from '../helpers/renderText';
 import useAppLayout from '../../../hooks/useAppLayout';
 import useCanvasBlur from '../../../hooks/useCanvasBlur';
 import useFlag from '../../../hooks/useFlag';
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useMedia from '../../../hooks/useMedia';
 import useMediaTransitionDeprecated from '../../../hooks/useMediaTransitionDeprecated';
@@ -72,10 +74,17 @@ const ProfilePhoto = ({
   const isRepliesChat = chat && isChatWithRepliesBot(chat.id);
   const isAnonymousForwards = chat && isAnonymousForwardsChat(chat.id);
   const peer = (user || chat)!;
-  const canHaveMedia = peer && !isSavedMessages && !isDeleted && !isRepliesChat && !isAnonymousForwards;
+  // Under the role, an interlocutor's full-size profile photo is hidden (initials placeholder
+  // shown instead); the manager's own profile and special-icon peers are untouched (roles spec).
+  const { canViewAvatars } = useGatewayPermissions();
+  const isSelf = Boolean(user && user.id === getGlobal().currentUserId);
+  const shouldHidePhoto = !canViewAvatars && !isSavedMessages && !isSelf;
+  const canHaveMedia = peer && !isSavedMessages && !isDeleted && !isRepliesChat && !isAnonymousForwards
+    && !shouldHidePhoto;
   const { isVideo } = photo || {};
 
-  const avatarHash = (!photo || photo.id === peer.avatarPhotoId) && getChatAvatarHash(peer, 'normal');
+  const avatarHash = !shouldHidePhoto && (!photo || photo.id === peer.avatarPhotoId)
+    && getChatAvatarHash(peer, 'normal');
 
   const previewHash = canHaveMedia && photo && !avatarHash && getPhotoMediaHash(photo, 'pictogram');
   const previewBlobUrl = useMedia(previewHash || avatarHash);
@@ -94,7 +103,7 @@ const ProfilePhoto = ({
   const blurredThumbCanvasRef = useCanvasBlur(
     photo?.thumbnail?.dataUri, !isBlurredThumb, isMobile && !IS_CANVAS_FILTER_SUPPORTED,
   );
-  const hasMedia = photo || previewBlobUrl || isBlurredThumb;
+  const hasMedia = !shouldHidePhoto && (photo || previewBlobUrl || isBlurredThumb);
 
   const { className: peerColorClass, style: peerColorStyle } = usePeerColor({ peer, theme });
 
