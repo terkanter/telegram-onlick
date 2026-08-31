@@ -18,6 +18,7 @@ import { MIN_MEDIA_HEIGHT } from './helpers/mediaDimensions';
 import useUnsupportedMedia from '../../../hooks/media/useUnsupportedMedia';
 import useAppLayout from '../../../hooks/useAppLayout';
 import useFlag from '../../../hooks/useFlag';
+import useGatewayMediaBlur from '../../../hooks/useGatewayMediaBlur';
 import { useIsIntersecting } from '../../../hooks/useIntersectionObserver';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
@@ -30,6 +31,7 @@ import useBlurredMediaThumbRef from './hooks/useBlurredMediaThumbRef';
 import Icon from '../../common/icons/Icon';
 import MediaSpoiler from '../../common/MediaSpoiler';
 import SensitiveContentConfirmModal from '../../common/SensitiveContentConfirmModal';
+import MediaBlurCover from '../../gateway/MediaBlurCover';
 import OptimizedVideo from '../../ui/OptimizedVideo';
 import ProgressSpinner from '../../ui/ProgressSpinner';
 import MediaBadge from './MediaBadge';
@@ -52,6 +54,7 @@ export type OwnProps<T> = {
   asForwarded?: boolean;
   isDownloading?: boolean;
   isProtected?: boolean;
+  isInSelectMode?: boolean;
   className?: string;
   clickArg?: T;
   isMediaNsfw?: boolean;
@@ -79,6 +82,7 @@ const Video = <T,>({
   asForwarded,
   isDownloading,
   isProtected,
+  isInSelectMode,
   className,
   lastPlaybackTimestamp,
   clickArg,
@@ -94,6 +98,7 @@ const Video = <T,>({
   const videoRef = useRef<HTMLVideoElement>();
   const [isNsfwModalOpen, openNsfwModal, closeNsfwModal] = useFlag();
   const [shouldAlwaysShowNsfw, setShouldAlwaysShowNsfw] = useState(false);
+  const { isMediaBlurred, revealMedia } = useGatewayMediaBlur();
 
   const isPaidPreview = video.mediaType === 'extendedMediaPreview';
 
@@ -362,6 +367,7 @@ const Video = <T,>({
           style={`--_progress: ${Math.floor((lastPlaybackTimestamp / duration) * 100)}%`}
         />
       )}
+      {isMediaBlurred && <MediaBlurCover isInSelectMode={isInSelectMode} onReveal={revealMedia} />}
       <SensitiveContentConfirmModal
         isOpen={isNsfwModalOpen}
         onClose={closeNsfwModal}

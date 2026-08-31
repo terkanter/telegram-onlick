@@ -13,10 +13,14 @@ import styles from './MediaBlurCover.module.scss';
 type OwnProps = {
   className?: string;
   isInSelectMode?: boolean;
+  // Small preview (e.g. document thumbnail): a centered, shrunken reveal control
+  isCompact?: boolean;
   onReveal: NoneToVoidFunction;
 };
 
-const MediaBlurCover = ({ className, isInSelectMode, onReveal }: OwnProps) => {
+const MediaBlurCover = ({
+  className, isInSelectMode, isCompact, onReveal,
+}: OwnProps) => {
   const lang = useLang();
 
   // The cover swallows clicks so a blurred media cannot be opened; only the eye reveals it
@@ -32,7 +36,12 @@ const MediaBlurCover = ({ className, isInSelectMode, onReveal }: OwnProps) => {
   return (
     <div
       // In select mode clicks must reach the message selection handlers underneath
-      className={buildClassName(styles.root, isInSelectMode && styles.inSelectMode, className)}
+      className={buildClassName(
+        styles.root,
+        isCompact && styles.compact,
+        isInSelectMode && styles.inSelectMode,
+        className,
+      )}
       onClick={handleCoverClick}
     >
       <button

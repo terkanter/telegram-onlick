@@ -12,6 +12,22 @@
   backdrop-filter: blur(0.75rem);
 }
 
+// Small preview thumbnails (documents sent as files): match the preview rounding
+// and center a shrunken reveal control that fits the tiny box
+.compact {
+  border-radius: var(--border-radius-messages-small);
+
+  .revealButton {
+    inset: 0;
+
+    width: 1.75rem;
+    height: 1.75rem;
+    margin: auto;
+
+    font-size: 1rem;
+  }
+}
+
 .inSelectMode {
   pointer-events: none;
 }

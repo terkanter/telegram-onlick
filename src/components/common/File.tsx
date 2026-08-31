@@ -15,11 +15,13 @@ import { getDocumentThumbnailDimensions } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useGatewayMediaBlur from '../../hooks/useGatewayMediaBlur';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
+import MediaBlurCover from '../gateway/MediaBlurCover';
 import Link from '../ui/Link';
 import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
@@ -109,6 +111,12 @@ const File = ({
   const { width } = getDocumentThumbnailDimensions(previewSize);
   const shouldRenderPreview = canRenderCompactMediaPreview(previewMedia, previewAttachment);
 
+  // Under the platform's "Blur images" toggle, cover the thumbnail of an image/video sent as a
+  // file. Only received media (`previewMedia`) is blurred; the operator's own composer attachment
+  // (`previewAttachment`) stays visible.
+  const { isMediaBlurred, revealMedia } = useGatewayMediaBlur();
+  const shouldBlurPreview = shouldRenderPreview && Boolean(previewMedia) && isMediaBlurred;
+
   const fullClassName = buildClassName(
     'File',
     className,
@@ -147,6 +155,9 @@ const File = ({
               <span className="file-ext" dir="auto">{extension}</span>
             )}
           </div>
+        )}
+        {shouldBlurPreview && (
+          <MediaBlurCover isCompact isInSelectMode={isSelectable} onReveal={revealMedia} />
         )}
         {shouldSpinnerRender && (
           <div className={buildClassName('file-progress', color, spinnerClassNames)}>
