@@ -12,6 +12,5 @@ export default function useGatewayPermissions() {
     canViewUsernames: permissions?.viewUsernames !== false,
     canViewAvatars: permissions?.viewAvatars !== false,
     canForwardMessages: permissions?.forwardMessages !== false,
-    canDeleteMessages: permissions?.deleteMessages !== false,
   };
 }

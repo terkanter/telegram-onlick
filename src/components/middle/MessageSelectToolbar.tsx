@@ -83,7 +83,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
     setSharedSettingOption,
   } = getActions();
   const lang = useOldLang();
-  const { canForwardMessages: canForwardByRole, canDeleteMessages: canDeleteByRole } = useGatewayPermissions();
+  const { canForwardMessages: canForwardByRole } = useGatewayPermissions();
 
   useCopySelectedMessages(isActive);
 
@@ -216,7 +216,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
               {!hasProtectedMessage && (
                 renderButton('copy', lang('lng_context_copy_selected_items'), handleCopy)
               )}
-              {canDeleteMessages && canDeleteByRole && (
+              {canDeleteMessages && (
                 renderButton('delete', lang('EditAdminGroupDeleteMessages'), handleDelete, true)
               )}
             </div>

@@ -49,7 +49,6 @@ import { disableScrolling } from '../../util/scrollLock';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useFlag from '../../hooks/useFlag';
-import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
@@ -231,7 +230,6 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
-  const { canDeleteMessages } = useGatewayPermissions();
 
   const { isMobile } = useAppLayout();
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -841,7 +839,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
               {isBlocked ? oldLang('Unblock') : oldLang('BlockUser')}
             </MenuItem>
           )}
-          {canLeave && (canDeleteMessages || !(savedDialog || isPrivate || canDeleteChat)) && (
+          {canLeave && (
             <>
               <MenuSeparator />
               <MenuItem
