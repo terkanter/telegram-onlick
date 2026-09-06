@@ -23,7 +23,7 @@ import { clearWebTokenAuth } from '../../../util/routing';
 import { setServerTimeOffset } from '../../../util/serverTime';
 import { updateSessionUserId } from '../../../util/sessions';
 import {
-  getGatewayAnnouncedAccountId, markGatewayReconnect, notifyGatewayReady, setGatewayStatus,
+  getGatewayAnnouncedAccountId, handleGatewayClose, notifyGatewayReady,
 } from '../../../util/telegramGateway';
 import { forceWebsync } from '../../../util/websync';
 import { callApi } from '../../../api/gramjs';
@@ -52,10 +52,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       void onUpdateGatewayAccountId(update);
       break;
 
-    case 'updateGatewayRevoked':
-      // Access revoked (WS 4403): show the terminal "revoked" screen, no reconnect
-      logGateway('gateway access revoked');
-      setGatewayStatus('revoked');
+    case 'updateGatewayClosed':
+      handleGatewayClose(update);
       break;
 
     case 'updateAuthorizationState':
@@ -323,11 +321,8 @@ function onUpdateConnectionState<T extends GlobalState>(
   }
 
   if (connectionState === 'connectionStateBroken') {
-    if (IS_GATEWAY) {
-      // Gateway mode: no client session to sign out. Re-request a token and reconnect.
-      markGatewayReconnect();
-      return;
-    }
+    // Gateway mode: closes arrive as `updateGatewayClosed`, and there is no client session to sign out
+    if (IS_GATEWAY) return;
 
     actions.signOut({ forceInitApi: true });
   }

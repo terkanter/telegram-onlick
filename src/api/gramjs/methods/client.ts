@@ -70,7 +70,7 @@ import {
   onRequestRegistration,
   onWebAuthTokenFailed,
 } from './auth';
-import GatewayTransport from './gatewayTransport';
+import GatewayTransport, { type GatewayCloseInfo } from './gatewayTransport';
 import downloadMediaWithClient, { parseMediaUrl } from './media';
 
 import { ChatAbortController } from '../ChatAbortController';
@@ -209,14 +209,13 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
 // Telegram. No login flow, no session persisted; the first request (`fetchCurrentUser`)
 // confirms authorization. See `telegram-fork-spec.md`.
 
-type GatewayBaseArgs = {
+type GatewayInitArgs = {
+  gatewayUrl: string;
+  gatewayToken: string;
   userAgent: string;
   platform?: string;
   langCode: string;
 };
-
-// Retained from the first init so a reconnect can rebuild the client without re-plumbing.
-let gatewayBaseArgs: GatewayBaseArgs | undefined;
 
 // The main thread applies the per-account global cache between WS connect and the
 // post-connect phase (auth ready, updates manager, sync) — otherwise the first sync data
@@ -224,6 +223,12 @@ let gatewayBaseArgs: GatewayBaseArgs | undefined;
 // keeps the app booting if the main thread never answers.
 const GATEWAY_CACHE_BARRIER_TIMEOUT = 3000;
 let gatewayCacheBarrier: Deferred<void> | undefined;
+
+// The transport outlives its sockets: reconnects reuse it together with its unanswered requests
+let gatewayTransport: GatewayTransport | undefined;
+// The post-connect phase runs once, on whichever attempt first reaches `ready`
+let isGatewayPostConnectDone = false;
+let gatewayOnConnected: NoneToVoidFunction | undefined;
 
 // Called by the main thread once the per-account cache is applied (or skipped)
 export function continueGatewayInit() {
@@ -242,106 +247,84 @@ export function sendGatewayUnread({ at, chats, messages }: { at: number; chats: 
   });
 }
 
-// WS close 4403 means access was revoked — the main thread must show the "revoked" screen
-// and NOT reconnect. Every other code (4401 token/session, 4408 token late, …) is a broken
-// connection: the main thread re-requests a token and reconnects.
-const GATEWAY_CLOSE_REVOKED = 4403;
-
-function onGatewayClose(code?: number) {
-  if (code === GATEWAY_CLOSE_REVOKED) {
-    logGatewayError('worker: gateway closed 4403 → access revoked, no reconnect');
-    sendApiUpdate({ '@type': 'updateGatewayRevoked' });
-    return;
+// Relays the transport's verdict on a WS close (`gatewayClosePolicy.ts`) to the main thread,
+// which owns the token re-request and the platform messaging; a retry shows as "connecting"
+function onGatewayClose(info: GatewayCloseInfo) {
+  if (info.retrying) {
+    sendApiUpdate({ '@type': 'updateConnectionState', connectionState: 'connectionStateConnecting' });
   }
 
-  logGatewayError('worker: gateway closed → emit connectionStateBroken', { code });
-  sendApiUpdate({ '@type': 'updateConnectionState', connectionState: 'connectionStateBroken' });
+  sendApiUpdate({ '@type': 'updateGatewayClosed', ...info });
 }
 
-function buildGatewayClient(transport: GatewayTransport, baseArgs: GatewayBaseArgs) {
+async function initGatewayClient(args: GatewayInitArgs, onConnected?: NoneToVoidFunction) {
+  const {
+    gatewayUrl, gatewayToken, userAgent, platform, langCode,
+  } = args;
+
+  logGateway('worker: initGatewayClient →', gatewayUrl);
+  gatewayOnConnected = onConnected;
+  gatewayTransport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
   client = new TelegramClient(
     new sessions.CallbackSession(undefined, () => undefined),
     GATEWAY_API_ID_PLACEHOLDER,
     GATEWAY_API_HASH_PLACEHOLDER,
     {
-      deviceModel: navigator.userAgent || baseArgs.userAgent || DEFAULT_USER_AGENT,
-      systemVersion: baseArgs.platform || DEFAULT_PLATFORM,
+      deviceModel: navigator.userAgent || userAgent || DEFAULT_USER_AGENT,
+      systemVersion: platform || DEFAULT_PLATFORM,
       appVersion: `${APP_VERSION} ${APP_CODE_NAME}`,
       langPack: LANG_PACK,
-      langCode: baseArgs.langCode,
+      langCode,
       systemLangCode: navigator.language,
-      gatewayTransport: transport,
+      gatewayTransport,
     },
   );
-
   client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);
+
+  await connectGateway(() => client.connect());
 }
 
-async function initGatewayClient(
-  args: GatewayBaseArgs & { gatewayUrl: string; gatewayToken: string },
-  onConnected?: NoneToVoidFunction,
-) {
-  const {
-    gatewayUrl, gatewayToken, userAgent, platform, langCode,
-  } = args;
-
-  gatewayBaseArgs = { userAgent, platform, langCode };
-
-  logGateway('worker: initGatewayClient →', gatewayUrl);
-  const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
-  buildGatewayClient(transport, gatewayBaseArgs);
-
-  try {
-    await client.connect();
-
-    const accountId = transport.getAccountId();
-    if (accountId) {
-      logGateway('worker: connected as', accountId, '; waiting for cache barrier');
-      gatewayCacheBarrier = new Deferred<void>();
-      sendApiUpdate({ '@type': 'updateGatewayAccountId', accountId });
-      await Promise.race([gatewayCacheBarrier.promise, pause(GATEWAY_CACHE_BARRIER_TIMEOUT)]);
-      gatewayCacheBarrier = undefined;
-    }
-
-    logGateway('worker: proceeding to ready; fetching current user');
-    onConnected?.();
-    onAuthReady();
-    sendApiUpdate({ '@type': 'updateApiReady' });
-    initUpdatesManager(invokeRequest);
-    void fetchCurrentUser();
-  } catch (err) {
-    logGatewayError('worker: initGatewayClient failed', err);
-    if (DEBUG) {
-      log('GATEWAY CONNECTING ERROR', err);
-    }
-
-    onGatewayClose();
-  }
-}
-
-// Reconnect in place with a fresh token for the SAME account (4401 / token expiry). Keeps the
-// local cache and update state, so `getDifference` catches up. Account switch is a full reload.
+// Reconnect in place with a fresh token for the SAME account. Keeps the client, the local cache
+// and the update state, so `getDifference` catches up. Account switch is a full reload.
 export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: string; gatewayToken: string }) {
-  if (!gatewayBaseArgs) return;
+  if (!gatewayTransport) return;
 
   logGateway('worker: reinitGateway →', gatewayUrl);
-  client?.disconnectGateway();
+  await connectGateway(() => client.reconnectGateway({ url: gatewayUrl, token: gatewayToken }));
+}
 
-  const transport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
-  buildGatewayClient(transport, gatewayBaseArgs);
-
+// A failed attempt needs nothing here: the transport has already reported the close and its
+// verdict through `onGatewayClose`, and the main thread brings the next token
+async function connectGateway(connect: () => Promise<void>) {
   try {
-    await client.connect();
+    await connect();
+  } catch (err) {
+    logGatewayError('worker: gateway connect failed', err);
+    return;
+  }
+
+  if (isGatewayPostConnectDone) {
     logGateway('worker: reconnected');
     void fetchCurrentUser();
-  } catch (err) {
-    logGatewayError('worker: reinitGateway failed', err);
-    if (DEBUG) {
-      log('GATEWAY RECONNECT ERROR', err);
-    }
-
-    onGatewayClose();
+    return;
   }
+
+  isGatewayPostConnectDone = true;
+  const accountId = gatewayTransport!.getAccountId();
+  if (accountId) {
+    logGateway('worker: connected as', accountId, '; waiting for cache barrier');
+    gatewayCacheBarrier = new Deferred<void>();
+    sendApiUpdate({ '@type': 'updateGatewayAccountId', accountId });
+    await Promise.race([gatewayCacheBarrier.promise, pause(GATEWAY_CACHE_BARRIER_TIMEOUT)]);
+    gatewayCacheBarrier = undefined;
+  }
+
+  logGateway('worker: proceeding to ready; fetching current user');
+  gatewayOnConnected?.();
+  onAuthReady();
+  sendApiUpdate({ '@type': 'updateApiReady' });
+  initUpdatesManager(invokeRequest);
+  void fetchCurrentUser();
 }
 
 export function setIsPremium({ isPremium }: { isPremium: boolean }) {

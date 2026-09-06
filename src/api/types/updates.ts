@@ -7,6 +7,7 @@ import type {
   VideoState,
 } from '../../lib/vibecalls';
 import type { ThreadId, ThreadReadState, TranslationTone } from '../../types';
+import type { GatewayCloseDecision } from '../../util/gatewayClosePolicy';
 import type { RegularLangFnParameters } from '../../util/localization';
 import type { ApiBotCommand, ApiBotMenuButton } from './bots';
 import type {
@@ -63,10 +64,14 @@ export type ApiUpdateGatewayAccountId = {
   accountId: string;
 };
 
-// Gateway mode: access was revoked (WS close 4403 — assignment removed, account deactivated,
-// profile deleted, team changed). Unlike a broken connection, the fork must not reconnect.
-export type ApiUpdateGatewayRevoked = {
-  '@type': 'updateGatewayRevoked';
+// Gateway mode: the WS closed and the worker applied the close policy (`gatewayClosePolicy.ts`).
+// While `retrying`, the transport keeps unanswered requests and waits for a fresh token, which
+// the main thread requests after `delayMs`; `accountId` comes from the last gateway `ready`.
+export type ApiUpdateGatewayClosed = GatewayCloseDecision & {
+  '@type': 'updateGatewayClosed';
+  code: number;
+  reason: string;
+  accountId?: string;
 };
 
 export type ApiUpdateAuthorizationStateType = (
@@ -970,7 +975,7 @@ export type ApiUpdateWebPage = {
 };
 
 export type ApiUpdate = (
-  ApiUpdateReady | ApiUpdateGatewayAccountId | ApiUpdateGatewayRevoked | ApiUpdateSession |
+  ApiUpdateReady | ApiUpdateGatewayAccountId | ApiUpdateGatewayClosed | ApiUpdateSession |
   ApiUpdateWebAuthTokenFailed | ApiUpdateRequestUserUpdate |
   ApiUpdateAuthorizationState | ApiUpdateAuthorizationError | ApiUpdateConnectionState | ApiUpdateCurrentUser |
   ApiUpdateChat | ApiUpdateChatTypingStatus | ApiUpdateChatFullInfo | ApiUpdatePinnedChatIds |

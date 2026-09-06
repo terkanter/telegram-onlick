@@ -1,4 +1,7 @@
+import type { ApiUpdateGatewayClosed } from '../api/types';
+
 import { GATEWAY_ALLOWED_ORIGINS, IS_GATEWAY } from '../config';
+import { GATEWAY_CLOSE_ACCESS_REVOKED, GATEWAY_CLOSE_UNAUTHORIZED } from './gatewayClosePolicy';
 import { logGateway, logGatewayError } from './gatewayLog';
 import { debounce } from './schedulers';
 import { createSignal } from './signals';
@@ -11,6 +14,8 @@ const GATEWAY_SOURCE = 'fanbeast-tg';
 // Route memory contract: longer routes must not reach the platform's `localStorage`
 const MAX_ROUTE_LENGTH = 512;
 const ROUTE_CHANGE_DEBOUNCE_MS = 300;
+// Terminal closes that mean the access itself is gone, as opposed to an account not being serviceable
+const ACCESS_REVOKED_CLOSE_CODES = new Set([GATEWAY_CLOSE_UNAUTHORIZED, GATEWAY_CLOSE_ACCESS_REVOKED]);
 
 export type GatewayAuth = {
   token: string;
@@ -26,13 +31,28 @@ type AuthMessage = {
   gatewayUrl: string;
 };
 
+// Sent for every WS close the fork could not replay silently (see `telegram-fork-tasks-09.md` §C).
+// `reason` is the gateway's machine string verbatim — the platform maps it to a user-facing text
+// itself; `retrying` tells it to show "reconnecting" rather than a dead end.
+type AuthErrorMessage = {
+  source: typeof GATEWAY_SOURCE;
+  type: 'auth-error';
+  code: number;
+  reason: string;
+  retrying: boolean;
+  accountId?: string;
+  message?: string;
+};
+
 // Per-user role flags (see `telegram-fork-roles.md` §1). Absent block or field → fail-open
-// (feature visible), matching the pre-load moment and the old platform.
+// (feature visible), matching the pre-load moment and the old platform. `createPosting` gates
+// sending picked content to the platform's post form (`telegram-fork-tasks-09.md` §D).
 export type GatewayPermissions = {
   search: boolean;
   viewUsernames: boolean;
   viewAvatars: boolean;
   forwardMessages: boolean;
+  createPosting: boolean;
 };
 
 // Per-user platform settings pushed right after `auth` and on every toggle change.
@@ -114,7 +134,7 @@ type FormContentMessage = {
 };
 
 const [getGatewayStatus, setGatewayStatus] = createSignal<GatewayStatus>('connecting');
-export { getGatewayStatus, setGatewayStatus };
+export { getGatewayStatus };
 
 // `0` means blur is off. Each enable produces a new monotonic generation, so media
 // revealed with the per-media eye control get hidden again on re-enable.
@@ -137,6 +157,8 @@ let currentAccountId: string | undefined;
 // Set when a reconnect (same account, expired/revoked token) is in flight, so the next `auth`
 // is treated as an in-place reconnect rather than an account switch.
 let isReconnectPending = false;
+// Backoff pause before the next token request (see `gatewayClosePolicy.ts`)
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 // The platform origin confirmed during the auth handshake; private-data messages
 // (`form-content`, `route-change`) are posted only here.
 let verifiedParentOrigin: string | undefined;
@@ -197,9 +219,69 @@ function postRouteChangeToParent(route: string) {
   logGateway('→ parent: route-change', { accountId: currentAccountId, route });
 }
 
-// Re-request a token after the WS dropped; the next `auth` reconnects the same account in place.
-export function markGatewayReconnect() {
-  logGateway('reconnect requested (broken WS)');
+// Applies the worker's verdict on a WS close (`gatewayClosePolicy.ts`): tells the platform what
+// happened unless the close is being replayed silently, then either waits out the backoff before
+// asking for a fresh token or parks the app on the terminal screen. See `telegram-fork-tasks-09.md` §A–C.
+export function handleGatewayClose({
+  code, reason, closeClass, retrying, delayMs, isSilent, accountId,
+}: Omit<ApiUpdateGatewayClosed, '@type'>) {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+
+  if (!isSilent) {
+    postAuthErrorToParent({
+      code, reason, retrying, accountId,
+    });
+  }
+
+  if (!retrying) {
+    const isAccessRevoked = closeClass === 'stop' && ACCESS_REVOKED_CLOSE_CODES.has(code);
+    logGateway('gateway stopped', { code, reason, isAccessRevoked });
+    setGatewayStatus(isAccessRevoked ? 'revoked' : 'error');
+    return;
+  }
+
+  if (!delayMs) {
+    markGatewayReconnect();
+    return;
+  }
+
+  logGateway('reconnect in', delayMs, 'ms', { code, reason });
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    markGatewayReconnect();
+  }, delayMs);
+}
+
+// Strictly to the platform origin (never `'*'`) like the rest of the post-`auth` protocol
+function postAuthErrorToParent({
+  code, reason, retrying, accountId,
+}: Pick<AuthErrorMessage, 'code' | 'reason' | 'retrying' | 'accountId'>) {
+  const message: AuthErrorMessage = {
+    source: GATEWAY_SOURCE,
+    type: 'auth-error',
+    code,
+    reason,
+    retrying,
+    accountId,
+    message: reason ? `Gateway closed (${code}): ${reason}` : `Gateway closed (${code})`,
+  };
+  if (!postToTrustedParent(message)) {
+    logGatewayError('auth-error dropped: no trusted platform origin known');
+    return;
+  }
+
+  logGateway('→ parent: auth-error', {
+    code, reason, retrying, accountId,
+  });
+}
+
+// Re-request a token after the WS closed; the next `auth` reconnects the same account in place.
+// Always a fresh token — the old one is never reused for a new socket.
+function markGatewayReconnect() {
+  logGateway('reconnect requested');
   isReconnectPending = true;
   requestGatewayAuth();
 }
@@ -252,6 +334,12 @@ function handleParentMessage(event: MessageEvent) {
 // Posts selected chat content to the platform. Strictly targeted at the verified origin
 // (falls back to the configured allow-list) — never `'*'`, since it carries conversation data.
 export function postFormContentToParent(content: Omit<FormContentMessage, 'source' | 'type'>) {
+  // The buttons are hidden by the same flag; this keeps any other path from posting without the right
+  if (getGatewayPermissions()?.createPosting === false) {
+    logGatewayError('form-content dropped: posting from Telegram is not permitted for this role');
+    return;
+  }
+
   const message: FormContentMessage = { source: GATEWAY_SOURCE, type: 'form-content', ...content };
   if (!postToTrustedParent(message)) {
     logGatewayError('form-content dropped: no trusted platform origin known');
@@ -349,8 +437,8 @@ function isAuthMessage(data: unknown): data is AuthMessage {
     && typeof message.gatewayUrl === 'string';
 }
 
-// Outgoing messages are non-secret (`request-auth`/`ready`/`auth-error` carry no
-// token), so `'*'` is acceptable for sending; on receive we validate origin strictly.
+// Handshake messages are non-secret (`request-auth`/`ready` carry no token), so `'*'` is
+// acceptable for sending; on receive we validate origin strictly.
 function postToParent(message: Record<string, unknown>) {
   window.parent.postMessage({ source: GATEWAY_SOURCE, ...message }, '*');
 }

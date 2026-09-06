@@ -248,7 +248,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   const scrollableRef = useRef<HTMLDivElement>();
   const oldLang = useOldLang();
   const lang = useLang();
-  const { canForwardMessages, canViewUsernames } = useGatewayPermissions();
+  const { canForwardMessages, canViewUsernames, canCreatePosting } = useGatewayPermissions();
   const noReactions = !isPrivate && !enabledReactions;
   const areReactionsPossible = message.areReactionsPossible;
   const withReactions = (canShowReactionList && !noReactions) || areReactionsPossible;
@@ -323,7 +323,10 @@ const MessageContextMenu: FC<OwnProps> = ({
     onCopyNumber,
   );
 
-  const sendOptions = getMessageSendToParentWindowOptions(lang, message, canCopy, handleAfterCopy, onCopyMessages);
+  // One right for all three signals (text / image / video): may this role post from Telegram at all
+  const sendOptions = canCreatePosting
+    ? getMessageSendToParentWindowOptions(lang, message, canCopy, handleAfterCopy, onCopyMessages)
+    : undefined;
 
   const getTriggerElement = useLastCallback(() => {
     return document.querySelector(`.Transition_slide-active > .MessageList`);
@@ -491,7 +494,7 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canSelectLanguage && (
           <MenuItem icon="web" onClick={onSelectLanguage}>{oldLang('lng_settings_change_lang')}</MenuItem>
         )}
-        {sendOptions.map((option) => (
+        {sendOptions?.map((option) => (
           <MenuItem
             key={option.label}
             icon={option.icon}

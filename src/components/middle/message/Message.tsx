@@ -508,7 +508,7 @@ const Message = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
-  const { canForwardMessages, canViewUsernames } = useGatewayPermissions();
+  const { canForwardMessages, canViewUsernames, canCreatePosting } = useGatewayPermissions();
   const {
     id: messageId, chatId, forwardInfo, viaBotId, guestChatViaId, isTranscriptionError, factCheck,
     isTypingDraft, previousLocalId, fromRank,
@@ -2085,9 +2085,11 @@ const Message = ({
           />
         )}
       </div>
-      <div className="onlick-buttons-container">
-        <OnlikActionsButtons message={message} />
-      </div>
+      {canCreatePosting && (
+        <div className="onlick-buttons-container">
+          <OnlikActionsButtons message={message} />
+        </div>
+      )}
       {contextMenuAnchor && (
         <ContextMenuContainer
           isOpen={isContextMenuOpen}

@@ -10,7 +10,7 @@ import type {
   TwoFaParams } from './2fa';
 import type { UserAuthParams } from './auth';
 import type { DownloadFileParams, DownloadFileWithDcParams, DownloadMediaParams } from './downloadFile';
-import type { GatewayError, GatewayTransport } from './gatewayTypes';
+import type { GatewayError, GatewayTransport, GatewayTransportAuth } from './gatewayTypes';
 import type { UploadFileParams } from './uploadFile';
 
 import Deferred from '../../../util/Deferred';
@@ -374,8 +374,13 @@ class TelegramClient {
     return Boolean(this._gatewayTransport);
   }
 
-  disconnectGateway() {
-    this._gatewayTransport?.disconnect();
+  // Gateway mode (variant 2): reopen the WS with a fresh token after a close. The client, its
+  // update state and unanswered requests survive; `connected` re-syncs through `getDifference`.
+  async reconnectGateway(auth: GatewayTransportAuth) {
+    await this._gatewayTransport!.reconnect(auth);
+    logGateway('client: gateway reconnected');
+
+    this._handleUpdate(new UpdateConnectionState(UpdateConnectionState.connected));
   }
 
   // Relay an analytics frame over the gateway WS (variant A, `telegram-analytics-tasks.md`)
@@ -1223,7 +1228,7 @@ class TelegramClient {
     const requestB64 = bufferToBase64(request.getBytes());
 
     try {
-      const invokePromise = this._gatewayTransport!.invoke(requestB64, dcId);
+      const invokePromise = this._gatewayTransport!.invoke(requestB64, dcId, abortSignal);
       const responseB64 = abortSignal
         ? await Promise.race([invokePromise, new Promise<string>((_resolve, reject) => {
           if (abortSignal.aborted) {
