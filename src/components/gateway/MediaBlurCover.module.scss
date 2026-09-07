@@ -1,23 +1,41 @@
 .root {
   position: absolute;
-  // Above `.protector` (z-index: 2), so the reveal button stays clickable on protected media
+  // Above `.protector` (z-index: 2), so the toggle button stays clickable on protected media
   z-index: 3;
   inset: 0;
 
   overflow: hidden;
 
   border-radius: inherit;
+}
 
+.blurred {
   background-color: rgba(black, 0.1);
   backdrop-filter: blur(0.75rem);
 }
 
+// A revealed media stays clickable underneath (only the button is interactive); in select mode
+// clicks must reach the message selection handlers and the button is inert too
+.revealed,
+.inSelectMode {
+  pointer-events: none;
+}
+
+.revealed .toggleButton {
+  pointer-events: auto;
+}
+
+// Declared after `.revealed` so it wins for a revealed media in select mode
+.inSelectMode .toggleButton {
+  pointer-events: none;
+}
+
 // Small preview thumbnails (documents sent as files): match the preview rounding
-// and center a shrunken reveal control that fits the tiny box
+// and center a shrunken control that fits the tiny box
 .compact {
   border-radius: var(--border-radius-messages-small);
 
-  .revealButton {
+  .toggleButton {
     inset: 0;
 
     width: 1.75rem;
@@ -28,11 +46,7 @@
   }
 }
 
-.inSelectMode {
-  pointer-events: none;
-}
-
-.revealButton {
+.toggleButton {
   cursor: var(--custom-cursor, pointer);
 
   position: absolute;

@@ -114,8 +114,8 @@ const File = ({
   // Under the platform's "Blur images" toggle, cover the thumbnail of an image/video sent as a
   // file. Only received media (`previewMedia`) is blurred; the operator's own composer attachment
   // (`previewAttachment`) stays visible.
-  const { isMediaBlurred, revealMedia } = useGatewayMediaBlur();
-  const shouldBlurPreview = shouldRenderPreview && Boolean(previewMedia) && isMediaBlurred;
+  const { isBlurEnabled, isMediaBlurred, toggleMediaBlur } = useGatewayMediaBlur();
+  const shouldRenderBlurCover = shouldRenderPreview && Boolean(previewMedia) && isBlurEnabled;
 
   const fullClassName = buildClassName(
     'File',
@@ -156,8 +156,13 @@ const File = ({
             )}
           </div>
         )}
-        {shouldBlurPreview && (
-          <MediaBlurCover isCompact isInSelectMode={isSelectable} onReveal={revealMedia} />
+        {shouldRenderBlurCover && (
+          <MediaBlurCover
+            isCompact
+            isRevealed={!isMediaBlurred}
+            isInSelectMode={isSelectable}
+            onToggle={toggleMediaBlur}
+          />
         )}
         {shouldSpinnerRender && (
           <div className={buildClassName('file-progress', color, spinnerClassNames)}>

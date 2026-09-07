@@ -98,7 +98,7 @@ const Video = <T,>({
   const videoRef = useRef<HTMLVideoElement>();
   const [isNsfwModalOpen, openNsfwModal, closeNsfwModal] = useFlag();
   const [shouldAlwaysShowNsfw, setShouldAlwaysShowNsfw] = useState(false);
-  const { isMediaBlurred, revealMedia } = useGatewayMediaBlur();
+  const { isBlurEnabled, isMediaBlurred, toggleMediaBlur } = useGatewayMediaBlur();
 
   const isPaidPreview = video.mediaType === 'extendedMediaPreview';
 
@@ -367,7 +367,9 @@ const Video = <T,>({
           style={`--_progress: ${Math.floor((lastPlaybackTimestamp / duration) * 100)}%`}
         />
       )}
-      {isMediaBlurred && <MediaBlurCover isInSelectMode={isInSelectMode} onReveal={revealMedia} />}
+      {isBlurEnabled && (
+        <MediaBlurCover isRevealed={!isMediaBlurred} isInSelectMode={isInSelectMode} onToggle={toggleMediaBlur} />
+      )}
       <SensitiveContentConfirmModal
         isOpen={isNsfwModalOpen}
         onClose={closeNsfwModal}

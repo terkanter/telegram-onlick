@@ -12,14 +12,16 @@ import styles from './MediaBlurCover.module.scss';
 
 type OwnProps = {
   className?: string;
+  // The media is shown: no cover, only the control to blur it again
+  isRevealed?: boolean;
   isInSelectMode?: boolean;
-  // Small preview (e.g. document thumbnail): a centered, shrunken reveal control
+  // Small preview (e.g. document thumbnail): a centered, shrunken control
   isCompact?: boolean;
-  onReveal: NoneToVoidFunction;
+  onToggle: NoneToVoidFunction;
 };
 
 const MediaBlurCover = ({
-  className, isInSelectMode, isCompact, onReveal,
+  className, isRevealed, isInSelectMode, isCompact, onToggle,
 }: OwnProps) => {
   const lang = useLang();
 
@@ -28,9 +30,9 @@ const MediaBlurCover = ({
     e.stopPropagation();
   });
 
-  const handleRevealClick = useLastCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleToggleClick = useLastCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    onReveal();
+    onToggle();
   });
 
   return (
@@ -38,6 +40,7 @@ const MediaBlurCover = ({
       // In select mode clicks must reach the message selection handlers underneath
       className={buildClassName(
         styles.root,
+        isRevealed ? styles.revealed : styles.blurred,
         isCompact && styles.compact,
         isInSelectMode && styles.inSelectMode,
         className,
@@ -46,11 +49,11 @@ const MediaBlurCover = ({
     >
       <button
         type="button"
-        className={styles.revealButton}
-        aria-label={lang('GatewayShowMedia')}
-        onClick={handleRevealClick}
+        className={styles.toggleButton}
+        aria-label={lang(isRevealed ? 'GatewayHideMedia' : 'GatewayShowMedia')}
+        onClick={handleToggleClick}
       >
-        <Icon name="eye-outline" />
+        <Icon name={isRevealed ? 'eye-crossed-outline' : 'eye-outline'} />
       </button>
     </div>
   );

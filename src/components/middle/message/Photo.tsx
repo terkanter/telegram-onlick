@@ -129,7 +129,7 @@ const Photo = <T,>({
   const thumbDataUri = getMediaThumbUri(photo);
 
   const { updateContentSettings, openAgeVerificationModal } = getActions();
-  const { isMediaBlurred, revealMedia } = useGatewayMediaBlur();
+  const { isBlurEnabled, isMediaBlurred, toggleMediaBlur } = useGatewayMediaBlur();
   const [isNsfwModalOpen, openNsfwModal, closeNsfwModal] = useFlag();
   const [shouldAlwaysShowNsfw, setShouldAlwaysShowNsfw] = useState(false);
 
@@ -324,7 +324,9 @@ const Photo = <T,>({
           {`${Math.round(transferProgress * 100)}%`}
         </MediaBadge>
       )}
-      {isMediaBlurred && <MediaBlurCover isInSelectMode={isInSelectMode} onReveal={revealMedia} />}
+      {isBlurEnabled && (
+        <MediaBlurCover isRevealed={!isMediaBlurred} isInSelectMode={isInSelectMode} onToggle={toggleMediaBlur} />
+      )}
       <SensitiveContentConfirmModal
         isOpen={isNsfwModalOpen}
         onClose={closeNsfwModal}

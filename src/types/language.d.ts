@@ -2176,6 +2176,7 @@ export interface LangPair {
   'GatewayRevoked': undefined;
   'GatewayError': undefined;
   'GatewayShowMedia': undefined;
+  'GatewayHideMedia': undefined;
   'OnlikSendText': undefined;
   'OnlikSendSelectedText': undefined;
   'OnlikSendImage': undefined;

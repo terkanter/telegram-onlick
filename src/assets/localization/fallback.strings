@@ -2989,6 +2989,7 @@
 "GatewayRevoked" = "Access to this account was revoked";
 "GatewayError" = "Couldn’t connect to the account";
 "GatewayShowMedia" = "Show media";
+"GatewayHideMedia" = "Hide media";
 "OnlikSendText" = "Send text";
 "OnlikSendSelectedText" = "Send selected text";
 "OnlikSendImage" = "Send image";
