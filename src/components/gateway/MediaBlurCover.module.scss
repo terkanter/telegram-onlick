@@ -21,13 +21,8 @@
   pointer-events: none;
 }
 
-.revealed .toggleButton {
+.revealed:not(.inSelectMode) .toggleButton {
   pointer-events: auto;
-}
-
-// Declared after `.revealed` so it wins for a revealed media in select mode
-.inSelectMode .toggleButton {
-  pointer-events: none;
 }
 
 // Small preview thumbnails (documents sent as files): match the preview rounding
