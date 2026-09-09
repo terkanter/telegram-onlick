@@ -1,6 +1,6 @@
 import type { ApiBotCommand } from './bots';
 import type {
-  ApiChatReactions, ApiFormattedText, ApiInputMessageReplyInfo, ApiInputSuggestedPostInfo, ApiPhoto, ApiStickerSet,
+  ApiChatReactions, ApiFormattedText, ApiInputDraftReplyInfo, ApiInputSuggestedPostInfo, ApiPhoto, ApiStickerSet,
 } from './messages';
 import type { ApiChatInviteImporter, ApiRestrictionReason } from './misc';
 import type {
@@ -11,6 +11,7 @@ import type {
   ApiSendAsPeerId,
   ApiTypePeerColor,
 } from './peers';
+import type { ApiInputRichMessage } from './richMessage';
 import type {
   ApiUser, ApiUsername,
 } from './users';
@@ -18,7 +19,7 @@ import type {
 type ApiChatType = (
   'chatTypePrivate' | 'chatTypeSecret' |
   'chatTypeBasicGroup' | 'chatTypeSuperGroup' |
-  'chatTypeChannel'
+  'chatTypeChannel' | 'chatTypeCommunity'
 );
 
 export type ApiPeer = ApiChat | ApiUser;
@@ -29,6 +30,7 @@ export type ApiChatInviteJoinWebView = {
   url: string;
   queryId?: string;
   isFullscreen: boolean;
+  isSameOrigin?: true;
 };
 
 export interface ApiChat {
@@ -61,6 +63,8 @@ export interface ApiChat {
   isBotForum?: boolean;
   withForumTabs?: boolean;
   linkedMonoforumId?: string;
+  linkedCommunityId?: string;
+  isCollapsedInDialogs?: boolean;
   areChannelMessagesAllowed?: boolean;
   boostLevel?: number;
   botVerificationIconId?: string;
@@ -74,7 +78,7 @@ export interface ApiChat {
   // Current user permissions
   isNotJoined?: boolean;
   isListed?: boolean;
-  isCreator?: boolean;
+  isOwner?: boolean;
   isForbidden?: boolean; // Forbidden - can't send messages (user was kicked, for example)
   isRestricted?: boolean; // Restricted - can't access the chat (user was banned or chat is violating rules)
   restrictionReasons?: ApiRestrictionReason[];
@@ -106,6 +110,7 @@ export interface ApiChat {
   detectedLanguage?: string;
 
   paidMessagesStars?: number;
+  ttlPeriod?: number;
 }
 
 type ApiTypingStatusBase = {
@@ -125,8 +130,16 @@ type ApiTypingStatusWatchingAnimations = ApiTypingStatusBase & {
 
 export type ApiTypingStatus = ApiTypingStatusSimple | ApiTypingStatusWatchingAnimations;
 
+export interface ApiCommunityLinkedPeer {
+  peerId: string;
+  canViewHistory?: boolean;
+  // `false` means the peer is hidden and cannot be joined without an invite
+  isVisible?: boolean;
+}
+
 export interface ApiChatFullInfo {
   about?: string;
+  ttlPeriod?: number;
   onlineCount?: number;
   members?: ApiChatMember[];
   kickedMembers?: ApiChatMember[];
@@ -175,6 +188,12 @@ export interface ApiChatFullInfo {
   botVerification?: ApiBotVerification;
   mainTab?: ApiProfileTab;
   guardBotId?: string;
+
+  // Community
+  linkedPeers?: ApiCommunityLinkedPeer[];
+  adminsCount?: number;
+  kickedCount?: number;
+  peerLinkRequestsCount?: number;
 }
 
 export interface ApiChatMember {
@@ -201,6 +220,7 @@ export interface ApiChatAdminRights {
   pinMessages?: true;
   addAdmins?: true;
   anonymous?: true;
+  other?: true;
   manageCall?: true;
   manageTopics?: true;
   postStories?: true;
@@ -294,7 +314,8 @@ export interface ApiChatLink {
 
 export type ApiDraft = {
   text?: ApiFormattedText;
-  replyInfo?: ApiInputMessageReplyInfo;
+  richMessage?: ApiInputRichMessage;
+  replyInfo?: ApiInputDraftReplyInfo;
   suggestedPostInfo?: ApiInputSuggestedPostInfo;
   date?: number;
   effectId?: string;

@@ -2,15 +2,16 @@ import type { TeactNode } from '../../lib/teact/teact';
 
 import type {
   ApiAttachment,
-  ApiInputMessageReplyInfo,
   ApiMessage,
   ApiMessageEntityTextUrl,
   ApiPeer,
+  ApiRichMessage,
   ApiStory,
   ApiTypeStory,
 } from '../../api/types';
 import type {
-  ApiFormattedText, ApiMessagePoll, ApiReplyInfo, ApiRichMessage, ApiWebPage, MediaContainer, StatefulMediaContent,
+  ApiFormattedText, ApiInputDraftReplyInfo, ApiMessagePoll, ApiReplyInfo, ApiWebPage,
+  MediaContainer, StatefulMediaContent,
 } from '../../api/types/messages';
 import type { ThreadId } from '../../types';
 import type { LangFn } from '../../util/localization';
@@ -277,7 +278,7 @@ export function isOwnMessage(message: ApiMessage) {
 }
 
 export function isReplyToMessage(message: ApiMessage) {
-  return Boolean(message.replyInfo?.type === 'message');
+  return Boolean(message.replyInfo?.type === 'message' || message.replyInfo?.type === 'ephemeral');
 }
 
 export function isForwardedMessage(message: ApiMessage) {
@@ -646,8 +647,10 @@ export function groupMessageIdsByThreadId(
 }
 
 export function prepareMessageReplyInfo(
-  threadId: ThreadId, additionalReplyInfo?: ApiInputMessageReplyInfo,
-): ApiInputMessageReplyInfo | undefined {
+  threadId: ThreadId, additionalReplyInfo?: ApiInputDraftReplyInfo,
+): ApiInputDraftReplyInfo | undefined {
+  if (additionalReplyInfo?.type === 'ephemeral') return additionalReplyInfo;
+
   const isMainThread = threadId === MAIN_THREAD_ID;
   if (!additionalReplyInfo && isMainThread) return undefined;
 

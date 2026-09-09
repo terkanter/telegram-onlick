@@ -2,13 +2,15 @@ import type { FC } from '../../lib/teact/teact';
 import { memo, useMemo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import type { ApiChat } from '../../api/types';
+import type { ApiChat, ApiChatFullInfo } from '../../api/types';
 import type { ActiveDownloads, MediaViewerOrigin, MessageListType } from '../../types';
 import type { IconName } from '../../types/icons';
 import type { MenuItemProps } from '../ui/MenuItem';
 import type { MediaViewerItem, ViewableMedia } from './helpers/getViewableMedia';
 
 import {
+  canEditMediaInEditor,
+  getAllowedAttachmentOptions,
   getIsDownloading,
   getMediaFilename,
   getMediaFormat,
@@ -16,10 +18,12 @@ import {
 } from '../../global/helpers';
 import {
   selectActiveDownloads,
-  selectAllowedMessageActionsSlow, selectCurrentChat,
+  selectAllowedMessageActionsSlow, selectCanForwardMessage,
+  selectChatFullInfo, selectCurrentChat,
   selectCurrentMessageList,
   selectIsChatProtected,
   selectIsMessageProtected,
+  selectPerformanceSettingsValue,
   selectTabState,
 } from '../../global/selectors';
 import { isUserId } from '../../util/entities/ids';
@@ -42,6 +46,9 @@ import ProgressSpinner from '../ui/ProgressSpinner';
 
 import './MediaViewerActions.scss';
 
+// Safety fallback: if the editor never opens to take over closing the viewer, close it ourselves
+const EDITOR_OPEN_TIMEOUT = 3000;
+
 type OwnProps = {
   item?: MediaViewerItem;
   mediaData?: string;
@@ -60,8 +67,12 @@ type StateProps = {
   isProtected?: boolean;
   isChatProtected?: boolean;
   canDelete?: boolean;
+  canForward?: boolean;
+  canReportMessage?: boolean;
   chat?: ApiChat;
+  chatFullInfo?: ApiChatFullInfo;
   canUpdate?: boolean;
+  withAnimation?: boolean;
   messageListType?: MessageListType;
   origin?: MediaViewerOrigin;
   viewableMedia?: ViewableMedia;
@@ -72,11 +83,15 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
   mediaData,
   isVideo,
   chat,
+  chatFullInfo,
   isChatProtected,
   isProtected,
   canReportAvatar,
+  canReportMessage,
   canDelete,
+  canForward,
   canUpdate,
+  withAnimation,
   messageListType,
   activeDownloads,
   origin,
@@ -96,10 +111,23 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
     updateProfilePhoto,
     updateChatPhoto,
     openMediaViewer,
+    closeMediaViewer,
     openDeleteMessageModal,
+    deleteEphemeralMessage,
+    reportMessages,
+    requestMessageMediaEditor,
   } = getActions();
 
   const isMessage = item?.type === 'message';
+  const message = item?.type === 'message' ? item.message : undefined;
+
+  const { canSendPhotos } = getAllowedAttachmentOptions(chat, chatFullInfo);
+  const canEditViewedMedia = Boolean(
+    message && !message.isEphemeral && !isMobile && !isProtected && !isChatProtected
+    && message.chatId === chat?.id
+    && canSendPhotos
+    && canEditMediaInEditor(message),
+  );
 
   const { media } = viewableMedia || {};
   const fileName = media && getMediaFilename(media);
@@ -117,7 +145,6 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
     if (isDownloading) {
       cancelMediaDownload({ media });
     } else {
-      const message = item?.type === 'message' ? item.message : undefined;
       downloadMedia({ media, originMessage: message });
     }
   });
@@ -132,6 +159,24 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
     const zoomChange = getZoomChange();
     const change = zoomChange > 0 ? zoomChange : 0;
     setZoomChange(change + 1);
+  });
+
+  const handleEditClick = useLastCallback(() => {
+    if (!message) return;
+    requestMessageMediaEditor({ chatId: message.chatId, messageId: message.id });
+    if (!withAnimation) {
+      closeMediaViewer();
+      return;
+    }
+    // Keep the viewer open as an opaque backdrop: the editor fades in above it (as a top-layer
+    // popover) and closes it once its canvas is ready (see `MediaEditor`). Safety net closes the
+    // viewer in case the editor never opens (e.g. the media fails to load) — guarded so it only
+    // acts while a viewer is still on screen.
+    setTimeout(() => {
+      if (document.getElementById('MediaViewer')) {
+        closeMediaViewer();
+      }
+    }, EDITOR_OPEN_TIMEOUT);
   });
 
   const handleUpdate = useLastCallback(() => {
@@ -217,6 +262,15 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 
   const openDeleteModalHandler = useLastCallback(() => {
     if (item?.type === 'message' && chat) {
+      if (item.message.isEphemeral) {
+        deleteEphemeralMessage({
+          chatId: item.message.chatId,
+          messageId: item.message.id,
+        });
+        onBeforeDelete();
+        return;
+      }
+
       openDeleteMessageModal({
         chatId: chat?.id,
         messageIds: [item.message.id],
@@ -228,10 +282,17 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
     }
   });
 
+  const handleReportMessage = useLastCallback(() => {
+    if (!message) return;
+    reportMessages({
+      chatId: message.chatId,
+      messageIds: [message.id],
+    });
+  });
+
   if (isMobile) {
     const menuItems: MenuItemProps[] = [];
-    if (isMessage && canForwardMessages && item.message.isForwardingAllowed
-      && !item.message.content.action && !isChatProtected) {
+    if (isMessage && canForward && canForwardMessages) {
       menuItems.push({
         icon: 'forward',
         onClick: onForward,
@@ -259,6 +320,14 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
       menuItems.push({
         icon: 'flag',
         onClick: onReport,
+        children: lang('ReportPeer.Report'),
+      });
+    }
+
+    if (canReportMessage) {
+      menuItems.push({
+        icon: 'flag',
+        onClick: handleReportMessage,
         children: lang('ReportPeer.Report'),
       });
     }
@@ -313,7 +382,17 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="MediaViewerActions">
-      {isMessage && canForwardMessages && item.message.isForwardingAllowed && !isChatProtected && (
+      {canEditViewedMedia && (
+        <Button
+          round
+          size="smaller"
+          color="translucent-white"
+          ariaLabel={lang('Edit')}
+          onClick={handleEditClick}
+          iconName="edit"
+        />
+      )}
+      {isMessage && canForward && canForwardMessages && (
         <Button
           round
           size="smaller"
@@ -347,6 +426,16 @@ const MediaViewerActions: FC<OwnProps & StateProps> = ({
           color="translucent-white"
           ariaLabel={lang(isVideo ? 'PeerInfo.ReportProfileVideo' : 'PeerInfo.ReportProfilePhoto')}
           onClick={onReport}
+          iconName="flag"
+        />
+      )}
+      {canReportMessage && (
+        <Button
+          round
+          size="smaller"
+          color="translucent-white"
+          ariaLabel={lang('ReportPeer.Report')}
+          onClick={handleReportMessage}
           iconName="flag"
         />
       )}
@@ -396,6 +485,7 @@ export default memo(withGlobal<OwnProps>(
     const avatarPhoto = item?.type === 'avatar' && item.profilePhotos.photos[item.mediaIndex];
 
     const chat = selectCurrentChat(global);
+    const chatFullInfo = chat && !isUserId(chat.id) ? selectChatFullInfo(global, chat.id) : undefined;
     const currentMessageList = selectCurrentMessageList(global);
     const { threadId } = selectCurrentMessageList(global) || {};
     const isProtected = pageMedia?.isProtected || selectIsMessageProtected(global, message);
@@ -405,18 +495,24 @@ export default memo(withGlobal<OwnProps>(
       && message && selectAllowedMessageActionsSlow(global, message, threadId)) || {};
     const isCurrentAvatar = avatarPhoto && (avatarPhoto.id === avatarOwner?.avatarPhotoId);
     const canDeleteAvatar = canUpdateMedia && Boolean(avatarPhoto);
-    const canDelete = canDeleteMessage || canDeleteAvatar;
+    const canDelete = message?.isEphemeral || canDeleteMessage || canDeleteAvatar;
+    const canForward = message && selectCanForwardMessage(global, message);
     const canUpdate = canUpdateMedia && Boolean(avatarPhoto) && !isCurrentAvatar;
     const messageListType = currentMessageList?.type;
     const viewableMedia = selectViewableMedia(global, origin, item);
+    const withAnimation = selectPerformanceSettingsValue(global, 'mediaViewerAnimations');
 
     return {
       activeDownloads,
       isProtected,
       chat,
+      chatFullInfo,
       isChatProtected,
       canDelete,
+      canForward,
+      canReportMessage: Boolean(message?.isEphemeral && !message.isOutgoing),
       canUpdate,
+      withAnimation,
       messageListType,
       origin,
       viewableMedia,

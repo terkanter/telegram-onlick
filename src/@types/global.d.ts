@@ -4,7 +4,6 @@ declare module '*.css';
 declare module '*.scss';
 
 declare const APP_VERSION: string;
-declare const CHANGELOG_DATETIME: number | undefined;
 
 declare module 'virtual:git-info' {
   export const APP_REVISION: string;
@@ -29,6 +28,7 @@ declare namespace React {
     // Optimization for DOM nodes prepends and inserts
     teactFastList?: boolean;
     teactExperimentControlled?: boolean;
+    onFileHoverOpen?: (e: Event) => void;
   }
 
   interface LiHTMLAttributes<_T> {
@@ -114,15 +114,15 @@ declare module '*.svg' {
   const url: string;
   export default url;
 }
-declare module '*.txt?raw' {
-  const content: string;
-  export default content;
-}
 declare module '*.tgs' {
   const url: string;
   export default url;
 }
 declare module '*.wasm' {
+  const url: string;
+  export default url;
+}
+declare module '*.wasm?url' {
   const url: string;
   export default url;
 }

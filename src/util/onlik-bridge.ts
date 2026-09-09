@@ -27,6 +27,8 @@ const CHAT_TYPE_MAP: Record<ApiChat['type'], FormContentChat['type']> = {
   chatTypeSecret: 'private',
   chatTypeBasicGroup: 'group',
   chatTypeSuperGroup: 'group',
+  // A community is a supergroup with a different shell, so the platform reads it as a group
+  chatTypeCommunity: 'group',
   chatTypeChannel: 'channel',
 };
 

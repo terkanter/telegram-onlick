@@ -4,6 +4,7 @@ import type {
   ApiChat, ApiMessage, ApiPeer, ApiUser, ApiVideo,
 } from '../../../../api/types';
 import type { IconName } from '../../../../types/icons';
+import type { ClipboardTextFormat, MessageCopyRequest } from '../../../../types/messageCopy';
 import type { LangFn } from '../../../../util/localization';
 import { ApiMediaFormat } from '../../../../api/types';
 
@@ -52,7 +53,7 @@ export function getMessageSendToParentWindowOptions(
   message: ApiMessage,
   canCopy?: boolean,
   afterEffect?: () => void,
-  onCopyMessages?: (messageIds: number[]) => void,
+  onCopyMessages?: (request: MessageCopyRequest, textFormat?: ClipboardTextFormat) => void,
 ): ISendOptions {
   const options: ISendOptions = [];
   const global = getGlobal();
@@ -90,9 +91,7 @@ export function getMessageSendToParentWindowOptions(
       handler: (afterEffectInternal?: () => void) => {
         // @ts-ignore
         function getText() {
-          const messageIds = getMessageIdsForSelectedText();
-          if (messageIds?.length && onCopyMessages) {
-            // onCopyMessages(messageIds);
+          if (checkHasMultiMessageSelection() && onCopyMessages) {
             return undefined;
           } else if (hasSelection) {
             // @ts-ignore
@@ -185,9 +184,8 @@ export function getMessageSendToParentWindowOptions(
       label: getCopyLabel(lang, hasSelection),
       icon: 'quote-text',
       handler: (afterEffectInternal?: () => void) => {
-        const messageIds = getMessageIdsForSelectedText();
-        if (messageIds?.length && onCopyMessages) {
-          // onCopyMessages(messageIds);
+        if (checkHasMultiMessageSelection() && onCopyMessages) {
+          // Spanning several messages is the copy flow's job, not the posting form's
         } else if (hasSelection) {
           sendFormContent({
             text: selection?.toString() || '',
@@ -267,6 +265,15 @@ function createVideoSendHandler(
         afterEffectInternal?.(false);
       });
   };
+}
+
+// True when the selection spans message boundaries — evaluated on click, since the user may
+// change the selection after the options were built
+function checkHasMultiMessageSelection(): boolean {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return false;
+
+  return Boolean(getMessageIdsForSelectedText(selection.getRangeAt(0))?.length);
 }
 
 function checkMessageHasSelection(message: ApiMessage): boolean {

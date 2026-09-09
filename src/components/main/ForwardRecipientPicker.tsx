@@ -45,7 +45,6 @@ export type OwnProps = {
 
 interface StateProps {
   currentUserId?: string;
-  isManyMessages?: boolean;
   isStory?: boolean;
   isForwarding?: boolean;
   fromChatId?: string;
@@ -56,7 +55,6 @@ interface StateProps {
 const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
   isOpen,
   currentUserId,
-  isManyMessages,
   isStory,
   isForwarding,
   fromChatId,
@@ -135,6 +133,20 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
     }
   }, [isOpen]);
 
+  const forwardToSelf = useLastCallback(() => {
+    forwardToSavedMessages({});
+    showNotification({
+      message: {
+        key: 'FwdMessagesToSaved',
+        options: {
+          withNodes: true,
+          withMarkdown: true,
+          pluralValue: messageCount,
+        },
+      },
+    });
+  });
+
   const handleSelectRecipient = useCallback((recipientId: string, threadId?: ThreadId) => {
     const isSelf = recipientId === currentUserId;
     if (isStory) {
@@ -161,14 +173,7 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
     }
 
     if (isSelf) {
-      const message = oldLang(
-        isManyMessages
-          ? 'Conversation.ForwardTooltip.SavedMessages.Many'
-          : 'Conversation.ForwardTooltip.SavedMessages.One',
-      );
-
-      forwardToSavedMessages({});
-      showNotification({ message });
+      forwardToSelf();
     } else {
       const chatId = recipientId;
       const topicId = threadId ? Number(threadId) : undefined;
@@ -178,7 +183,7 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
         openChatOrTopicWithReplyInDraft({ chatId, topicId });
       }
     }
-  }, [currentUserId, isManyMessages, isStory, oldLang, isForwarding]);
+  }, [currentUserId, isStory, oldLang, isForwarding]);
 
   const handleClose = useCallback(() => {
     exitForwardMode();
@@ -202,6 +207,11 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
 
     if (selectedIds.length === 1) {
       const { peerId: chatId, topicId } = selectedIds[0];
+      if (chatId === currentUserId) {
+        forwardToSelf();
+        return;
+      }
+
       setForwardChatOrTopic({ chatId, topicId });
       return;
     }
@@ -411,6 +421,7 @@ const ForwardRecipientPicker: FC<OwnProps & StateProps> = ({
         onClose={handleClose}
         onCloseAnimationEnd={unmarkIsShown}
         isForwarding={isForwarding}
+        isNativeDialog
         withFolders
       />
       <ConfirmDialog
@@ -437,7 +448,6 @@ export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
 
   return {
     currentUserId: global.currentUserId,
-    isManyMessages: (messageIds?.length || 0) > 1,
     isStory: Boolean(storyId),
     isForwarding,
     fromChatId,

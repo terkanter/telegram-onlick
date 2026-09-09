@@ -83,14 +83,33 @@ export interface ApiAttachment {
 
   uniqueId?: string;
   ttlSeconds?: number;
+  isRoundVideo?: boolean;
   shouldSendInHighQuality?: boolean;
 
   gif?: ApiVideo;
 }
 
+export interface ApiWallpaperSettings {
+  backgroundColor?: number;
+  secondBackgroundColor?: number;
+  thirdBackgroundColor?: number;
+  fourthBackgroundColor?: number;
+  intensity?: number;
+  rotation?: number;
+  // Set on chat-theme wallpapers (links the wallpaper to its chat theme)
+  emoticon?: string;
+  isBlurred?: boolean;
+  isMoving?: boolean;
+}
+
 export interface ApiWallpaper {
   slug: string;
-  document: ApiDocument;
+  document?: ApiDocument;
+  isPattern?: boolean;
+  isDark?: boolean;
+  isCreator?: boolean;
+  isDefault?: boolean;
+  settings?: ApiWallpaperSettings;
 }
 
 export interface ApiSession {
@@ -274,6 +293,11 @@ export interface ApiAppConfig {
   topicsPinnedLimit: number;
   hiddenMembersMinCount: number;
   limits: Record<ApiLimitType, readonly [number, number]>;
+  richMessageLengthLimit: number;
+  richMessageMaxBlocks: number;
+  richMessageMaxDepth: number;
+  richMessageMaxMedia: number;
+  richMessageMaxTableColumns: number;
   canDisplayAutoarchiveSetting?: boolean;
   storyViewersExpirePeriod: number;
   storyChangelogUserId: string;
@@ -323,6 +347,8 @@ export interface ApiAppConfig {
   tonTopupUrl: string;
   pollMaxAnswers: number;
   pollClosePeriodMax: number;
+  pollCountriesMax: number;
+  phoneCountryIso2?: string;
   todoItemsMax: number;
   todoTitleLengthMax: number;
   todoItemLengthMax: number;
@@ -461,6 +487,7 @@ export type ApiLimitType =
   | 'dialogFiltersChats'
   | 'dialogFilters'
   | 'dialogFolderPinned'
+  | 'messageLength'
   | 'captionLength'
   | 'channels'
   | 'channelsPublic'
@@ -474,13 +501,14 @@ export type ApiLimitType =
   | 'aiComposeToneSaved';
 
 export type ApiLimitTypeWithModal = Exclude<ApiLimitType, (
-  'captionLength' | 'aboutLength' | 'stickersFaved' | 'savedGifs' | 'recommendedChannels' | 'moreAccounts'
+  'messageLength' | 'captionLength' | 'aboutLength' | 'stickersFaved' | 'savedGifs' | 'recommendedChannels'
+  | 'moreAccounts'
   | 'maxReactions' | 'aiComposeToneSaved'
 )>;
 
 export type ApiLimitTypeForPromo = Exclude<ApiLimitType,
-  'uploadMaxFileparts' | 'chatlistInvites' | 'chatlistJoined' | 'savedDialogsPinned' | 'maxReactions'
-  | 'aiComposeToneSaved'
+  'uploadMaxFileparts' | 'messageLength' | 'chatlistInvites' | 'chatlistJoined' | 'savedDialogsPinned'
+  | 'maxReactions' | 'aiComposeToneSaved'
 >;
 
 export type ApiPeerNotifySettings = {
@@ -505,3 +533,9 @@ export interface ApiPasskey {
   softwareEmojiId?: string;
   lastUsageDate?: number;
 }
+
+export type ApiEmojiGroup = {
+  title: string;
+  iconEmojiId: string;
+  emoticons: string[];
+};

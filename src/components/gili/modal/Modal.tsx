@@ -51,6 +51,7 @@ export type ModalProps = {
   ariaLabel?: string;
   noContainment?: boolean;
   onClose: NoneToVoidFunction;
+  onCloseAnimationEnd?: NoneToVoidFunction;
 };
 
 type ModalContextType = {
@@ -66,6 +67,18 @@ type ModalSlotProps = {
   className?: string;
   children?: TeactNode;
 };
+
+type ModalHeaderProps = {
+  noMask?: boolean;
+} & ModalSlotProps;
+
+type ModalFooterActionsProps = {
+  isVertical?: boolean;
+} & ModalSlotProps;
+
+type ModalTitleProps = {
+  noAutoFocus?: boolean;
+} & ModalSlotProps;
 
 type ModalCloseButtonProps = {
   asAbsolute?: boolean;
@@ -126,6 +139,7 @@ const Modal = ({
   ariaLabel,
   noContainment,
   onClose,
+  onCloseAnimationEnd,
 }: ModalProps) => {
   const [hasEverOpened, setHasEverOpened] = useState(Boolean(isOpen));
   const [shouldRender, setShouldRender] = useState(Boolean(isOpen));
@@ -174,6 +188,7 @@ const Modal = ({
 
     setIsClosing(false);
     setShouldRender(false);
+    onCloseAnimationEnd?.();
   });
 
   const handleRequestClose = useLastCallback(() => {
@@ -413,7 +428,7 @@ const Modal = ({
   );
 };
 
-const ModalHeader = ({ className, children }: ModalSlotProps) => {
+const ModalHeader = ({ noMask, className, children }: ModalHeaderProps) => {
   const modalContext = useModalContext();
 
   return (
@@ -421,6 +436,7 @@ const ModalHeader = ({ className, children }: ModalSlotProps) => {
       className={buildClassName(
         styles.header,
         modalContext?.hasSubtitle && styles.headerWithSubtitle,
+        !noMask && styles.scrollMask,
         className,
       )}
     >
@@ -437,15 +453,21 @@ const ModalHeaderAction = ({ className, children }: ModalSlotProps) => {
   );
 };
 
-const ModalFooterActions = ({ className, children }: ModalSlotProps) => {
+const ModalFooterActions = ({ isVertical, className, children }: ModalFooterActionsProps) => {
   return (
-    <div className={buildClassName(styles.footerActions, className)}>
+    <div
+      className={buildClassName(
+        styles.footerActions,
+        isVertical && styles.footerActionsVertical,
+        className,
+      )}
+    >
       {children}
     </div>
   );
 };
 
-const ModalTitle = ({ className, children }: ModalSlotProps) => {
+const ModalTitle = ({ noAutoFocus, className, children }: ModalTitleProps) => {
   const modalContext = useModalContext();
 
   useLayoutEffect(() => {
@@ -461,6 +483,8 @@ const ModalTitle = ({ className, children }: ModalSlotProps) => {
       id={modalContext?.titleId}
       className={buildClassName(styles.title, className)}
       dir="auto"
+      tabIndex={-1}
+      autoFocus={!noAutoFocus}
     >
       {children}
     </div>

@@ -14,7 +14,7 @@ import {
 } from '../../../lib/gramjs/Helpers';
 
 import {
-  bufferFromUtf8, buffersEqual, bufferToUtf8, concat, readUint32BE, writeUint32BE,
+  bufferFromUtf8, bufferToUtf8, compareBuffersConstantTime, concat, readUint32BE, writeUint32BE,
 } from '../../../util/encoding/buffer';
 import { isSctpPacket, SctpSignaling } from './sctpSignaling';
 
@@ -275,7 +275,7 @@ class PhoneCallState {
 
     const x = 128 + (this.isOutgoing ? 8 : 0);
     const msgKeyLarge = await sha256(concat(authKey.slice(88 + x, 88 + x + 32), decrypted));
-    if (!buffersEqual(msgKey, msgKeyLarge.slice(8, 24))) {
+    if (!compareBuffersConstantTime(msgKey, msgKeyLarge.slice(8, 24))) {
       return undefined;
     }
 
@@ -360,7 +360,7 @@ async function validateGAHash(gA: Uint8Array, expectedHash: number[]) {
   }
 
   const actualHash = await sha256(gA);
-  if (!buffersEqual(actualHash, Uint8Array.from(expectedHash))) {
+  if (!compareBuffersConstantTime(actualHash, Uint8Array.from(expectedHash))) {
     throw new SecurityError('Phone call gA hash mismatch');
   }
 }

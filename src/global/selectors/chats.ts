@@ -40,6 +40,10 @@ export function selectPeerFullInfo<T extends GlobalState>(global: T, peerId: str
   return selectChatFullInfo(global, peerId);
 }
 
+export function selectChatHistoryTtl<T extends GlobalState>(global: T, chatId: string) {
+  return selectChat(global, chatId)?.ttlPeriod ?? selectPeerFullInfo(global, chatId)?.ttlPeriod;
+}
+
 export function selectChatListLoadingParameters<T extends GlobalState>(
   global: T, listType: ChatListType,
 ) {
@@ -237,9 +241,16 @@ export function selectCanInviteToChat<T extends GlobalState>(global: T, chatId: 
 
   // https://github.com/TelegramMessenger/Telegram-iOS/blob/5126be83b3b9578fb014eb52ca553da9e7a8b83a/submodules/TelegramCore/Sources/TelegramEngine/Peers/Communities.swift#L6
   return !chat.migratedTo && Boolean(!isUserId(chatId) && ((isChatChannel(chat) || isChatSuperGroup(chat)) ? (
-    chat.isCreator || getHasAdminRight(chat, 'inviteUsers')
+    getHasAdminRight(chat, 'inviteUsers')
     || (isChatPublic(chat) && !chat.isJoinRequest)
-  ) : (chat.isCreator || getHasAdminRight(chat, 'inviteUsers'))));
+  ) : getHasAdminRight(chat, 'inviteUsers')));
+}
+
+export function selectCanBanUsers<T extends GlobalState>(global: T, chatId: string) {
+  const chat = selectChat(global, chatId);
+  if (!chat || chat.isMonoforum) return false;
+
+  return getHasAdminRight(chat, 'banUsers');
 }
 
 export function selectCanShareFolder<T extends GlobalState>(global: T, folderId: number) {
@@ -349,7 +360,7 @@ export function selectIsMonoforumAdmin<T extends GlobalState>(
   const channel = selectMonoforumChannel(global, chatId);
   if (!channel) return;
 
-  return Boolean(chat.isCreator || getHasAdminRight(channel, 'manageDirectMessages'));
+  return getHasAdminRight(channel, 'manageDirectMessages');
 }
 
 /**
@@ -396,7 +407,7 @@ export function selectCanEditRank<T extends GlobalState>(global: T, {
 
   if (userId === global.currentUserId) return true; // Admin can edit own rank with permission
 
-  if (!chat.isCreator && (isOwner || isAdmin)) return false; // Admin can't edit rank of owner or another admin
+  if (!chat.isOwner && (isOwner || isAdmin)) return false; // Admin can't edit rank of owner or another admin
 
   return true;
 }

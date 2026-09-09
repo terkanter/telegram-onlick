@@ -66,6 +66,7 @@ import ListItem from '../../ui/ListItem';
 import CompactMapPreview from '../CompactMapPreview';
 import CustomEmoji from '../CustomEmoji';
 import Icon from '../icons/Icon';
+import QrIcon from '../icons/QrIcon';
 import SafeLink from '../SafeLink';
 import BusinessHours from './BusinessHours';
 import UserBirthday from './UserBirthday';
@@ -146,6 +147,7 @@ const ChatExtra = ({
     toggleUserEmojiStatusPermission,
     toggleUserLocationPermission,
     requestNextManagementScreen,
+    openQrCodeModal,
   } = getActions();
 
   const {
@@ -181,8 +183,7 @@ const ChatExtra = ({
   } = useCollapsibleLines(
     noteTextRef,
     NOTE_MAX_LINES,
-    undefined,
-    !shouldRenderNote,
+    { isDisabled: !shouldRenderNote },
   );
 
   useEffectWithPrevDeps(([prevPeerId]) => {
@@ -310,6 +311,12 @@ const ChatExtra = ({
     requestNextManagementScreen({ screen: ManagementScreens.ChannelSubscribers });
   });
 
+  const handleOpenQrCode = useLastCallback((e: React.MouseEvent) => {
+    stopEvent(e);
+    if (!peerId) return;
+    openQrCodeModal({ peerId });
+  });
+
   const handleOpenApp = useLastCallback(() => {
     const botId = user?.id;
     if (!botId) {
@@ -371,13 +378,27 @@ const ChatExtra = ({
         })
       : undefined;
 
+    const isSettingsUsername = Boolean(isInSettings) && !isChat;
+    const plainIcon = isChat ? 'link' : 'mention';
+
     return (
       <ListItem
-        icon={isChat ? 'link' : 'mention'}
+        icon={isSettingsUsername ? 'mention-filled' : plainIcon}
+        iconBg={isSettingsUsername ? 'blue' : undefined}
         multiline
         narrow
         ripple
-
+        rightElement={(
+          <Button
+            round
+            size="smaller"
+            color="translucent"
+            ariaLabel={lang('QrCodeTitle')}
+            onClick={handleOpenQrCode}
+          >
+            <QrIcon />
+          </Button>
+        )}
         onClick={() => {
           handleUsernameClick(mainUsername, isChat);
         }}
@@ -424,7 +445,8 @@ const ChatExtra = ({
       <Island>
         {Boolean(formattedNumber?.length) && (
           <ListItem
-            icon="phone"
+            icon={isInSettings ? 'phone-filled' : 'phone'}
+            iconBg={isInSettings ? 'green' : undefined}
             className={styles.phone}
             multiline
             narrow
@@ -439,7 +461,8 @@ const ChatExtra = ({
         {activeUsernames && canViewUsernames && renderUsernames(activeUsernames)}
         {description && Boolean(description.length) && (
           <ListItem
-            icon="info"
+            icon={isInSettings ? 'bio-filled' : 'info'}
+            iconBg={isInSettings ? 'gray' : undefined}
             className={styles.description}
             multiline
             narrow
@@ -514,11 +537,12 @@ const ChatExtra = ({
           </ListItem>
         )}
         {businessWorkHours && (
-          <BusinessHours businessHours={businessWorkHours} />
+          <BusinessHours businessHours={businessWorkHours} isInSettings={isInSettings} />
         )}
         {businessLocation && (
           <ListItem
-            icon="location"
+            icon={isInSettings ? 'location-filled' : 'location'}
+            iconBg={isInSettings ? 'red' : undefined}
             ripple
             multiline
             narrow

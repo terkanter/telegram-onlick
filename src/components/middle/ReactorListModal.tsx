@@ -1,5 +1,4 @@
 import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useRef,
   useState,
@@ -353,7 +352,7 @@ export default memo(withGlobal<OwnProps>(
     const chat = chatId ? selectChat(global, chatId) : undefined;
     const canDeleteReactions = Boolean(
       chat && isChatSuperGroup(chat) && !chat.isMonoforum
-      && (chat.isCreator || getHasAdminRight(chat, 'deleteMessages')),
+      && getHasAdminRight(chat, 'deleteMessages'),
     );
 
     return {

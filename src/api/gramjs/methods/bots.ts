@@ -15,6 +15,7 @@ import type {
 
 import { WEB_APP_PLATFORM } from '../../../config';
 import { buildCollectionByKey } from '../../../util/iteratees';
+import { getMtpEphemeralMessageId } from '../../../util/keys/messageKey';
 import {
   buildApiAttachBot,
   buildApiBotInlineMediaResult,
@@ -54,6 +55,20 @@ export async function answerCallbackButton({
     msgId: messageId,
     data: data ? deserializeBytes(data) : undefined,
     game: isGame || undefined,
+  }));
+
+  return result ? omitVirtualClassFields(result) : undefined;
+}
+
+export async function answerEphemeralCallbackButton({
+  chat, messageId, data,
+}: {
+  chat: ApiChat; messageId: number; data?: string;
+}) {
+  const result = await invokeRequest(new GramJs.ephemeral.GetCallbackAnswer({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    id: getMtpEphemeralMessageId(messageId),
+    data: data ? deserializeBytes(data) : undefined,
   }));
 
   return result ? omitVirtualClassFields(result) : undefined;
@@ -115,19 +130,22 @@ export async function sendInlineBotResult({
 }
 
 export async function startBot({
-  bot, startParam,
+  bot, peer = bot, startParam,
 }: {
   bot: ApiUser;
+  peer?: ApiPeer;
   startParam?: string;
 }) {
   const randomId = generateRandomBigInt();
 
-  await invokeRequest(new GramJs.messages.StartBot({
+  return invokeRequest(new GramJs.messages.StartBot({
     bot: buildInputUser(bot.id, bot.accessHash),
-    peer: buildInputPeer(bot.id, bot.accessHash),
+    peer: buildInputPeer(peer.id, peer.accessHash),
     randomId,
     startParam: startParam ?? DEFAULT_PRIMITIVES.STRING,
-  }));
+  }), {
+    shouldReturnTrue: true,
+  });
 }
 
 export async function requestWebView({
@@ -172,6 +190,7 @@ export async function requestWebView({
       url: result.url,
       queryId: result.queryId?.toString(),
       isFullScreen: Boolean(result.fullscreen),
+      isSameOrigin: result.sameOrigin,
     };
   }
 
@@ -208,6 +227,7 @@ export async function requestMainWebView({
     url: result.url,
     queryId: result.queryId?.toString(),
     isFullscreen: Boolean(result.fullscreen),
+    isSameOrigin: result.sameOrigin,
   };
 }
 
@@ -236,7 +256,14 @@ export async function requestSimpleWebView({
     fromSideMenu: isFromSideMenu || undefined,
   }));
 
-  return result?.url;
+  if (!(result instanceof GramJs.WebViewResultUrl)) {
+    return undefined;
+  }
+
+  return {
+    url: result.url,
+    isSameOrigin: result.sameOrigin,
+  };
 }
 
 export async function fetchBotApp({
@@ -286,7 +313,15 @@ export async function requestAppWebView({
     fullscreen: mode === 'fullscreen' || undefined,
   }));
 
-  return { url: result?.url, isFullscreen: Boolean(result?.fullscreen) };
+  if (!(result instanceof GramJs.WebViewResultUrl)) {
+    return undefined;
+  }
+
+  return {
+    url: result.url,
+    isFullscreen: Boolean(result.fullscreen),
+    isSameOrigin: result.sameOrigin,
+  };
 }
 
 export function prolongWebView({

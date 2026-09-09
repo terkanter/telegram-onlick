@@ -64,7 +64,6 @@ type OwnProps = {
   messageListType: MessageListType;
   isComments?: boolean;
   isMobile?: boolean;
-  isTopNotchShown?: boolean;
   getCurrentPinnedIndex: Signal<number>;
   getLoadingPinnedId: Signal<number | undefined>;
   onFocusPinnedMessage: (messageId: number) => void;
@@ -93,7 +92,6 @@ const MiddleHeader = ({
   threadId,
   messageListType,
   isMobile,
-  isTopNotchShown,
   typingStatusByPeerId,
   isSelectModeActive,
   isLeftColumnShown,
@@ -184,7 +182,7 @@ const MiddleHeader = ({
     });
   });
 
-  const handleBackClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
+  const navigateBack = useLastCallback(() => {
     if (!isBackButtonActiveRef.current) return;
 
     // Workaround for missing UI when quickly clicking the Back button
@@ -202,7 +200,6 @@ const MiddleHeader = ({
 
     if (messageListType === 'thread' && currentTransitionKey === 0) {
       if (!isTablet || shouldShowCloseButton) {
-        e.stopPropagation(); // Stop propagation to prevent chat re-opening on tablets
         openChat({ id: undefined }, { forceOnHeavyAnimation: true });
       } else {
         toggleLeftColumn();
@@ -217,7 +214,21 @@ const MiddleHeader = ({
     setBackButtonActive();
   });
 
+  const handleBackClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
+    if (
+      isBackButtonActiveRef.current
+      && messageListType === 'thread'
+      && currentTransitionKey === 0
+      && (!isTablet || shouldShowCloseButton)
+    ) {
+      e.stopPropagation(); // Stop propagation to prevent chat re-opening on tablets
+    }
+
+    navigateBack();
+  });
+
   const prevTransitionKey = usePreviousDeprecated(currentTransitionKey);
+
   const cleanupExceptionKey = (
     prevTransitionKey !== undefined && prevTransitionKey < currentTransitionKey ? prevTransitionKey : undefined
   );
@@ -345,6 +356,7 @@ const MiddleHeader = ({
           size="smaller"
           color="translucent"
           onClick={handleBackClick}
+          onFileHoverOpen={navigateBack}
           ariaLabel={lang(asClose ? 'Close' : 'Back')}
         >
           <div className={buildClassName('animated-close-icon', !asClose && 'state-back')} />
@@ -356,7 +368,7 @@ const MiddleHeader = ({
 
   return (
     <div
-      className={buildClassName('MiddleHeader', isTopNotchShown && 'with-notch')}
+      className="MiddleHeader"
       ref={componentRef}
       data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}
     >
@@ -374,7 +386,6 @@ const MiddleHeader = ({
           threadId={threadId}
           messageListType={messageListType}
           isMobile={isMobile}
-          canExpandActions
         />
       </div>
     </div>

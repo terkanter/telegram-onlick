@@ -312,7 +312,7 @@ export async function changeLanguage(newLanguage: ApiLanguage) {
 function createTranslationFn(): LangFn {
   const fn: LangFn = ((
     key: LangKey,
-    variables: Record<string, unknown> | undefined,
+    variables: LangFnParameters['variables'],
     options: LangFnOptions | AdvancedLangFnOptions | undefined,
   ) => {
     if (options && areAdvancedLangFnOptions(options)) {
@@ -342,7 +342,7 @@ function createTranslationFn(): LangFn {
   fn.number = (value: number) => formatters?.number.format(value) || String(value);
   fn.preciseNumber = (value: number) => formatters?.preciseNumber.format(value) || String(value);
   fn.internalFormatters = formatters!;
-  fn.languageInfo = language!;
+  fn.languageInfo = language;
   return fn;
 }
 

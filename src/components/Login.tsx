@@ -3,9 +3,10 @@ import { useEffect, useState } from '../lib/teact/teact';
 
 import { IS_GATEWAY } from '../config';
 
+import Button from './ui/Button';
+import InputText from './ui/InputText';
+
 import styles from './Login.module.scss';
-import InputText from "./ui/InputText.tsx";
-import Button from "./ui/Button.tsx";
 
 type LoginProps = {
   onLogin: () => void;
@@ -45,7 +46,9 @@ const Login: FC<LoginProps> = ({ onLogin }) => {
 
 export function withLogin<P extends AnyLiteral>(Component: FC<P>) {
   return function WithLogin(props: P) {
-    const [isLoggedIn, setIsLoggedIn] = useState<boolean>(IS_GATEWAY || Boolean(localStorage.getItem('isLoggedIn')));
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean>(
+      () => IS_GATEWAY || Boolean(localStorage.getItem('isLoggedIn')),
+    );
 
     useEffect(() => {
       if (IS_GATEWAY) return;

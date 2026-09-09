@@ -1,6 +1,6 @@
 import type {
-  ApiChat, ApiChatFolder, ApiChatlistExportedInvite,
-  ApiChatMember, ApiError, ApiMissingInvitedUser,
+  ApiChat, ApiChatFolder, ApiChatFullInfo, ApiChatlistExportedInvite,
+  ApiChatMember, ApiDraft, ApiError, ApiMissingInvitedUser,
   ApiTopic,
   LinkContext,
 } from '../../../api/types';
@@ -12,6 +12,7 @@ import { MAIN_THREAD_ID } from '../../../api/types';
 import {
   ChatCreationProgress,
   type ChatListType,
+  LeftColumnContent,
   ManagementProgress,
   NewChatMembersProgress,
   SettingsScreens,
@@ -38,7 +39,7 @@ import { formatShareText, processDeepLink } from '../../../util/deeplink';
 import { isDeepLink } from '../../../util/deepLinkParser';
 import { isUserId } from '../../../util/entities/ids';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { getOrderedIds } from '../../../util/folderManager';
+import { getOrderedIds, getPinnedChatsCount } from '../../../util/folderManager';
 import {
   buildCollectionByKey, omit, unique,
 } from '../../../util/iteratees';
@@ -52,6 +53,7 @@ import {
   isChatArchived,
   isChatBasicGroup,
   isChatChannel,
+  isChatCommunity,
   isChatMonoforum,
   isChatSuperGroup,
   isUserBot,
@@ -170,7 +172,13 @@ addActionHandler('preloadTopChatMessages', async (global, actions): Promise<void
       .filter(Boolean);
 
     const folderAllOrderedIds = getOrderedIds(ALL_FOLDER_ID);
-    const nextChatId = folderAllOrderedIds?.find((id) => !currentChatIds.includes(id) && !preloadedChatIds.has(id));
+    const nextChatId = folderAllOrderedIds?.find((id) => {
+      if (currentChatIds.includes(id) || preloadedChatIds.has(id)) return false;
+
+      // A community has no message history to preload
+      const nextChat = selectChat(global, id);
+      return !nextChat || !isChatCommunity(nextChat);
+    });
     if (!nextChatId) {
       return;
     }
@@ -221,6 +229,13 @@ addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
     tabId = getCurrentTabId(),
   } = payload;
 
+  // A community has no message view: open its left-column panel instead of a chat
+  const targetChat = id ? selectChat(global, id) : undefined;
+  if (targetChat && isChatCommunity(targetChat)) {
+    actions.openCommunityPanel({ communityId: id!, tabId });
+    return;
+  }
+
   actions.processOpenChatOrThread({
     chatId: id,
     type,
@@ -249,11 +264,11 @@ addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
 
   if (!chat) {
     if (selectIsChatWithSelf(global, id)) {
-      void callApi('fetchChat', { type: 'self' });
+      void callApi('fetchChat', { type: 'self', shouldRequestUpdate: true });
     } else {
       const user = selectUser(global, id);
       if (user) {
-        void callApi('fetchChat', { type: 'user', user });
+        void callApi('fetchChat', { type: 'user', user, shouldRequestUpdate: true });
       }
     }
   } else if (isChatOnlySummary && !chat.isMin) {
@@ -573,15 +588,6 @@ addActionHandler('loadAllChats', async (global, actions, payload): Promise<void>
       }
     }
 
-    if (result?.threadInfos) {
-      result.threadInfos.forEach((threadInfo) => {
-        global = updateThreadInfo(global, threadInfo);
-      });
-    }
-
-    if (result?.threadReadStatesById) {
-      global = updateMainThreadReadStates(global, result.threadReadStatesById);
-    }
     setGlobal(global);
     global = getGlobal();
   }
@@ -874,7 +880,8 @@ addActionHandler('joinChannel', async (global, actions, payload): Promise<void> 
   }
 
   try {
-    const result = await callApi('joinChannel', { channelId, accessHash });
+    const theme = extractCurrentThemeParams();
+    const result = await callApi('joinChannel', { channelId, accessHash, theme });
 
     if (result?.type === 'webView') {
       actions.openChatInviteWebView({
@@ -883,6 +890,7 @@ addActionHandler('joinChannel', async (global, actions, payload): Promise<void> 
         queryId: result.queryId,
         peerId: chatId,
         isFullscreen: result.isFullscreen,
+        isSameOrigin: result.isSameOrigin,
         isBroadcast: isChatChannel(chat),
         tabId,
       });
@@ -948,7 +956,7 @@ async function checkFutureCreatorAndOpenModal(
   shouldSkipOwnershipCheck: boolean | undefined,
   tabId: number,
 ): Promise<boolean> {
-  if (shouldSkipOwnershipCheck || !chat.isCreator) {
+  if (shouldSkipOwnershipCheck || !chat.isOwner) {
     return false;
   }
 
@@ -1227,8 +1235,8 @@ addActionHandler('toggleChatPinned', (global, actions, payload): ActionReturnTyp
     const listType = selectChatListType(global, id);
     const isPinned = selectIsChatPinned(global, id, listType === 'archived' ? ARCHIVED_FOLDER_ID : undefined);
 
-    const ids = global.chats.orderedPinnedIds[listType === 'archived' ? 'archived' : 'active'];
-    if ((ids?.length || 0) >= limit && !isPinned) {
+    const resolvedFolderId = listType === 'archived' ? ARCHIVED_FOLDER_ID : ALL_FOLDER_ID;
+    if (getPinnedChatsCount(resolvedFolderId) >= limit && !isPinned) {
       actions.openLimitReachedModal({
         limit: 'dialogFolderPinned',
         tabId,
@@ -1881,7 +1889,8 @@ addActionHandler('acceptChatInvite', async (global, actions, payload): Promise<v
   const {
     hash, isRequestNeeded, isBroadcast, tabId = getCurrentTabId(),
   } = payload;
-  const result = await callApi('importChatInvite', { hash });
+  const theme = extractCurrentThemeParams();
+  const result = await callApi('importChatInvite', { hash, theme });
 
   if (result?.type === 'webView') {
     actions.openChatInviteWebView({
@@ -1889,6 +1898,7 @@ addActionHandler('acceptChatInvite', async (global, actions, payload): Promise<v
       url: result.url,
       queryId: result.queryId,
       isFullscreen: result.isFullscreen,
+      isSameOrigin: result.isSameOrigin,
       isBroadcast,
       tabId,
     });
@@ -1910,7 +1920,7 @@ addActionHandler('acceptChatInvite', async (global, actions, payload): Promise<v
 
 addActionHandler('openChatByUsername', async (global, actions, payload): Promise<void> => {
   const {
-    username, messageId, commentId, startParam, startAttach, attach, threadId, originalParts,
+    username, messageId, commentId, startParam, startGroup, startAttach, attach, threadId, originalParts,
     startApp, shouldStartMainApp, mode, isDirect,
     text, onChatChanged, choose, ref, timestamp, linkContext,
     tabId = getCurrentTabId(),
@@ -1921,6 +1931,16 @@ addActionHandler('openChatByUsername', async (global, actions, payload): Promise
   const isWebApp = webAppName && !Number(webAppName) && !originalParts?.[2];
 
   if (!commentId) {
+    if (startGroup !== undefined) {
+      const botChat = await fetchChatByUsername(global, username);
+      global = getGlobal();
+      const bot = botChat && selectUser(global, botChat.id);
+      if (!bot || !isUserBot(bot)) return;
+
+      actions.requestBotStartGroup({ bot, startParam: startGroup, tabId });
+      return;
+    }
+
     if (startAttach === undefined && messageId && !startParam && !ref
       && chat?.usernames?.some((c) => c.username === username)) {
       actions.focusMessage({
@@ -2123,13 +2143,13 @@ addActionHandler('updateChatDefaultBannedRights', (global, actions, payload): Ac
 
 addActionHandler('updateChatMemberBannedRights', async (global, actions, payload): Promise<void> => {
   const {
-    chatId, userId, bannedRights,
+    chatId, peerId, bannedRights,
     tabId = getCurrentTabId(),
   } = payload;
 
-  const user = selectUser(global, userId);
+  const peer = selectPeer(global, peerId);
 
-  if (!user) {
+  if (!peer) {
     return;
   }
 
@@ -2137,7 +2157,7 @@ addActionHandler('updateChatMemberBannedRights', async (global, actions, payload
 
   if (!chat) return;
 
-  const result = await callApi('updateChatMemberBannedRights', { chat, user, bannedRights });
+  const result = await callApi('updateChatMemberBannedRights', { chat, peer, bannedRights });
 
   if (!result) {
     return;
@@ -2155,22 +2175,28 @@ addActionHandler('updateChatMemberBannedRights', async (global, actions, payload
   const isBanned = Boolean(bannedRights.viewMessages);
   const isUnblocked = !Object.keys(bannedRights).length;
 
-  global = updateChatFullInfo(global, chat.id, {
-    ...(members && isBanned && {
-      members: members.filter((m) => m.userId !== userId),
-    }),
-    ...(members && !isBanned && {
-      members: members.map((m) => (
-        m.userId === userId
-          ? { ...m, bannedRights }
-          : m
-      )),
-    }),
-    ...(isUnblocked && kickedMembers && {
-      kickedMembers: kickedMembers.filter((m) => m.userId !== userId),
-    }),
-  });
+  const fullInfoUpdate: Partial<ApiChatFullInfo> = {};
+  if (members) {
+    fullInfoUpdate.members = isBanned
+      ? members.filter((m) => m.userId !== peerId)
+      : members.map((m) => (m.userId === peerId ? { ...m, bannedRights } : m));
+  }
   if (isBanned) {
+    const bannedMember: ApiChatMember = {
+      userId: peerId,
+      bannedRights,
+      kickedByUserId: global.currentUserId,
+    };
+    fullInfoUpdate.kickedMembers = [
+      ...(kickedMembers?.filter((m) => m.userId !== peerId) || []),
+      bannedMember,
+    ];
+  } else if (isUnblocked && kickedMembers) {
+    fullInfoUpdate.kickedMembers = kickedMembers.filter((m) => m.userId !== peerId);
+  }
+
+  global = updateChatFullInfo(global, chat.id, fullInfoUpdate);
+  if (isBanned && isUserId(peerId)) {
     global = updateChat(global, chat.id, { membersCount: Math.max(0, (chat.membersCount || 0) - 1) });
   }
 
@@ -2534,18 +2560,17 @@ addActionHandler('addChatMembers', async (global, actions, payload): Promise<voi
 });
 
 addActionHandler('deleteChatMember', async (global, actions, payload): Promise<void> => {
-  const { chatId, userId, tabId = getCurrentTabId() } = payload;
+  const { chatId, peerId, tabId = getCurrentTabId() } = payload;
   const chat = selectChat(global, chatId);
-  const user = selectUser(global, userId);
 
-  if (!chat || !user) {
+  if (!chat) {
     return;
   }
 
   if (isChatSuperGroup(chat) || isChatChannel(chat)) {
     actions.updateChatMemberBannedRights({
       chatId,
-      userId,
+      peerId,
       bannedRights: {
         viewMessages: true,
         sendMessages: true,
@@ -2573,6 +2598,12 @@ addActionHandler('deleteChatMember', async (global, actions, payload): Promise<v
     return;
   }
 
+  // Basic groups only have user members
+  const user = selectUser(global, peerId);
+  if (!user) {
+    return;
+  }
+
   await callApi('deleteChatMember', chat, user);
   global = getGlobal();
   loadFullChat(global, actions, chat);
@@ -2587,6 +2618,15 @@ addActionHandler('toggleIsProtected', (global, actions, payload): ActionReturnTy
   }
 
   void callApi('toggleIsProtected', { chat, isProtected });
+});
+
+addActionHandler('setChatHistoryTtl', (global, actions, payload): ActionReturnType => {
+  const { chatId, period } = payload;
+  const peer = selectPeer(global, chatId);
+  if (!peer) return;
+
+  // The server responds with `updatePeerHistoryTtl`, which is applied by the updater
+  void callApi('setHistoryTtl', { peer, period });
 });
 
 addActionHandler('setChatEnabledReactions', async (global, actions, payload): Promise<void> => {
@@ -2682,6 +2722,29 @@ addActionHandler('closeForumPanel', (global, actions, payload): ActionReturnType
   const { tabId = getCurrentTabId() } = payload || {};
   return updateTabState(global, {
     forumPanelChatId: undefined,
+  }, tabId);
+});
+
+addActionHandler('openCommunityPanel', (global, actions, payload): ActionReturnType => {
+  const { communityId, tabId = getCurrentTabId() } = payload;
+  const { leftColumn } = selectTabState(global, tabId);
+
+  actions.loadFullCommunity({ communityId });
+
+  return updateTabState(global, {
+    leftColumn: {
+      ...leftColumn,
+      contentKey: LeftColumnContent.ChatList,
+    },
+    communityPanelId: communityId,
+    forumPanelChatId: undefined,
+  }, tabId);
+});
+
+addActionHandler('closeCommunityPanel', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return updateTabState(global, {
+    communityPanelId: undefined,
   }, tabId);
 });
 
@@ -3392,6 +3455,87 @@ addActionHandler('toggleChannelRecommendations', (global, actions, payload): Act
   setGlobal(global);
 });
 
+addActionHandler('loadCommunities', async (global): Promise<void> => {
+  const result = await callApi('fetchJoinedCommunities');
+
+  if (!result) {
+    return;
+  }
+
+  const communityIds = result.communities.map((community) => community.id);
+
+  global = getGlobal();
+  // Not `addChats`: an already known community must still receive a fresh `isCollapsedInDialogs`
+  global = updateChats(global, buildCollectionByKey(result.communities, 'id'));
+  // Communities are candidates for the active list; `folderManager` shows a community
+  // only while it is collapsed, and its member chats only while it is expanded.
+  global = addChatListIds(global, 'active', communityIds);
+  setGlobal(global);
+});
+
+addActionHandler('loadFullCommunity', async (global, actions, payload): Promise<void> => {
+  const { communityId } = payload;
+  const community = selectChat(global, communityId);
+
+  if (!community) {
+    return;
+  }
+
+  const result = await callApi('fetchCommunityFullInfo', { community });
+
+  if (!result) {
+    return;
+  }
+
+  const { fullInfo, chats } = result;
+  const linkedPeerIds = new Set(fullInfo.linkedPeers?.map((peer) => peer.peerId));
+  const joinedChatIds = chats
+    .filter((chat) => linkedPeerIds.has(chat.id) && !chat.isNotJoined)
+    .map((chat) => chat.id);
+
+  global = getGlobal();
+  global = updateChats(global, buildCollectionByKey(chats, 'id'));
+  global = replaceChatFullInfo(global, communityId, fullInfo);
+  // Joined member chats become candidates for the active list and appear when the community is expanded
+  global = addChatListIds(global, 'active', joinedChatIds);
+  setGlobal(global);
+
+  // View-only peers are missing from the dialog list, so their last message has to be
+  // requested for the previews to render. Joined peers are delivered with the dialogs,
+  // and request-to-join peers have no accessible history at all.
+  const viewOnlyPeerIds = new Set(
+    fullInfo.linkedPeers?.filter((peer) => peer.canViewHistory).map((peer) => peer.peerId),
+  );
+  const viewOnlyPeers = chats.filter((chat) => viewOnlyPeerIds.has(chat.id) && chat.isNotJoined);
+  void callApi('fetchCommunityPeerDialogs', { peers: viewOnlyPeers });
+});
+
+addActionHandler('toggleCommunityCollapsed', async (global, actions, payload): Promise<void> => {
+  const { communityId } = payload;
+  const community = selectChat(global, communityId);
+
+  if (!community) {
+    return;
+  }
+
+  const isCollapsed = !community.isCollapsedInDialogs;
+
+  // Optimistic update drives the dialog list locally; the request syncs the server
+  global = updateChat(global, communityId, { isCollapsedInDialogs: isCollapsed });
+  setGlobal(global);
+
+  const result = await callApi('toggleCommunityCollapsedInDialogs', { community, isCollapsed });
+
+  if (!result) {
+    global = getGlobal();
+    // Roll back unless another toggle has changed the state while the request was in flight
+    if (selectChat(global, communityId)?.isCollapsedInDialogs === isCollapsed) {
+      global = updateChat(global, communityId, { isCollapsedInDialogs: !isCollapsed });
+      setGlobal(global);
+    }
+  }
+});
+
 addActionHandler('updatePaidMessagesPrice', async (global, actions, payload): Promise<void> => {
   const { chatId, paidMessagesStars, tabId = getCurrentTabId() } = payload;
   const chat = chatId ? selectChat(global, chatId) : undefined;
@@ -3533,6 +3677,7 @@ async function loadChats(
   shouldIgnorePagination?: boolean,
 ) {
   let global = getGlobal();
+  const globalBeforeLoad = global;
   const lastLocalServiceMessageId = selectLastServiceNotification(global)?.id;
 
   const params = !shouldIgnorePagination ? selectChatListLoadingParameters(global, listType) : {};
@@ -3597,23 +3742,38 @@ async function loadChats(
     );
   }
 
+  if (isFullDraftSync) {
+    result.threadInfos.forEach((threadInfo) => {
+      global = updateThreadInfo(global, threadInfo);
+    });
+    if (result.threadReadStatesById) {
+      global = updateMainThreadReadStates(global, result.threadReadStatesById);
+    }
+  }
+
   if (listType === 'active' || listType === 'archived') {
     const idsToUpdateDraft = isFullDraftSync ? result.chatIds : Object.keys(result.draftsById);
+
     idsToUpdateDraft.forEach((chatId) => {
       const draft = result.draftsById[chatId];
       const thread = selectThread(global, chatId, MAIN_THREAD_ID);
+      if (!isFullDraftSync && !draft && !thread) return;
 
-      if (!draft && !thread) return;
+      const initialDraft = selectDraft(globalBeforeLoad, chatId, MAIN_THREAD_ID);
+      const currentDraft = selectDraft(global, chatId, MAIN_THREAD_ID);
+      const shouldKeepLocalDraft = currentDraft?.isLocal;
+      if (shouldKeepLocalDraft || shouldKeepCurrentDraft(currentDraft, initialDraft, draft)) return;
 
-      if (!selectDraft(global, chatId, MAIN_THREAD_ID)?.isLocal) {
-        global = replaceThreadLocalStateParam(
-          global, chatId, MAIN_THREAD_ID, 'draft', draft,
-        );
-      }
+      global = replaceThreadLocalStateParam(
+        global, chatId, MAIN_THREAD_ID, 'draft', draft,
+      );
     });
   }
 
-  if ((chatIds.length === 0 || chatIds.length === result.totalChatCount) && !global.chats.isFullyLoaded[listType]) {
+  if (
+    (result.isFullyLoaded || chatIds.length === 0 || chatIds.length === result.totalChatCount)
+    && !global.chats.isFullyLoaded[listType]
+  ) {
     global = {
       ...global,
       chats: {
@@ -3629,10 +3789,19 @@ async function loadChats(
   setGlobal(global);
 
   return {
-    threadInfos: result.threadInfos,
-    threadReadStatesById: result.threadReadStatesById,
     messages: result.messages,
   };
+}
+
+function shouldKeepCurrentDraft(
+  currentDraft: ApiDraft | undefined,
+  initialDraft: ApiDraft | undefined,
+  loadedDraft: ApiDraft | undefined,
+) {
+  if (currentDraft === initialDraft) return false;
+  if (!currentDraft || currentDraft.isLocal) return true;
+
+  return Boolean(currentDraft.date && (!loadedDraft?.date || currentDraft.date >= loadedDraft.date));
 }
 
 export async function loadFullChat<T extends GlobalState>(
@@ -3958,7 +4127,7 @@ async function openChatWithParams<T extends GlobalState>(
   }
 
   if (startParam && !referrer) {
-    actions.startBot({ botId: chat.id, param: startParam });
+    actions.startBot({ botId: chat.id, param: startParam, tabId });
   }
 
   if (attach) {

@@ -31,7 +31,6 @@ import { toJSNumber } from '../../../util/numbers';
 import { addDocumentToLocalDb } from '../helpers/localDb';
 import { serializeBytes } from '../helpers/misc';
 import { buildApiMessageEntity, buildApiPhoto } from './common';
-import { omitVirtualClassFields } from './helpers';
 import {
   buildApiDocument,
   buildApiRichMessage,
@@ -69,14 +68,6 @@ export function buildReplyButtons(
       }
 
       if (button instanceof GramJs.KeyboardButtonUrl) {
-        if (button.url.includes('?startgroup=')) {
-          return {
-            ...baseButton,
-            type: 'unsupported',
-            text,
-          };
-        }
-
         return {
           ...baseButton,
           type: 'url',
@@ -429,7 +420,9 @@ export function buildBotAppSettings(settings: GramJs.BotAppSettings): ApiBotAppS
 export function buildApiBotCommand(botId: string, command: GramJs.BotCommand): ApiBotCommand {
   return {
     botId,
-    ...omitVirtualClassFields(command),
+    command: command.command,
+    description: command.description,
+    isEphemeral: command.ephemeral,
   };
 }
 

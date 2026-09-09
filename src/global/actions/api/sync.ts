@@ -1,6 +1,6 @@
 import { addCallback } from '../../../lib/teact/teactn';
 
-import type { ThreadId, ThreadLocalState } from '../../../types';
+import type { ThreadId } from '../../../types';
 import type { RequiredGlobalActions } from '../../index';
 import type { ActionReturnType, GlobalState } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
@@ -10,7 +10,7 @@ import { backfillHistory } from '../../../util/analytics';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { init as initFolderManager } from '../../../util/folderManager';
 import {
-  buildCollectionByKey, omitUndefined, pick, unique,
+  buildCollectionByKey, omitUndefined, pick, pickTruthy, unique,
 } from '../../../util/iteratees';
 import { callApi } from '../../../api/gramjs';
 import { getIsSavedDialog } from '../../helpers';
@@ -19,6 +19,7 @@ import {
 } from '../../index';
 import {
   addChatMessagesById,
+  replaceChatMessages,
   safeReplaceViewportIds,
   updateChats,
   updateListedIds,
@@ -28,7 +29,6 @@ import { updateTabState } from '../../reducers/tabs';
 import {
   replaceThreadLocalStateParam,
   updateThreadInfo,
-  updateThreadLocalState,
   updateThreadReadState,
 } from '../../reducers/threads';
 import {
@@ -41,9 +41,6 @@ import {
   selectViewportIds,
 } from '../../selectors';
 import {
-  selectDraft,
-  selectEditingDraft,
-  selectEditingId,
   selectThreadInfo,
   selectThreadReadState,
 } from '../../selectors/threads';
@@ -75,7 +72,7 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
   }, RELEASE_STATUS_TIMEOUT);
 
   const {
-    loadAllChats, preloadTopChatMessages,
+    loadAllChats, preloadTopChatMessages, loadCommunities,
   } = actions;
 
   initFolderManager();
@@ -84,6 +81,8 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
     listType: 'active',
     whenFirstBatchDone: async () => {
       await loadAndReplaceMessages(global, actions);
+
+      loadCommunities();
 
       global = getGlobal();
       global = {
@@ -116,25 +115,6 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
 
   let wasReset = false;
   const preservedTabThreadsByTabId = preserveCurrentTabThreads(global);
-  const preservedCurrentThreadsByChatId = preserveCurrentThreads(global);
-
-  // Memoize drafts
-  const draftChatIds = Object.keys(global.messages.byChatId);
-  const draftsByChatId = draftChatIds
-    .reduce<Record<string, Record<number, Partial<ThreadLocalState>>>>((acc, chatId) => {
-      acc[chatId] = Object
-        .keys(global.messages.byChatId[chatId].threadsById)
-        .reduce<Record<number, Partial<ThreadLocalState>>>((acc2, threadId) => {
-          acc2[Number(threadId)] = omitUndefined({
-            draft: selectDraft(global, chatId, Number(threadId)),
-            editingId: selectEditingId(global, chatId, Number(threadId)),
-            editingDraft: selectEditingDraft(global, chatId, Number(threadId)),
-          });
-
-          return acc2;
-        }, {});
-      return acc;
-    }, {});
 
   const currentTabId = getCurrentTabId();
   const tabs = Object.values(global.byTabId)
@@ -204,7 +184,7 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
         const listedIds = unique(refreshedViewportIds.concat(allMessages.map(({ id }) => id)));
 
         if (!wasReset) {
-          global = resetMessages(global, preservedCurrentThreadsByChatId);
+          global = resetMessages(global, preserveThreads(global));
 
           Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
             global = updateTabState(global, {
@@ -214,7 +194,10 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
           wasReset = true;
         }
 
-        global = addChatMessagesById(global, currentChatId, byId);
+        global = replaceChatMessages(global, currentChatId, {
+          ...selectChatMessages(global, currentChatId),
+          ...byId,
+        });
         if (resultDiscussion) {
           global = updateThreadInfo(global, resultDiscussion.threadInfo);
           global = updateThreadReadState(global, currentChatId, activeThreadId, resultDiscussion.threadReadState);
@@ -269,7 +252,7 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
   global = getGlobal();
 
   if (!areMessagesLoaded) {
-    global = resetMessages(global, preservedCurrentThreadsByChatId);
+    global = resetMessages(global, preserveThreads(global));
 
     Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
       global = updateTabState(global, {
@@ -277,14 +260,6 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
       }, otherTabId);
     });
   }
-
-  // Restore drafts
-  Object.keys(draftsByChatId).forEach((chatId) => {
-    const threads = draftsByChatId[chatId];
-    Object.keys(threads).forEach((threadId) => {
-      global = updateThreadLocalState(global, chatId, Number(threadId), draftsByChatId[chatId][Number(threadId)]);
-    });
-  });
 
   setGlobal(global);
 
@@ -349,8 +324,16 @@ function preserveCurrentThreads<T extends GlobalState>(global: T) {
       return acc;
     }
 
+    const pinnedMessagesById = pickTruthy(
+      global.messages.byChatId[chatId].byId, currentThread.localState?.pinnedIds || [],
+    );
+
     acc[chatId] = {
-      byId: {},
+      byId: {
+        ...acc[chatId]?.byId,
+        ...pinnedMessagesById,
+      },
+      ephemeralById: global.messages.byChatId[chatId]?.ephemeralById || {},
       summaryById: {},
       threadsById: {
         ...acc[chatId]?.threadsById,
@@ -367,6 +350,36 @@ function preserveCurrentThreads<T extends GlobalState>(global: T) {
 
     return acc;
   }, {});
+}
+
+function preserveThreads<T extends GlobalState>(global: T) {
+  const preservedByChatId = preserveCurrentThreads(global);
+
+  Object.entries(global.messages.byChatId).forEach(([chatId, messages]) => {
+    Object.entries(messages.threadsById).forEach(([stringThreadId, thread]) => {
+      const threadId = Number(stringThreadId);
+      if (preservedByChatId[chatId]?.threadsById[threadId]) return;
+
+      const { draft, editingId, editingDraft } = thread.localState;
+      const hasLocalComposerState = Boolean(draft || editingId || editingDraft);
+      if (threadId !== MAIN_THREAD_ID && !hasLocalComposerState) return;
+
+      preservedByChatId[chatId] = {
+        byId: { ...preservedByChatId[chatId]?.byId },
+        ephemeralById: messages.ephemeralById,
+        summaryById: {},
+        threadsById: {
+          ...preservedByChatId[chatId]?.threadsById,
+          [threadId]: {
+            ...thread,
+            localState: omitUndefined({ draft, editingId, editingDraft }),
+          },
+        },
+      };
+    });
+  });
+
+  return preservedByChatId;
 }
 
 function resolveDiscussionChat<T extends GlobalState>(

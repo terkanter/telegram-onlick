@@ -90,7 +90,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
     setIsLoading(true);
     updateChatMemberBannedRights({
       chatId: chat.id,
-      userId: selectedChatMemberId,
+      peerId: selectedChatMemberId,
       bannedRights: permissions,
     });
   }, [chat, selectedChatMemberId, setIsLoading, updateChatMemberBannedRights, permissions]);
@@ -102,7 +102,7 @@ const ManageGroupUserPermissions: FC<OwnProps & StateProps> = ({
 
     updateChatMemberBannedRights({
       chatId: chat.id,
-      userId: selectedChatMemberId,
+      peerId: selectedChatMemberId,
       bannedRights: {
         viewMessages: true,
       },
@@ -195,7 +195,7 @@ export default memo(withGlobal<OwnProps>(
   (global, { chatId, isPromotedByCurrentUser }): Complete<StateProps> => {
     const chat = selectChat(global, chatId)!;
     const fullInfo = selectChatFullInfo(global, chatId);
-    const isFormFullyDisabled = !(chat.isCreator || isPromotedByCurrentUser);
+    const isFormFullyDisabled = !(chat.isOwner || isPromotedByCurrentUser);
 
     return {
       chat,

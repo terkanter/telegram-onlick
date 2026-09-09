@@ -12,15 +12,16 @@ import type {
   ApiAttachment,
   ApiChat,
   ApiComposedMessageWithAI,
-  ApiError,
   ApiFormattedText,
   ApiGlobalMessageSearchType,
   ApiInputAiComposeTone,
   ApiInputReplyInfo,
+  ApiInputRichMessage,
   ApiInputSuggestedPostInfo,
   ApiMessage,
   ApiMessageEntity,
   ApiMessagePoll,
+  ApiMessageReadMetric,
   ApiMessageSearchContext,
   ApiMessageSearchType,
   ApiNewMediaTodo,
@@ -29,10 +30,12 @@ import type {
   ApiReaction,
   ApiSearchPostsFlood,
   ApiSendMessageAction,
+  ApiSticker,
   ApiTodoItem,
   ApiTopicWithState,
   ApiUser,
   ApiUserStatus,
+  ApiVideo,
   ApiWebPage,
   MediaContent,
 } from '../../types';
@@ -54,7 +57,7 @@ import {
 } from '../../../config';
 import { fetchFile } from '../../../util/files';
 import { compact, split } from '../../../util/iteratees';
-import { getMessageKey } from '../../../util/keys/messageKey';
+import { getMessageKey, getMtpEphemeralMessageId } from '../../../util/keys/messageKey';
 import { getServerTime } from '../../../util/serverTime';
 import { interpolateArray } from '../../../util/waveform';
 import { API_GENERAL_ID_LIMIT, PINNED_MESSAGES_LIMIT } from '../../../limits';
@@ -72,8 +75,10 @@ import {
   buildMessageMediaContent, buildMessagePollFromMedia, buildMessageTextContent,
   buildWebPage,
   buildWebPageFromMedia,
+  buildWebPagesFromMedia,
 } from '../apiBuilders/messageContent';
 import {
+  buildApiEphemeralMessage,
   buildApiFactCheck,
   buildApiMessage,
   buildApiQuickReply,
@@ -101,6 +106,7 @@ import {
   buildInputPollFromExisting,
   buildInputReaction,
   buildInputReplyTo,
+  buildInputRichMessage,
   buildInputStory,
   buildInputSuggestedPost,
   buildInputTextWithEntities,
@@ -360,7 +366,8 @@ export function sendMessageLocal(
   params: SendMessageParams,
 ) {
   const {
-    chat, lastMessageId, text, entities, replyInfo, suggestedPostInfo, attachment, sticker, story, gif, poll, todo,
+    chat, lastMessageId, text, entities, richMessage, replyInfo, suggestedPostInfo,
+    attachment, sticker, story, gif, poll, todo,
     contact, scheduledAt, scheduleRepeatPeriod, groupedId, sendAs, wasDrafted, isInvertedMedia, effectId, isPending,
     messagePriceInStars, dice,
   } = params;
@@ -375,6 +382,7 @@ export function sendMessageLocal(
     lastMessageId,
     text,
     entities,
+    richMessage,
     replyInfo,
     suggestedPostInfo,
     attachment,
@@ -413,7 +421,7 @@ export function sendApiMessage(
   onProgress?: ApiOnProgress,
 ) {
   const {
-    chat, text, entities, replyInfo, suggestedPostInfo, suggestedMedia,
+    chat, text, entities, richMessage, replyInfo, suggestedPostInfo, suggestedMedia,
     attachment, sticker, story, gif, poll, todo, contact, dice,
 
     isSilent, scheduledAt, scheduleRepeatPeriod, groupedId, noWebPage, sendAs, shouldUpdateStickerSetOrder,
@@ -574,10 +582,12 @@ export function sendApiMessage(
 
     type SharedArgs = SharedRecord<SendMediaArgs, SendMessageArgs>;
 
+    const inputRichMessage = richMessage && buildInputRichMessage(richMessage);
+
     const args: SharedArgs = {
       clearDraft: true,
-      message: text || DEFAULT_PRIMITIVES.STRING,
-      entities: entities ? entities.map(buildMtpMessageEntity) : undefined,
+      message: richMessage ? DEFAULT_PRIMITIVES.STRING : text || DEFAULT_PRIMITIVES.STRING,
+      entities: richMessage ? undefined : entities ? entities.map(buildMtpMessageEntity) : undefined,
       peer: buildInputPeer(chat.id, chat.accessHash),
       randomId,
       replyTo: replyInfo && buildInputReplyTo(replyInfo),
@@ -606,6 +616,7 @@ export function sendApiMessage(
         update = await invokeRequest(new GramJs.messages.SendMessage({
           ...args,
           noWebpage: noWebPage || undefined,
+          richMessage: inputRichMessage,
         }), {
           shouldThrow: true,
           shouldIgnoreUpdates: true,
@@ -639,8 +650,194 @@ export async function sendMessage(
   params: SendMessageParams,
   onProgress?: ApiOnProgress,
 ) {
+  if (params.richMessage && !canSendRichMessage(params)) {
+    return undefined;
+  }
+
   const localMessage = params.localMessage || await sendMessageLocal(params);
   return localMessage ? sendApiMessage(params, localMessage, onProgress) : undefined;
+}
+
+export async function sendEphemeralMessage({
+  chat,
+  receiver,
+  text,
+  entities,
+  richMessage,
+  replyInfo,
+  attachment,
+  sticker,
+  gif,
+  topMsgId,
+}: {
+  chat: ApiChat;
+  receiver: ApiUser;
+  text?: string;
+  entities?: ApiMessageEntity[];
+  richMessage?: ApiInputRichMessage;
+  replyInfo?: ApiInputReplyInfo;
+  attachment?: ApiAttachment;
+  sticker?: ApiSticker;
+  gif?: ApiVideo;
+  topMsgId?: number;
+}, onProgress?: ApiOnProgress) {
+  const randomId = generateRandomBigInt();
+  const { message: baseLocalMessage } = buildLocalMessage({
+    chat,
+    text,
+    entities,
+    richMessage,
+    replyInfo,
+    attachment,
+    sticker,
+    gif,
+    isPending: true,
+  });
+  const localMessage: ApiMessage = {
+    ...baseLocalMessage,
+    ephemeralBotId: receiver.id,
+    ephemeralRandomId: randomId.toString(),
+    ephemeralTopMsgId: topMsgId,
+    isEphemeral: true,
+    isForwardingAllowed: false,
+  };
+  sendApiUpdate({
+    '@type': 'newEphemeralMessage',
+    message: localMessage,
+  });
+  if (attachment) onProgress!(0, getMessageKey(localMessage));
+
+  const requestReplyInfo: ApiInputReplyInfo | undefined = replyInfo || (topMsgId ? {
+    type: 'message',
+    replyToMsgId: topMsgId,
+    replyToTopId: topMsgId,
+  } : undefined);
+
+  try {
+    let media: GramJs.TypeInputMedia | undefined;
+    if (sticker) {
+      media = buildInputMediaDocument(sticker);
+    } else if (gif) {
+      media = buildInputMediaDocument(gif, gif.isSpoiler || undefined);
+    } else if (attachment) {
+      media = await uploadMedia(localMessage, attachment, onProgress!);
+    }
+    if (onProgress?.isCanceled) return undefined;
+
+    if ((attachment || sticker || gif) && !media) {
+      markEphemeralMessageAsFailed(localMessage);
+      return undefined;
+    }
+
+    const result = await invokeRequest(new GramJs.ephemeral.SendMessage({
+      peer: buildInputPeer(chat.id, chat.accessHash),
+      receiverId: buildInputUser(receiver.id, receiver.accessHash),
+      message: richMessage ? DEFAULT_PRIMITIVES.STRING : text || DEFAULT_PRIMITIVES.STRING,
+      entities: richMessage ? undefined : entities?.map(buildMtpMessageEntity),
+      media,
+      richMessage: richMessage ? buildInputRichMessage(richMessage) : undefined,
+      randomId,
+      replyTo: requestReplyInfo && buildInputReplyTo(requestReplyInfo),
+    }), {
+      shouldThrow: true,
+      shouldIgnoreUpdates: true,
+    });
+
+    if (!result) {
+      markEphemeralMessageAsFailed(localMessage);
+      return undefined;
+    }
+
+    const updates = result instanceof GramJs.UpdateShort
+      ? [result.update]
+      : 'updates' in result ? result.updates : undefined;
+    if (!updates) {
+      markEphemeralMessageAsFailed(localMessage);
+      return undefined;
+    }
+
+    const messageUpdate = updates.find(
+      (update): update is GramJs.UpdateNewEphemeralMessage => (
+        update instanceof GramJs.UpdateNewEphemeralMessage && Boolean(update.message.out)
+      ),
+    );
+    if (!messageUpdate) {
+      handleGramJsUpdate(result);
+      markEphemeralMessageAsFailed(localMessage);
+      return undefined;
+    }
+
+    if ('updates' in result) {
+      result.updates = result.updates.filter((update) => update !== messageUpdate);
+    }
+    const message = {
+      ...buildApiEphemeralMessage(messageUpdate.message),
+      previousLocalId: localMessage.id,
+    };
+    const ephemeralMedia = messageUpdate.message.media;
+    const webPages = ephemeralMedia ? buildWebPagesFromMedia(ephemeralMedia) : undefined;
+    sendApiUpdate({
+      '@type': 'newEphemeralMessage',
+      message,
+      webPages,
+    });
+    if ('updates' in result) {
+      handleGramJsUpdate(result);
+    }
+    return message;
+  } catch {
+    if (onProgress?.isCanceled) return undefined;
+
+    markEphemeralMessageAsFailed(localMessage);
+    return undefined;
+  }
+}
+
+function markEphemeralMessageAsFailed(message: ApiMessage) {
+  sendApiUpdate({
+    '@type': 'updateEphemeralMessage',
+    message: {
+      ...message,
+      sendingState: 'messageSendingStateFailed',
+    },
+  });
+}
+
+export async function deleteEphemeralMessage({
+  chat,
+  receiver,
+  messageId,
+}: {
+  chat: ApiChat;
+  receiver: ApiUser;
+  messageId: number;
+}) {
+  return invokeRequest(new GramJs.ephemeral.DeleteMessage({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    receiverId: buildInputUser(receiver.id, receiver.accessHash),
+    id: getMtpEphemeralMessageId(messageId),
+  }), { shouldThrow: true });
+}
+
+export async function reportEphemeralMessage({
+  chat,
+  messageId,
+  option,
+  description,
+}: {
+  chat: ApiChat;
+  messageId: number;
+  option: string;
+  description: string;
+}) {
+  const result = await invokeRequest(new GramJs.ephemeral.ReportMessage({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    id: getMtpEphemeralMessageId(messageId),
+    option: deserializeBytes(option),
+    message: description,
+  }), { shouldThrow: true });
+
+  return result ? buildApiReportResult(result) : undefined;
 }
 
 const groupedUploads: Record<string, {
@@ -822,6 +1019,7 @@ export async function editMessage({
   message,
   text,
   entities,
+  richMessage,
   attachment,
   noWebPage,
 }: {
@@ -829,23 +1027,27 @@ export async function editMessage({
   message: ApiMessage;
   text: string;
   entities?: ApiMessageEntity[];
+  richMessage?: ApiInputRichMessage;
   attachment?: ApiAttachment;
   noWebPage?: boolean;
 }, onProgress?: ApiOnProgress) {
   const isScheduled = message.date * 1000 > getServerTime() * 1000;
 
   const media = attachment && buildUploadingMedia(attachment);
+  const inputRichMessage = richMessage && buildInputRichMessage(richMessage);
+  if (richMessage && (!inputRichMessage || media)) {
+    return;
+  }
 
   const isInvertedMedia = text && !attachment?.shouldSendAsFile ? message.isInvertedMedia : undefined;
 
   const newContent = {
     ...(media || message.content),
-    ...(text && {
-      text: {
-        text,
-        entities,
-      },
-    }),
+    text: richMessage || !text ? undefined : {
+      text,
+      entities,
+    },
+    richMessage,
   };
 
   const messageUpdate: ApiMessage = {
@@ -871,8 +1073,9 @@ export async function editMessage({
     const mtpEntities = entities && entities.map(buildMtpMessageEntity);
 
     await invokeRequest(new GramJs.messages.EditMessage({
-      message: text,
-      entities: mtpEntities,
+      message: richMessage ? undefined : text,
+      entities: richMessage ? undefined : mtpEntities,
+      richMessage: inputRichMessage,
       media: mediaUpdate,
       peer: buildInputPeer(chat.id, chat.accessHash),
       id: message.id,
@@ -906,6 +1109,24 @@ export async function editMessage({
       isFull: true,
     });
   }
+}
+
+function canSendRichMessage(params: SendMessageParams) {
+  return Boolean(
+    params.richMessage
+    && buildInputRichMessage(params.richMessage)
+    && !params.attachment
+    && !params.attachments?.length
+    && !params.sticker
+    && !params.story
+    && !params.gif
+    && !params.poll
+    && !params.todo
+    && !params.contact
+    && !params.dice
+    && !(params.suggestedPostInfo && params.suggestedMedia)
+    && !(params.webPageUrl && params.webPageMediaSize),
+  );
 }
 
 export async function editTodo({
@@ -1036,6 +1257,7 @@ export async function rescheduleMessage({
 async function uploadMedia(message: ApiMessage, attachment: ApiAttachment, onProgress: ApiOnProgress) {
   const {
     filename, blobUrl, mimeType, quick, voice, audio, previewBlobUrl, shouldSendAsFile, shouldSendAsSpoiler, ttlSeconds,
+    isRoundVideo,
   } = attachment;
 
   const patchedOnProgress: ApiOnProgress = (progress) => {
@@ -1077,6 +1299,7 @@ async function uploadMedia(message: ApiMessage, attachment: ApiAttachment, onPro
             w: width,
             h: height,
             supportsStreaming: true,
+            roundMessage: isRoundVideo || undefined,
           }));
         }
       }
@@ -1093,7 +1316,9 @@ async function uploadMedia(message: ApiMessage, attachment: ApiAttachment, onPro
 
     if (voice) {
       const { duration, waveform } = voice;
-      const { data: inputWaveform } = interpolateArray(waveform, INPUT_WAVEFORM_LENGTH);
+      const inputWaveform = waveform.length === INPUT_WAVEFORM_LENGTH
+        ? waveform
+        : interpolateArray(waveform, INPUT_WAVEFORM_LENGTH).data;
       attributes.push(new GramJs.DocumentAttributeAudio({
         voice: true,
         duration,
@@ -1339,12 +1564,10 @@ export async function reportMessages({
 
     return { result: buildApiReportResult(result), error: undefined };
   } catch (err: any) {
-    const errorMessage = (err as ApiError).message;
-
-    if (errorMessage === MESSAGE_ID_REQUIRED_ERROR) {
+    if (err instanceof RPCError && err.errorMessage === MESSAGE_ID_REQUIRED_ERROR) {
       return {
         result: undefined,
-        error: errorMessage,
+        error: err.errorMessage,
       };
     }
 
@@ -1515,6 +1738,36 @@ export async function fetchMessageViews({
   return {
     viewsInfo,
   };
+}
+
+export async function reportMessageReadMetrics({
+  chat, metrics,
+}: {
+  chat: ApiChat;
+  metrics: ApiMessageReadMetric[];
+}) {
+  const chunks = split(metrics, API_GENERAL_ID_LIMIT);
+  const results = await Promise.all(chunks.map((chunkMetrics) => (
+    invokeRequest(new GramJs.messages.ReportReadMetrics({
+      peer: buildInputPeer(chat.id, chat.accessHash),
+      metrics: chunkMetrics.map(buildInputMessageReadMetric),
+    }))
+  )));
+
+  if (results.some((result) => !result)) return undefined;
+
+  return true;
+}
+
+function buildInputMessageReadMetric(metric: ApiMessageReadMetric) {
+  return new GramJs.InputMessageReadMetric({
+    msgId: metric.messageId,
+    viewId: BigInt(metric.viewId),
+    timeInViewMs: metric.timeInViewMs,
+    activeTimeInViewMs: metric.activeTimeInViewMs,
+    heightToViewportRatioPermille: metric.heightToViewportRatioPermille,
+    seenRangeRatioPermille: metric.seenRangeRatioPermille,
+  });
 }
 
 export async function fetchFactChecks({
@@ -2046,7 +2299,7 @@ export function forwardMessagesLocal(params: ForwardMessagesParams) {
   const {
     toChat, toThreadId, messages,
     scheduledAt, scheduleRepeatPeriod, sendAs, noAuthors, noCaptions,
-    isCurrentUserPremium, wasDrafted, lastMessageId, effectId,
+    privateForwardName, isCurrentUserPremium, wasDrafted, lastMessageId, effectId,
   } = params;
 
   const messageIds = messages.map(({ id }) => id);
@@ -2061,6 +2314,7 @@ export function forwardMessagesLocal(params: ForwardMessagesParams) {
       scheduleRepeatPeriod,
       noAuthors,
       noCaptions,
+      privateForwardName,
       isCurrentUserPremium,
       lastMessageId,
       sendAs,
@@ -2693,7 +2947,7 @@ function handleLocalMessageUpdate(
 
   let newContent: MediaContent | undefined;
   let poll: ApiMessagePoll | undefined;
-  let webPage: ApiWebPage | undefined;
+  let webPages: ApiWebPage[] | undefined;
   if (messageUpdate instanceof GramJs.UpdateShortSentMessage) {
     if (localMessage.content.text && messageUpdate.entities) {
       newContent = {
@@ -2708,7 +2962,7 @@ function handleLocalMessageUpdate(
         }),
       };
       poll = buildMessagePollFromMedia(messageUpdate.media);
-      webPage = buildWebPageFromMedia(messageUpdate.media);
+      webPages = buildWebPagesFromMedia(messageUpdate.media);
     }
 
     const mtpMessage = buildMessageFromUpdate(messageUpdate.id, localMessage.chatId, messageUpdate);
@@ -2739,6 +2993,9 @@ function handleLocalMessageUpdate(
       id: messageUpdate.id,
       sendingState: undefined,
       ...('date' in messageUpdate && { date: messageUpdate.date }),
+      ttlPeriod: messageUpdate instanceof GramJs.UpdateShortSentMessage
+        ? messageUpdate.ttlPeriod
+        : localMessage.ttlPeriod,
     };
 
     sendApiUpdate({
@@ -2749,7 +3006,7 @@ function handleLocalMessageUpdate(
       localId: localMessage.id,
       message: updatedMessage,
       poll,
-      webPage,
+      webPages,
     });
   }
 

@@ -11,7 +11,7 @@ import type { ReducerAction } from '../../hooks/useReducer';
 import { type AnimationLevel, LeftColumnContent, SettingsScreens } from '../../types';
 
 import {
-  selectCurrentChat, selectIsCurrentUserFrozen, selectIsForumPanelOpen,
+  selectCurrentChat, selectIsChatListPanelOpen, selectIsCurrentUserFrozen, selectIsForumPanelOpen,
   selectPeerHasProfileBackground, selectTabState,
 } from '../../global/selectors';
 import { selectSharedSettings } from '../../global/selectors/sharedState';
@@ -58,6 +58,7 @@ type StateProps = {
   isChatOpen: boolean;
   isAppUpdateAvailable?: boolean;
   isForumPanelOpen?: boolean;
+  isChatListPanelOpen?: boolean;
   forumPanelChatId?: string;
   isClosingSearch?: boolean;
   archiveSettings: GlobalState['archiveSettings'];
@@ -96,6 +97,7 @@ function LeftColumn({
   isChatOpen,
   isAppUpdateAvailable,
   isForumPanelOpen,
+  isChatListPanelOpen,
   forumPanelChatId,
   isClosingSearch,
   archiveSettings,
@@ -217,6 +219,7 @@ function LeftColumn({
         case SettingsScreens.PrivacyGroupChats:
         case SettingsScreens.PrivacyVoiceMessages:
         case SettingsScreens.PrivacyMessages:
+        case SettingsScreens.AutoDeleteMessages:
         case SettingsScreens.PrivacyBlockedUsers:
         case SettingsScreens.ActiveWebsites:
         case SettingsScreens.TwoFaDisabled:
@@ -402,13 +405,13 @@ function LeftColumn({
     () => {
       const isArchived = contentKey === LeftColumnContent.Archived;
       const isChatList = contentKey === LeftColumnContent.ChatList;
-      const noChatOrForumOpen = !isChatOpen && !isForumPanelOpen;
+      const noChatOrPanelOpen = !isChatOpen && !isChatListPanelOpen;
       // We listen for escape key only in these cases:
-      // 1. When we are in archived chats and no chat or forum is open.
+      // 1. When we are in archived chats and no chat or chat-list panel is open.
       // 2. When we are in any other screen except chat list and archived chat list.
-      // 3. When we are in chat list and first chat folder is active and no chat or forum is open.
-      if ((isArchived && noChatOrForumOpen) || (!isChatList && !isArchived)
-        || (isFirstChatFolderActive && noChatOrForumOpen)) {
+      // 3. When we are in chat list and first chat folder is active and no chat or chat-list panel is open.
+      if ((isArchived && noChatOrPanelOpen) || (!isChatList && !isArchived)
+        || (isFirstChatFolderActive && noChatOrPanelOpen)) {
         return captureEscKeyListener(() => {
           handleReset();
         });
@@ -416,7 +419,7 @@ function LeftColumn({
         return undefined;
       }
     },
-    [isFirstChatFolderActive, contentKey, handleReset, isChatOpen, isForumPanelOpen],
+    [isFirstChatFolderActive, contentKey, handleReset, isChatOpen, isChatListPanelOpen],
   );
 
   const handleHotkeySearch = useLastCallback((e: KeyboardEvent) => {
@@ -486,7 +489,7 @@ function LeftColumn({
     }
 
     return captureControlledSwipe(ref.current!, {
-      excludedClosestSelector: '.ProfileInfo, .color-picker, .hue-picker',
+      excludedClosestSelector: '.ProfileInfo, .color-picker, .hue-picker, .TabList',
       selectorToPreventScroll: '#Settings .custom-scroll',
       onSwipeRightStart: handleReset,
       onCancel: () => {
@@ -613,6 +616,7 @@ export default memo(withGlobal<OwnProps>(
     const currentChat = selectCurrentChat(global);
     const isChatOpen = Boolean(currentChat?.id);
     const isForumPanelOpen = selectIsForumPanelOpen(global);
+    const isChatListPanelOpen = selectIsChatListPanelOpen(global);
     const forumPanelChatId = tabState.forumPanelChatId;
     const isAccountFrozen = selectIsCurrentUserFrozen(global);
 
@@ -628,6 +632,7 @@ export default memo(withGlobal<OwnProps>(
       isChatOpen,
       isAppUpdateAvailable,
       isForumPanelOpen,
+      isChatListPanelOpen,
       forumPanelChatId,
       isClosingSearch: tabState.globalSearch.isClosing,
       archiveSettings,
