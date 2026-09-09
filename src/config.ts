@@ -299,6 +299,13 @@ export const SUPPORTED_PHOTO_CONTENT_TYPES = new Set([
   'image/png', 'image/jpeg', GIF_MIME_TYPE,
 ]);
 
+// Photos only some browsers can paint. Kept apart from `SUPPORTED_PHOTO_CONTENT_TYPES` so they are
+// never offered for sending or treated as previewable attachments — the fork only reads them back.
+// Whether they open instead of downloading is decided per browser (`heicSupport.ts`).
+export const HEIC_CONTENT_TYPES = new Set([
+  'image/heic', 'image/heif',
+]);
+
 export const SUPPORTED_VIDEO_CONTENT_TYPES = new Set([
   'video/mp4', 'video/quicktime',
 ]);

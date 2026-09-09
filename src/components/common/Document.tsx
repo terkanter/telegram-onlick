@@ -11,6 +11,7 @@ import {
   getDocumentMediaHash,
   getMediaFormat,
   getMediaTransferState,
+  isDocumentPhoto,
   isDocumentVideo,
 } from '../../global/helpers';
 import { isIpRevealingMedia } from '../../util/media/ipRevealingMedia';
@@ -123,10 +124,12 @@ const Document = ({
     [document, hasPreview],
   );
 
-  const shouldForceDownload = document.innerMediaType === 'photo' && document.mediaSize
+  const isPhoto = isDocumentPhoto(document);
+  const isVideo = isDocumentVideo(document);
+  const shouldForceDownload = isPhoto && document.mediaSize
     && !document.mediaSize.fromDocumentAttribute && !document.mediaSize.fromPreload;
 
-  const withMediaViewer = onMediaClick && document.innerMediaType && !shouldForceDownload;
+  const withMediaViewer = onMediaClick && (isPhoto || isVideo) && !shouldForceDownload;
 
   useEffect(() => {
     const fileEl = ref.current;
@@ -211,7 +214,7 @@ const Document = ({
         sender={sender}
         isSelectable={isSelectable}
         isSelected={isSelected}
-        actionIcon={withMediaViewer ? (isDocumentVideo(document) ? 'play' : 'eye') : 'download'}
+        actionIcon={withMediaViewer ? (isVideo ? 'play' : 'eye') : 'download'}
         contextActions={contextActions}
         onClick={handleClick}
         onDateClick={onDateClick ? handleDateClick : undefined}

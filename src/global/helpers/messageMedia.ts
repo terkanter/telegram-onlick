@@ -21,6 +21,8 @@ import type {
 import type { ActiveDownloads } from '../../types';
 import { ApiMediaFormat } from '../../api/types';
 
+import { HEIC_CONTENT_TYPES } from '../../config';
+import { getIsHeicSupported } from '../../util/browser/heicSupport';
 import {
   IS_OPFS_SUPPORTED,
   IS_OPUS_SUPPORTED,
@@ -108,7 +110,11 @@ export function getMessageDocument(message: MediaContainer) {
 }
 
 export function isDocumentPhoto(document: ApiDocument) {
-  return document.innerMediaType === 'photo';
+  if (document.innerMediaType !== 'photo') return false;
+
+  // The worker marks HEIC as a photo, but only some browsers can paint it; elsewhere it stays a
+  // plain file that downloads on click
+  return !HEIC_CONTENT_TYPES.has(document.mimeType) || getIsHeicSupported();
 }
 
 export function isDocumentVideo(document: ApiDocument) {

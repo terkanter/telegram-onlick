@@ -10,6 +10,7 @@ import type {
 } from '../../types';
 
 import {
+  HEIC_CONTENT_TYPES,
   STORYBOARD_MAP_MIME,
   STORYBOARD_MIME,
   SUPPORTED_PHOTO_CONTENT_TYPES,
@@ -189,7 +190,7 @@ export function buildApiDocument(document: GramJs.TypeDocument): ApiDocument | u
       height: photoSize.h,
     };
 
-    if (SUPPORTED_PHOTO_CONTENT_TYPES.has(mimeType)) {
+    if (SUPPORTED_PHOTO_CONTENT_TYPES.has(mimeType) || HEIC_CONTENT_TYPES.has(mimeType)) {
       innerMediaType = 'photo';
 
       const imageAttribute = attributes
