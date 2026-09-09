@@ -1,7 +1,7 @@
 import type { GlobalState } from '../global/types';
 
 import { IS_MOCKED_CLIENT } from '../config';
-import { loadCache, loadCachedSharedState } from '../global/cache';
+import { loadCache, loadCachedSharedState, mergeSharedState } from '../global/cache';
 import {
   getGlobal, setGlobal,
 } from '../global/index';
@@ -37,7 +37,7 @@ export async function initGlobal(force: boolean = false, prevGlobal?: GlobalStat
   if (!cache) { // Try loading shared state separately
     const storedSharedState = await loadCachedSharedState();
     if (storedSharedState) {
-      global.sharedState = storedSharedState;
+      global.sharedState = mergeSharedState(storedSharedState, initial.sharedState);
     }
   }
 

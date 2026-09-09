@@ -204,11 +204,14 @@ export async function applyGatewayCache(accountId: string) {
 
   if (cached && !isWorkerAhead) {
     migrateCache(cached, INITIAL_GLOBAL_STATE);
+    const sharedState = cachedSharedState
+      ? mergeSharedState(cachedSharedState, INITIAL_GLOBAL_STATE.sharedState)
+      : global.sharedState;
 
     global = {
       ...INITIAL_GLOBAL_STATE,
       ...cached,
-      sharedState: cachedSharedState || global.sharedState,
+      sharedState,
       // Runtime state of the current boot must survive the merge — the snapshot's
       // values are from the previous session
       byTabId: global.byTabId,
@@ -320,6 +323,22 @@ async function readCache(initialState: GlobalState): Promise<GlobalState> {
   };
 
   return newState;
+}
+
+// Lays a stored shared-state snapshot over the initial one, running the same migration as
+// `readCache`. A snapshot written by an older build can lack whole sections (`settings.themes`),
+// so the defaults have to stay underneath it — selectors read those fields without guarding.
+export function mergeSharedState(cached: SharedState | undefined, initial: SharedState): SharedState {
+  const migrated = migrateSharedCache(cached, undefined, initial);
+
+  return {
+    ...initial,
+    ...migrated,
+    settings: {
+      ...initial.settings,
+      ...migrated.settings,
+    },
+  };
 }
 
 function migrateSharedCache(
