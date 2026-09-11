@@ -21,8 +21,10 @@ const DEFAULT_ERROR_CODE = 400;
 // The intermediary drops a socket idle for 60 s (close `1006`) and the gateway's own ping is too
 // rare, so the fork keeps traffic flowing itself; any frame in either direction resets the timer
 const KEEP_ALIVE_INTERVAL_MS = 30 * 1000;
-// TODO(contract): agree the frame type if the gateway rejects unknown frames instead of ignoring them
-const KEEP_ALIVE_PAYLOAD = JSON.stringify({ type: 'ping' });
+// The gateway rejects frame types it does not know, answering `malformed invoke frame`, so the
+// keep-alive rides a type it already accepts: an empty analytics batch carries no data, expects no
+// reply, and still counts as traffic. TODO(contract): switch to a dedicated type once agreed.
+const KEEP_ALIVE_PAYLOAD = JSON.stringify({ type: 'events', events: [] });
 // The gateway may take up to 30 s between `auth` and `ready` (it dials Telegram through the
 // account's proxy); the fork must not give up earlier than 35 s
 const READY_TIMEOUT_MS = 45 * 1000;
