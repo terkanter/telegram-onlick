@@ -57,6 +57,8 @@ let invoke: typeof invokeRequest;
 let isInited = false;
 
 let seqTimeout: number | undefined;
+// Discards are invisible otherwise: a handful at boot is normal, a growing count is the bug
+let droppedUpdateCount = 0;
 const CHANNEL_SCHEDULERS = new Map<string, ChannelScheduler>();
 const OPENED_CHANNEL_IDS = new Set<string>();
 
@@ -103,8 +105,9 @@ export function processUpdate(update: Update, isFromDifference?: boolean, should
 
   if (localDb.commonBoxState.seq === undefined) {
     // Drop updates received before first sync
+    droppedUpdateCount += 1;
     logGatewayError('update dropped: first sync has not completed',
-      (update as { className?: string }).className);
+      (update as { className?: string }).className, { dropped: droppedUpdateCount });
     return;
   }
 
@@ -566,6 +569,7 @@ function handleChannelDifferenceError(channelId: string, reason: ChannelDifferen
 }
 
 function forceSync() {
+  logGateway('force sync requested — live updates are blocked until it lands');
   reset();
 
   sendApiUpdate({
@@ -576,6 +580,7 @@ function forceSync() {
 }
 
 export function reset() {
+  logGateway('updates state reset', { droppedSinceStart: droppedUpdateCount });
   PTS_QUEUE.clear();
   SEQ_QUEUE.clear();
 
@@ -621,7 +626,9 @@ async function loadRemoteState() {
   }
 
   applyState(remoteState);
-  logGateway('first sync applied', { seq: remoteState.seq, pts: remoteState.pts, qts: remoteState.qts });
+  logGateway('first sync applied', {
+    seq: remoteState.seq, pts: remoteState.pts, qts: remoteState.qts, droppedBefore: droppedUpdateCount,
+  });
 
   isInited = true;
 }
