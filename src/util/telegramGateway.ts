@@ -199,8 +199,11 @@ export const reportGatewayRouteChange = debounce(postRouteChangeToParent, ROUTE_
 
 // Sent strictly to the verified platform origin (never `'*'`) — `route` contains private chat ids
 function postRouteChangeToParent(route: string) {
+  // Boot reports an empty route before `ready` is announced, and the platform answers `ready`
+  // with the route it remembers — sending this one would erase it. Dropping is the correct
+  // outcome, not a failure, so it is traced rather than flagged.
   if (!currentAccountId) {
-    logGatewayError('route-change dropped: account not announced via `ready` yet');
+    logGateway('route-change skipped: account not announced via `ready` yet', { route });
     return;
   }
   if (route.length > MAX_ROUTE_LENGTH) {
