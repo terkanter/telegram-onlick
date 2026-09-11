@@ -25,6 +25,10 @@ export const IS_BETA = APP_ENV === 'staging';
 // WS gateway instead of Telegram directly. Build-time flag; off for the regular build.
 export const IS_GATEWAY = import.meta.env.TG_GATEWAY === '1';
 // Trusted platform origins allowed to send `auth` messages to the fork.
+// Turns on per-frame gateway tracing for this browser: set it to '1' and reload. Read in the
+// main thread and forwarded to the worker, which is where the WS frames are seen.
+export const GATEWAY_VERBOSE_STORAGE_KEY = 'tg-gw-verbose';
+
 export const GATEWAY_ALLOWED_ORIGINS = (import.meta.env.TG_GATEWAY_ALLOWED_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())

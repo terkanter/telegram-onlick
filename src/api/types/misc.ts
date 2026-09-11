@@ -36,6 +36,8 @@ export interface ApiInitialArgs {
   // The accountId is embedded inside the token; the fork never sees it directly.
   gatewayUrl?: string;
   gatewayToken?: string;
+  // Per-frame tracing, switched on per browser (`GATEWAY_VERBOSE_STORAGE_KEY`)
+  isGatewayVerbose?: boolean;
 }
 
 export type ApiPasskeyOption = {

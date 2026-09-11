@@ -9,6 +9,7 @@ import type { ApiChat } from '../../types';
 import type { invokeRequest } from '../methods/client';
 
 import { DEBUG } from '../../../config';
+import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
 import SortedQueue from '../../../util/SortedQueue';
 import { buildApiPeerId } from '../apiBuilders/peers';
 import { buildInputChannel, buildMtpPeerId } from '../gramjsBuilders';
@@ -79,6 +80,8 @@ export function applyState(state: State) {
 }
 
 export function processUpdate(update: Update, isFromDifference?: boolean, shouldOnlySave?: boolean) {
+  logGatewayVerbose('update →', (update as { className?: string }).className, { isFromDifference });
+
   if (update instanceof UpdateConnectionState) {
     if (update.state === UpdateConnectionState.connected && isInited) {
       scheduleGetDifference();
@@ -100,6 +103,8 @@ export function processUpdate(update: Update, isFromDifference?: boolean, should
 
   if (localDb.commonBoxState.seq === undefined) {
     // Drop updates received before first sync
+    logGatewayError('update dropped: first sync has not completed',
+      (update as { className?: string }).className);
     return;
   }
 
@@ -608,9 +613,15 @@ export function processAffectedHistory(
 
 async function loadRemoteState() {
   const remoteState = await invoke(new GramJs.updates.GetState());
-  if (!remoteState) return;
+  // Without a state every later update is discarded by the gate above, so a failure here is the
+  // difference between a live session and one that only updates on reload
+  if (!remoteState) {
+    logGatewayError('first sync failed: `updates.GetState` returned nothing — live updates stay blocked');
+    return;
+  }
 
   applyState(remoteState);
+  logGateway('first sync applied', { seq: remoteState.seq, pts: remoteState.pts, qts: remoteState.qts });
 
   isInited = true;
 }

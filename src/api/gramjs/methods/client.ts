@@ -22,7 +22,7 @@ import {
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, TELEGRAM_API_HASH, TELEGRAM_API_ID, UPLOAD_WORKERS,
 } from '../../../config';
 import Deferred from '../../../util/Deferred';
-import { logGateway, logGatewayError } from '../../../util/gatewayLog';
+import { logGateway, logGatewayError, setGatewayVerbose } from '../../../util/gatewayLog';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
 import {
@@ -106,8 +106,10 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     userAgent, platform, sessionData, isWebmSupported, maxBufferSize, webAuthToken, dcId,
     mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
     shouldDebugExportedSenders, langCode, isTestServerRequested, accountIds,
-    hasPasskeySupport, gatewayUrl, gatewayToken,
+    hasPasskeySupport, gatewayUrl, gatewayToken, isGatewayVerbose,
   } = initialArgs;
+
+  setGatewayVerbose(Boolean(isGatewayVerbose));
 
   const session = new sessions.CallbackSession(sessionData, onSessionUpdate);
 

@@ -2,6 +2,7 @@ import type { ActionReturnType } from '../../types';
 import { ManagementProgress } from '../../../types';
 
 import {
+  GATEWAY_VERBOSE_STORAGE_KEY,
   IS_GATEWAY,
   LANG_CACHE_NAME,
   LOCK_SCREEN_ANIMATION_DURATION_MS,
@@ -18,7 +19,7 @@ import {
 } from '../../../util/browser/windowEnvironment';
 import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { logGateway } from '../../../util/gatewayLog';
+import { logGateway, setGatewayVerbose } from '../../../util/gatewayLog';
 import {
   ACCOUNT_SLOT, getAccountsInfo, getAccountSlotUrl, getFirstLoggedInAccountSlot,
 } from '../../../util/multiaccount';
@@ -56,6 +57,15 @@ import { destroySharedStatePort } from '../../shared/sharedStateConnector';
 
 let resetStoragePromise: Promise<boolean> | undefined;
 
+// The switch is per browser and survives reloads, so a session can be traced without a rebuild
+function checkIsGatewayVerbose() {
+  try {
+    return localStorage.getItem(GATEWAY_VERBOSE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 addActionHandler('initApi', (global, actions): ActionReturnType => {
   if (IS_GATEWAY) {
     // Variant 2: the platform brokers a short-lived token; the fork never logins itself and
@@ -63,6 +73,7 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
     const { language: gatewayLangCode } = selectSharedSettings(global);
     let isGatewayInited = false;
 
+    setGatewayVerbose(checkIsGatewayVerbose());
     logGateway('initApi: gateway mode');
     initGatewayBridge();
     // Analytics telemetry (variant A): presence/unread timers start once; `message` events and
@@ -78,6 +89,7 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
           langCode: gatewayLangCode,
           gatewayUrl: auth.gatewayUrl,
           gatewayToken: auth.token,
+          isGatewayVerbose: checkIsGatewayVerbose(),
         });
         return;
       }
