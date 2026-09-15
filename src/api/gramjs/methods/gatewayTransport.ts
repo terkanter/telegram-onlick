@@ -86,10 +86,13 @@ export default class GatewayTransport implements IGatewayTransport {
 
   private readyTimer?: ReturnType<typeof setTimeout>;
 
-  // A live socket that stops carrying updates points at the gateway, not at the fork
+  // A live socket that stops carrying updates points at the gateway, not at the fork. Telegram also
+  // stops delivering updates to a session that sends no requests for a long time.
   private updatesSinceReady = 0;
 
   private lastUpdateAt?: number;
+
+  private lastInvokeAt?: number;
 
   constructor({ url, token, onClose }: GatewayTransportOptions) {
     this.url = url;
@@ -137,6 +140,7 @@ export default class GatewayTransport implements IGatewayTransport {
       }
 
       logGatewayVerbose('invoke →', { id, dcId, bytes: requestB64.length, pending: this.pending.size });
+      this.lastInvokeAt = Date.now();
       this.send(payload);
     });
   }
@@ -345,7 +349,8 @@ export default class GatewayTransport implements IGatewayTransport {
   private describeUpdateFlow() {
     return {
       updatesSinceReady: this.updatesSinceReady,
-      secondsSinceUpdate: this.lastUpdateAt ? Math.round((Date.now() - this.lastUpdateAt) / MS_IN_SECOND) : undefined,
+      secondsSinceUpdate: getSecondsSince(this.lastUpdateAt),
+      secondsSinceInvoke: getSecondsSince(this.lastInvokeAt),
     };
   }
 
@@ -360,6 +365,10 @@ export default class GatewayTransport implements IGatewayTransport {
     clearTimeout(this.readyTimer);
     this.readyTimer = undefined;
   }
+}
+
+function getSecondsSince(timestamp?: number) {
+  return timestamp ? Math.round((Date.now() - timestamp) / MS_IN_SECOND) : undefined;
 }
 
 function toGatewayError(message: string, code: number, gatewayErrorCode?: string): GatewayError {
