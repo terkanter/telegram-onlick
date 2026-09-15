@@ -4,7 +4,7 @@ import type { ActionReturnType, GlobalState } from '../../types';
 
 import {
   ANIMATION_WAVE_MIN_INTERVAL,
-  DEBUG, GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT, INACTIVE_MARKER, PAGE_TITLE,
+  DEBUG, GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT, INACTIVE_MARKER, IS_GATEWAY, PAGE_TITLE,
   PAGE_TITLE_TAURI,
 } from '../../../config';
 import { IS_TAURI } from '../../../util/browser/globalEnvironment';
@@ -16,6 +16,7 @@ import { shouldShowErrorDialog } from '../../../util/getReadableErrorText';
 import { compact, unique } from '../../../util/iteratees';
 import { refreshFromCache } from '../../../util/localization';
 import * as langProvider from '../../../util/oldLangProvider';
+import { checkStaleBuild } from '../../../util/staleBuild';
 import updateIcon from '../../../util/updateIcon';
 import { setPageTitle, setPageTitleInstant } from '../../../util/updatePageTitle';
 import {
@@ -745,6 +746,12 @@ addActionHandler('closeMapModal', (global, actions, payload): ActionReturnType =
 });
 
 addActionHandler('checkAppVersion', (global): ActionReturnType => {
+  // Gateway deploys keep the app version, so the page compares build entries instead
+  if (IS_GATEWAY) {
+    void checkStaleBuild();
+    return;
+  }
+
   fetch(`${APP_VERSION_URL}?${Date.now()}`)
     .then((response) => response.text())
     .then((version) => {

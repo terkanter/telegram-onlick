@@ -7,15 +7,14 @@ declare const self: ServiceWorkerGlobalScope;
 const TIMEOUT = 3000;
 
 export async function respondWithCacheNetworkFirst(e: FetchEvent) {
-  const remote = await withTimeout(() => fetch(e.request), TIMEOUT);
+  const remotePromise = fetch(e.request);
+  // A response that misses the timeout still refreshes the cache, so a slow network serves a stale copy only once
+  e.waitUntil(saveToCache(e.request, remotePromise));
+
+  const remote = await withTimeout(() => remotePromise, TIMEOUT);
   if (!remote?.ok) {
     return respondWithCache(e);
   }
-
-  const toCache = remote.clone();
-  self.caches.open(ASSET_CACHE_NAME).then((cache) => {
-    return cache?.put(e.request, toCache);
-  });
 
   return remote;
 }
@@ -45,6 +44,16 @@ export async function respondWithCache(e: FetchEvent) {
   }
 
   return remote;
+}
+
+async function saveToCache(request: Request, remotePromise: Promise<Response>) {
+  const remote = await remotePromise.catch(() => undefined);
+  if (!remote?.ok) return;
+
+  // Cloned before the next `await`, while the page has not started reading the body
+  const toCache = remote.clone();
+  const cache = await self.caches.open(ASSET_CACHE_NAME);
+  await cache.put(request, toCache);
 }
 
 async function withTimeout<T>(cb: () => Promise<T>, timeout: number) {

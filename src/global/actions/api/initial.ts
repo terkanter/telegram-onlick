@@ -34,6 +34,7 @@ import {
   loadStoredSession,
   storeSession,
 } from '../../../util/sessions';
+import { checkStaleBuild } from '../../../util/staleBuild';
 import {
   consumeGatewayReconnect, initGatewayBridge, requestGatewayAuth, setGatewayAuthHandler, setGatewayNavigateHandler,
 } from '../../../util/telegramGateway';
@@ -75,6 +76,7 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
 
     setGatewayVerbose(checkIsGatewayVerbose());
     logGateway('initApi: gateway mode');
+    void checkStaleBuild(true);
     initGatewayBridge();
     // Analytics telemetry (variant A): presence/unread timers start once; `message` events and
     // history backfill flow through the update/sync handlers. See `telegram-fork-events.md`.

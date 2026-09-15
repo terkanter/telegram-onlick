@@ -33,6 +33,8 @@ export const GATEWAY_ALLOWED_ORIGINS = (import.meta.env.TG_GATEWAY_ALLOWED_ORIGI
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+// File where the gateway build publishes the name of its entry script
+export const BUILD_ENTRY_FILE = import.meta.env.TG_BUILD_ENTRY_FILE;
 
 export const PAID_MESSAGES_PURPOSE = 'paid_messages';
 

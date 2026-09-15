@@ -9,10 +9,12 @@ import { type Target, viteStaticCopy } from 'vite-plugin-static-copy';
 import { watchAndRun } from 'vite-plugin-watch-and-run';
 
 import buildGitInfoPlugin from './plugins/gitInfo.ts';
+import buildStaleBuildRecoveryPlugin from './plugins/staleBuildRecovery.ts';
 import packageJson from './package.json' with { type: 'json' };
 
 const DIR_NAME = dirname(fileURLToPath(import.meta.url));
 const PRODUCTION_URL = 'https://web.telegram.org/a';
+const BUILD_ENTRY_FILE = 'build-entry.txt';
 
 const { version: APP_VERSION } = packageJson;
 const BUNDLE_STATS_OUT_DIR = 'bundle-stats';
@@ -98,6 +100,7 @@ export default defineConfig(({ mode }): UserConfig => {
       isDevelopmentMode,
       rootDir: DIR_NAME,
     }),
+    isGateway && buildStaleBuildRecoveryPlugin({ buildEntryFile: BUILD_ENTRY_FILE }),
     viteStaticCopy({ targets: WATCHED_STATIC_COPY_TARGETS }),
     viteStaticCopy({
       targets: UNWATCHED_STATIC_COPY_TARGETS,
@@ -187,6 +190,7 @@ export default defineConfig(({ mode }): UserConfig => {
     TG_TELEGRAM_API_ID: telegramApiId,
     TG_TELEGRAM_API_HASH: telegramApiHash,
     TG_TEST_SESSION: env.TEST_SESSION || '',
+    TG_BUILD_ENTRY_FILE: BUILD_ENTRY_FILE,
   });
 
   return {
