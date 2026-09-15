@@ -30,6 +30,7 @@ const KEEP_ALIVE_PAYLOAD = JSON.stringify({ type: 'events', events: [] });
 const READY_TIMEOUT_MS = 45 * 1000;
 const READY_TIMEOUT_REASON = 'ready timeout';
 const SOCKET_FAILED_REASON = 'socket open failed';
+const MS_IN_SECOND = 1000;
 
 type PendingRequest = {
   payload: string;
@@ -84,6 +85,11 @@ export default class GatewayTransport implements IGatewayTransport {
   private keepAliveTimer?: ReturnType<typeof setTimeout>;
 
   private readyTimer?: ReturnType<typeof setTimeout>;
+
+  // A live socket that stops carrying updates points at the gateway, not at the fork
+  private updatesSinceReady = 0;
+
+  private lastUpdateAt?: number;
 
   constructor({ url, token, onClose }: GatewayTransportOptions) {
     this.url = url;
@@ -236,7 +242,9 @@ export default class GatewayTransport implements IGatewayTransport {
       }
       case 'update':
         // TODO(contract): confirm `update` is base64 of serialized TL bytes (not JSON).
-        logGatewayVerbose('← update', { bytes: frame.update?.length });
+        this.updatesSinceReady += 1;
+        this.lastUpdateAt = Date.now();
+        logGatewayVerbose('← update', { bytes: frame.update?.length, updatesSinceReady: this.updatesSinceReady });
         this.updateHandler?.(frame.update);
         break;
       default:
@@ -251,6 +259,7 @@ export default class GatewayTransport implements IGatewayTransport {
     this.state = 'ready';
     this.failures = 0;
     this.handshakeFailures = 0;
+    this.updatesSinceReady = 0;
     this.readyDeferred.resolve();
 
     // Everything unanswered before the close (or issued during it) goes out again
@@ -273,7 +282,12 @@ export default class GatewayTransport implements IGatewayTransport {
     }
 
     logGatewayError('WS closed', {
-      code, reason, wasReady, pending: this.pending.size, ...decision,
+      code,
+      reason,
+      wasReady,
+      pending: this.pending.size,
+      ...this.describeUpdateFlow(),
+      ...decision,
     });
 
     const error = toGatewayError(`Gateway closed (${code})`, DEFAULT_ERROR_CODE);
@@ -323,9 +337,16 @@ export default class GatewayTransport implements IGatewayTransport {
     if (this.state !== 'ready') return;
 
     this.keepAliveTimer = setTimeout(() => {
-      logGatewayVerbose('keep-alive →');
+      logGatewayVerbose('keep-alive →', this.describeUpdateFlow());
       this.send(KEEP_ALIVE_PAYLOAD);
     }, KEEP_ALIVE_INTERVAL_MS);
+  }
+
+  private describeUpdateFlow() {
+    return {
+      updatesSinceReady: this.updatesSinceReady,
+      secondsSinceUpdate: this.lastUpdateAt ? Math.round((Date.now() - this.lastUpdateAt) / MS_IN_SECOND) : undefined,
+    };
   }
 
   private clearKeepAlive() {

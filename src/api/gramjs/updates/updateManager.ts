@@ -11,7 +11,7 @@ import type { invokeRequest } from '../methods/client';
 import { DEBUG } from '../../../config';
 import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
 import SortedQueue from '../../../util/SortedQueue';
-import { buildApiPeerId } from '../apiBuilders/peers';
+import { buildApiPeerId, getApiChatIdFromMtpPeer } from '../apiBuilders/peers';
 import { buildInputChannel, buildMtpPeerId } from '../gramjsBuilders';
 import localDb from '../localDb';
 import { sendApiUpdate } from './apiUpdateEmitter';
@@ -82,7 +82,7 @@ export function applyState(state: State) {
 }
 
 export function processUpdate(update: Update, isFromDifference?: boolean, shouldOnlySave?: boolean) {
-  logGatewayVerbose('update →', (update as { className?: string }).className, { isFromDifference });
+  logGatewayVerbose('update →', describeUpdate(update), { isFromDifference });
 
   if (update instanceof UpdateConnectionState) {
     if (update.state === UpdateConnectionState.connected && isInited) {
@@ -215,16 +215,21 @@ function popSeqQueue() {
   const seqStart = 'seqStart' in update ? update.seqStart : update.seq;
 
   if (seqStart === 0 || (update._isFromDifference && seqStart >= localSeq + 1)) {
+    logGatewayVerbose('update applied', describeUpdate(update));
     applyUpdate(update);
   } else if (seqStart === localSeq + 1) {
     clearTimeout(seqTimeout);
     seqTimeout = undefined;
 
+    logGatewayVerbose('update applied', describeUpdate(update));
     applyUpdate(update);
   } else if (seqStart > localSeq + 1) {
     SEQ_QUEUE.add(update); // Return update to queue
+    logGateway('seq gap, waiting for difference', { localSeq, seqStart }, describeUpdate(update));
     scheduleGetDifference();
     return; // Prevent endless loop
+  } else {
+    logGatewayVerbose('update discarded: seq already applied', { localSeq }, describeUpdate(update));
   }
 
   popSeqQueue();
@@ -246,24 +251,30 @@ function popPtsQueue(channelId: string) {
 
       // console.error('[UpdateManager] Got pts update without local state', channelId);
     }
+    logGatewayVerbose('update discarded: no local pts', { channelId }, describeUpdate(update));
     return;
   }
 
   if (update._isFromDifference && pts >= localPts + ptsCount) {
+    logGatewayVerbose('update applied', describeUpdate(update));
     applyUpdate(update);
   } else if (pts === localPts + ptsCount) {
     clearScheduledChannelDifference(channelId, 'gapRecovery');
     scheduleShortpollFromNow(channelId);
 
+    logGatewayVerbose('update applied', describeUpdate(update));
     applyUpdate(update);
   } else if (pts > localPts + ptsCount) {
     ptsQueue.add(update); // Return update to queue
+    logGateway('pts gap, waiting for difference', { channelId, localPts }, describeUpdate(update));
     if (channelId === COMMON_BOX_QUEUE_ID) {
       scheduleGetDifference();
     } else {
       scheduleGetChannelDifference(channelId);
     }
     return; // Prevent endless loop
+  } else {
+    logGatewayVerbose('update discarded: pts already applied', { channelId, localPts }, describeUpdate(update));
   }
 
   popPtsQueue(channelId);
@@ -384,7 +395,12 @@ function scheduleGetDifference() {
   if (seqTimeout) return;
 
   seqTimeout = setTimeout(async () => {
-    await getDifference();
+    try {
+      await getDifference();
+    } catch (err) {
+      logGatewayError('difference failed — gap recovery stays blocked until a sync or reload', err);
+      throw err;
+    }
     seqTimeout = undefined;
   }, UPDATE_WAIT_TIMEOUT);
 }
@@ -429,6 +445,7 @@ export async function getDifference() {
   }
 
   if (response instanceof GramJs.updates.DifferenceEmpty) {
+    logGatewayVerbose('difference empty');
     localDb.commonBoxState.seq = response.seq;
     localDb.commonBoxState.date = response.date;
     sendApiUpdate({
@@ -637,6 +654,13 @@ function processDifference(
   difference: GramJs.updates.Difference | GramJs.updates.DifferenceSlice | GramJs.updates.ChannelDifference,
   channelId?: string,
 ) {
+  // Local pts moves only when an update is applied, so these messages were not applied live
+  logGateway('difference returned', {
+    channelId,
+    messages: difference.newMessages.map(buildMessageKey),
+    otherUpdates: difference.otherUpdates.map(describeUpdate),
+  });
+
   difference.newMessages.forEach((message) => {
     updater(new GramJs.UpdateNewMessage({
       message,
@@ -668,6 +692,37 @@ function processDifference(
   } else {
     popSeqQueue();
   }
+}
+
+// Counters and ids only, never content, so a message can be matched with what the sender sees
+function describeUpdate(update: Update) {
+  return {
+    className: (update as { className?: string }).className,
+    pts: 'pts' in update ? update.pts : undefined,
+    ptsCount: 'ptsCount' in update ? update.ptsCount : undefined,
+    seq: 'seq' in update ? update.seq : undefined,
+    message: getUpdateMessageKey(update),
+  };
+}
+
+function getUpdateMessageKey(update: Update) {
+  if (update instanceof GramJs.UpdateShortMessage) {
+    return `${buildApiPeerId(update.userId, 'user')}/${update.id}`;
+  }
+
+  if (update instanceof GramJs.UpdateShortChatMessage) {
+    return `${buildApiPeerId(update.chatId, 'chat')}/${update.id}`;
+  }
+
+  if (update instanceof GramJs.UpdateNewMessage || update instanceof GramJs.UpdateNewChannelMessage) {
+    return buildMessageKey(update.message);
+  }
+
+  return undefined;
+}
+
+function buildMessageKey(message: GramJs.TypeMessage) {
+  return `${message.peerId ? getApiChatIdFromMtpPeer(message.peerId) : 'unknown'}/${message.id}`;
 }
 
 function getPtsCount(update: PtsUpdate) {
