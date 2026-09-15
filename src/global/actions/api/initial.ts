@@ -19,7 +19,7 @@ import {
 } from '../../../util/browser/windowEnvironment';
 import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { logGateway, setGatewayVerbose } from '../../../util/gatewayLog';
+import { setGatewayVerbose } from '../../../util/gatewayLog';
 import {
   ACCOUNT_SLOT, getAccountsInfo, getAccountSlotUrl, getFirstLoggedInAccountSlot,
 } from '../../../util/multiaccount';
@@ -75,7 +75,6 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
     let isGatewayInited = false;
 
     setGatewayVerbose(checkIsGatewayVerbose());
-    logGateway('initApi: gateway mode');
     void checkStaleBuild(true);
     initGatewayBridge();
     // Analytics telemetry (variant A): presence/unread timers start once; `message` events and
@@ -84,7 +83,6 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
     setGatewayAuthHandler((auth) => {
       if (!isGatewayInited) {
         isGatewayInited = true;
-        logGateway('auth #1 → init worker', { gatewayUrl: auth.gatewayUrl });
         void initApi(actions.apiUpdate, {
           userAgent: navigator.userAgent,
           platform: PLATFORM_ENV,
@@ -98,13 +96,11 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
 
       if (consumeGatewayReconnect()) {
         // Same account, fresh token — reconnect in place, keep cache and update state.
-        logGateway('auth → reconnect in place (reinitGateway)');
         void callApi('reinitGateway', { gatewayUrl: auth.gatewayUrl, gatewayToken: auth.token });
         return;
       }
 
       // Account switch — reinit under the new account. TODO(A.5): in-place instead of reload.
-      logGateway('auth → account switch (iframe reload)');
       window.location.reload();
     });
     // Route memory: the parent echoes the saved route after `ready`. Restoration is
@@ -114,7 +110,6 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
       global = getGlobal();
       const messageList = parseMessageListHash(route, global.currentUserId);
       if (!messageList) {
-        logGateway('navigate: unusable route, keeping default screen');
         return;
       }
 

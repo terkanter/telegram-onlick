@@ -135,11 +135,9 @@ export default class GatewayTransport implements IGatewayTransport {
       });
 
       if (this.state !== 'ready') {
-        logGatewayVerbose('invoke queued until ready', { id, state: this.state, pending: this.pending.size });
         return;
       }
 
-      logGatewayVerbose('invoke →', { id, dcId, bytes: requestB64.length, pending: this.pending.size });
       this.lastInvokeAt = Date.now();
       this.send(payload);
     });
@@ -150,7 +148,6 @@ export default class GatewayTransport implements IGatewayTransport {
   // `telegram-analytics-tasks.md`.
   sendData(frame: Record<string, unknown>) {
     if (this.state !== 'ready') {
-      logGatewayVerbose('sendData dropped — WS not ready', { type: frame.type });
       return false;
     }
 
@@ -179,7 +176,6 @@ export default class GatewayTransport implements IGatewayTransport {
 
     let ws: WebSocket;
     try {
-      logGateway('WS connecting →', this.url);
       ws = new WebSocket(this.url);
     } catch (err) {
       logGatewayError('WS open failed', err);
@@ -191,7 +187,6 @@ export default class GatewayTransport implements IGatewayTransport {
     // Events from a socket the transport already let go of (self-closed on timeout) are ignored
     ws.addEventListener('open', () => {
       if (this.ws !== ws) return;
-      logGateway('WS open; sending auth (token len', this.token.length, ')');
       ws.send(JSON.stringify({ type: 'auth', token: this.token }));
       this.readyTimer = setTimeout(() => {
         this.closeSelf(FORK_CLOSE_READY_TIMEOUT, READY_TIMEOUT_REASON);
@@ -204,11 +199,6 @@ export default class GatewayTransport implements IGatewayTransport {
     ws.addEventListener('close', (event) => {
       if (this.ws !== ws) return;
       this.handleClose(event.code, event.reason);
-    });
-    ws.addEventListener('error', () => {
-      if (this.ws !== ws) return;
-      // A `close` always follows and carries the verdict
-      logGatewayError('WS error event', this.state === 'ready' ? '(after ready)' : '(before ready)');
     });
 
     return this.readyDeferred.promise;
@@ -232,7 +222,6 @@ export default class GatewayTransport implements IGatewayTransport {
         break;
       case 'result': {
         const pending = this.takePending(frame.id);
-        logGatewayVerbose('← result', { id: frame.id, bytes: frame.response?.length, matched: Boolean(pending) });
         pending?.resolve(frame.response);
         break;
       }
@@ -248,7 +237,6 @@ export default class GatewayTransport implements IGatewayTransport {
         // TODO(contract): confirm `update` is base64 of serialized TL bytes (not JSON).
         this.updatesSinceReady += 1;
         this.lastUpdateAt = Date.now();
-        logGatewayVerbose('← update', { bytes: frame.update?.length, updatesSinceReady: this.updatesSinceReady });
         this.updateHandler?.(frame.update);
         break;
       default:

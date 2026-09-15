@@ -16,8 +16,8 @@ export function logGatewayError(...args: unknown[]) {
   console.error('%c[tg-gw]', 'color:#e53935;font-weight:bold', ...args);
 }
 
-// Per-frame RPC/WS traffic tracing (every invoke/result/update) — too chatty for everyday use, so
-// it is opt-in per browser. The switch lives in the main thread's `localStorage`
+// Message delivery tracing (the fate of every update that carries a message, keep-alive counters) —
+// too chatty for everyday use, so it is opt-in per browser. The switch lives in the main thread's `localStorage`
 // (`GATEWAY_VERBOSE_STORAGE_KEY`) and is forwarded to the worker with the init args, since the
 // transport that sees the frames runs there and has no `localStorage` of its own.
 let isVerbose = false;

@@ -16,7 +16,7 @@ import type { UploadFileParams } from './uploadFile';
 
 import Deferred from '../../../util/Deferred';
 import { bufferFromBase64, bufferToBase64, concat } from '../../../util/encoding/buffer';
-import { logGateway, logGatewayError, logGatewayVerbose } from '../../../util/gatewayLog';
+import { logGatewayError } from '../../../util/gatewayLog';
 import { toJSNumber } from '../../../util/numbers';
 import { getServerTimeOffset } from '../../../util/serverTime';
 import {
@@ -383,7 +383,6 @@ class TelegramClient {
   // update state and unanswered requests survive; `connected` re-syncs through `getDifference`.
   async reconnectGateway(auth: GatewayTransportAuth) {
     await this._gatewayTransport!.reconnect(auth);
-    logGateway('client: gateway reconnected');
 
     this._handleUpdate(new UpdateConnectionState(UpdateConnectionState.connected));
   }
@@ -397,7 +396,6 @@ class TelegramClient {
   // and mark connected; the backend signs and relays everything to Telegram.
   private async _connectGateway() {
     const transport = this._gatewayTransport!;
-    logGateway('client: _connectGateway');
 
     transport.setUpdateHandler((updateB64) => {
       try {
@@ -410,7 +408,6 @@ class TelegramClient {
           reader = new BinaryReader(bytes);
         }
         const update = reader.tgReadObject();
-        logGatewayVerbose('client: update ←', (update as { className?: string })?.className);
         this._handleUpdate(update);
       } catch (err) {
         logGatewayError('client: failed to parse gateway update', err);
@@ -419,7 +416,6 @@ class TelegramClient {
     });
 
     await transport.connect();
-    logGateway('client: gateway connected');
 
     this._connectedDeferred.resolve();
     this._handleUpdate(new UpdateConnectionState(UpdateConnectionState.connected));
@@ -1258,7 +1254,6 @@ class TelegramClient {
     request: R, dcId?: number, abortSignal?: AbortSignal,
   ): Promise<R['__response']> {
     this._lastRequest = Date.now();
-    logGatewayVerbose('client: invoke', request.className, dcId !== undefined ? `(dc=${dcId})` : '');
     const requestB64 = bufferToBase64(request.getBytes());
 
     try {
@@ -1278,20 +1273,21 @@ class TelegramClient {
       // unpacks this in `RPCResult.fromReader`; the gateway path must do the same before reading.
       let reader = new BinaryReader(responseBytes);
       if (reader.readInt(false) === GZIPPacked.CONSTRUCTOR_ID) {
-        logGatewayVerbose('client: gunzip', request.className);
         reader = new BinaryReader(GZIPPacked.fromReader(reader).data);
       } else {
         reader = new BinaryReader(responseBytes);
       }
       // `readResult` is an instance method on generated requests (typed only as static).
       const result = (request as any).readResult(reader) as R['__response'];
-      logGatewayVerbose('client: invoke ✓', request.className);
       return result;
     } catch (err) {
       const gatewayError = err as Partial<GatewayError>;
       // Abort / non-gateway errors have no `errorMessage` — pass them through unchanged.
       if (typeof gatewayError.errorMessage !== 'string') {
-        logGatewayError('client: invoke aborted/failed', request.className, err);
+        // Switching chats cancels requests all the time, so only real failures are logged
+        if (!(err instanceof Error && err.message === 'USER_CANCELED')) {
+          logGatewayError('client: invoke failed', request.className, err);
+        }
         throw err;
       }
       logGatewayError('client: invoke RPC error', request.className, gatewayError.errorMessage, gatewayError.errorCode);

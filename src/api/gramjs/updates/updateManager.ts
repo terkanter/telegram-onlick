@@ -82,8 +82,6 @@ export function applyState(state: State) {
 }
 
 export function processUpdate(update: Update, isFromDifference?: boolean, shouldOnlySave?: boolean) {
-  logGatewayVerbose('update →', describeUpdate(update), { isFromDifference });
-
   if (update instanceof UpdateConnectionState) {
     if (update.state === UpdateConnectionState.connected && isInited) {
       scheduleGetDifference();
@@ -106,8 +104,9 @@ export function processUpdate(update: Update, isFromDifference?: boolean, should
   if (localDb.commonBoxState.seq === undefined) {
     // Drop updates received before first sync
     droppedUpdateCount += 1;
-    logGatewayError('update dropped: first sync has not completed',
-      (update as { className?: string }).className, { dropped: droppedUpdateCount });
+    if (getUpdateMessageKey(update)) {
+      logGatewayError('update dropped: first sync has not completed', describeUpdate(update));
+    }
     return;
   }
 
@@ -215,21 +214,17 @@ function popSeqQueue() {
   const seqStart = 'seqStart' in update ? update.seqStart : update.seq;
 
   if (seqStart === 0 || (update._isFromDifference && seqStart >= localSeq + 1)) {
-    logGatewayVerbose('update applied', describeUpdate(update));
     applyUpdate(update);
   } else if (seqStart === localSeq + 1) {
     clearTimeout(seqTimeout);
     seqTimeout = undefined;
 
-    logGatewayVerbose('update applied', describeUpdate(update));
     applyUpdate(update);
   } else if (seqStart > localSeq + 1) {
     SEQ_QUEUE.add(update); // Return update to queue
     logGateway('seq gap, waiting for difference', { localSeq, seqStart }, describeUpdate(update));
     scheduleGetDifference();
     return; // Prevent endless loop
-  } else {
-    logGatewayVerbose('update discarded: seq already applied', { localSeq }, describeUpdate(update));
   }
 
   popSeqQueue();
@@ -251,18 +246,18 @@ function popPtsQueue(channelId: string) {
 
       // console.error('[UpdateManager] Got pts update without local state', channelId);
     }
-    logGatewayVerbose('update discarded: no local pts', { channelId }, describeUpdate(update));
+    traceMessageUpdate('update discarded: no local pts', update, { channelId });
     return;
   }
 
   if (update._isFromDifference && pts >= localPts + ptsCount) {
-    logGatewayVerbose('update applied', describeUpdate(update));
+    traceMessageUpdate('update applied', update);
     applyUpdate(update);
   } else if (pts === localPts + ptsCount) {
     clearScheduledChannelDifference(channelId, 'gapRecovery');
     scheduleShortpollFromNow(channelId);
 
-    logGatewayVerbose('update applied', describeUpdate(update));
+    traceMessageUpdate('update applied', update);
     applyUpdate(update);
   } else if (pts > localPts + ptsCount) {
     ptsQueue.add(update); // Return update to queue
@@ -274,7 +269,7 @@ function popPtsQueue(channelId: string) {
     }
     return; // Prevent endless loop
   } else {
-    logGatewayVerbose('update discarded: pts already applied', { channelId, localPts }, describeUpdate(update));
+    traceMessageUpdate('update discarded: pts already applied', update, { channelId, localPts });
   }
 
   popPtsQueue(channelId);
@@ -445,7 +440,6 @@ export async function getDifference() {
   }
 
   if (response instanceof GramJs.updates.DifferenceEmpty) {
-    logGatewayVerbose('difference empty');
     localDb.commonBoxState.seq = response.seq;
     localDb.commonBoxState.date = response.date;
     sendApiUpdate({
@@ -586,7 +580,9 @@ function handleChannelDifferenceError(channelId: string, reason: ChannelDifferen
 }
 
 function forceSync() {
-  logGateway('force sync requested — live updates are blocked until it lands');
+  logGateway('force sync requested — live updates are blocked until it lands', {
+    droppedSinceStart: droppedUpdateCount,
+  });
   reset();
 
   sendApiUpdate({
@@ -597,7 +593,6 @@ function forceSync() {
 }
 
 export function reset() {
-  logGateway('updates state reset', { droppedSinceStart: droppedUpdateCount });
   PTS_QUEUE.clear();
   SEQ_QUEUE.clear();
 
@@ -654,12 +649,11 @@ function processDifference(
   difference: GramJs.updates.Difference | GramJs.updates.DifferenceSlice | GramJs.updates.ChannelDifference,
   channelId?: string,
 ) {
-  // Local pts moves only when an update is applied, so these messages were not applied live
-  logGateway('difference returned', {
-    channelId,
-    messages: difference.newMessages.map(buildMessageKey),
-    otherUpdates: difference.otherUpdates.map(describeUpdate),
-  });
+  // Local pts moves only when an update is applied, so these messages were not applied live. Channels are
+  // skipped: opened ones are short-polled, and their messages arrive this way by design.
+  if (!channelId && difference.newMessages.length) {
+    logGateway('difference returned messages', difference.newMessages.map(buildMessageKey));
+  }
 
   difference.newMessages.forEach((message) => {
     updater(new GramJs.UpdateNewMessage({
@@ -692,6 +686,13 @@ function processDifference(
   } else {
     popSeqQueue();
   }
+}
+
+// Only updates that carry a message are traced, the rest of the stream is noise for delivery debugging
+function traceMessageUpdate(label: string, update: Update, details?: Record<string, unknown>) {
+  if (!getUpdateMessageKey(update)) return;
+
+  logGatewayVerbose(label, { ...describeUpdate(update), ...details });
 }
 
 // Counters and ids only, never content, so a message can be matched with what the sender sees

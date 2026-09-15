@@ -15,7 +15,7 @@ import type { ActionReturnType, GlobalState } from '../../types';
 
 import { IS_GATEWAY } from '../../../config';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { logGateway, logGatewayError } from '../../../util/gatewayLog';
+import { logGatewayError } from '../../../util/gatewayLog';
 import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
 import { getAccountsInfo, getAccountSlotUrl } from '../../../util/multiaccount';
 import { oldSetLanguage } from '../../../util/oldLangProvider';
@@ -161,7 +161,6 @@ function onUpdateApiReady<T extends GlobalState>(global: T) {
 async function onUpdateGatewayAccountId(update: ApiUpdateGatewayAccountId) {
   try {
     await applyGatewayCache(update.accountId);
-    logGateway('gateway cache applied for', update.accountId);
   } catch (err) {
     logGatewayError('failed to apply gateway cache', err);
   } finally {
@@ -300,10 +299,6 @@ function onUpdateConnectionState<T extends GlobalState>(
     connectionState,
   };
   setGlobal(global);
-
-  if (IS_GATEWAY) {
-    logGateway('connectionState →', connectionState);
-  }
 
   if (IS_GATEWAY && connectionState === 'connectionStateReady' && global.currentUserId) {
     // Optional UX signal to the platform parent (spec A.6).

@@ -166,7 +166,6 @@ let verifiedParentOrigin: string | undefined;
 // The parent (cross-origin) does not know when the iframe is ready, so the fork
 // asks first; the parent replies with a freshly minted token (lives ~2 min).
 export function requestGatewayAuth() {
-  logGateway('→ parent: request-auth');
   postToParent({ type: 'request-auth' });
 }
 
@@ -178,7 +177,6 @@ export function setGatewayAuthHandler(handler: (auth: GatewayAuth) => void) {
 }
 
 export function notifyGatewayReady(accountId: string) {
-  logGateway('→ parent: ready', { accountId });
   currentAccountId = accountId;
   postToParent({ type: 'ready', accountId });
 }
@@ -201,9 +199,8 @@ export const reportGatewayRouteChange = debounce(postRouteChangeToParent, ROUTE_
 function postRouteChangeToParent(route: string) {
   // Boot reports an empty route before `ready` is announced, and the platform answers `ready`
   // with the route it remembers — sending this one would erase it. Dropping is the correct
-  // outcome, not a failure, so it is traced rather than flagged.
+  // outcome, not a failure.
   if (!currentAccountId) {
-    logGateway('route-change skipped: account not announced via `ready` yet', { route });
     return;
   }
   if (route.length > MAX_ROUTE_LENGTH) {
@@ -216,10 +213,7 @@ function postRouteChangeToParent(route: string) {
   };
   if (!postToTrustedParent(message)) {
     logGatewayError('route-change dropped: no trusted platform origin known');
-    return;
   }
-
-  logGateway('→ parent: route-change', { accountId: currentAccountId, route });
 }
 
 // Applies the worker's verdict on a WS close (`gatewayClosePolicy.ts`): tells the platform what
@@ -251,7 +245,6 @@ export function handleGatewayClose({
     return;
   }
 
-  logGateway('reconnect in', delayMs, 'ms', { code, reason });
   reconnectTimer = setTimeout(() => {
     reconnectTimer = undefined;
     markGatewayReconnect();
@@ -273,18 +266,12 @@ function postAuthErrorToParent({
   };
   if (!postToTrustedParent(message)) {
     logGatewayError('auth-error dropped: no trusted platform origin known');
-    return;
   }
-
-  logGateway('→ parent: auth-error', {
-    code, reason, retrying, accountId,
-  });
 }
 
 // Re-request a token after the WS closed; the next `auth` reconnects the same account in place.
 // Always a fresh token — the old one is never reused for a new socket.
 function markGatewayReconnect() {
-  logGateway('reconnect requested');
   isReconnectPending = true;
   requestGatewayAuth();
 }
@@ -301,13 +288,12 @@ export function initGatewayBridge() {
   if (!IS_GATEWAY || isBridgeInited) return;
   isBridgeInited = true;
 
-  logGateway('bridge installed; trusted origins:', GATEWAY_ALLOWED_ORIGINS);
   window.addEventListener('message', handleParentMessage);
 }
 
 function handleParentMessage(event: MessageEvent) {
   const data = event.data as { source?: unknown; type?: unknown } | undefined;
-  // Only trace our own messages to avoid noise from unrelated postMessage traffic.
+  // Only our own messages are handled, unrelated postMessage traffic is ignored
   if (data?.source !== 'fanbeast-tg') return;
 
   if (!isTrustedOrigin(event.origin)) {
@@ -327,8 +313,6 @@ function handleParentMessage(event: MessageEvent) {
     return;
   }
 
-  logGateway('← parent: auth accepted from', event.origin, '| gatewayUrl', event.data.gatewayUrl,
-    '| token len', event.data.token.length);
   verifiedParentOrigin = event.origin;
   latestAuth = { token: event.data.token, gatewayUrl: event.data.gatewayUrl };
   authHandler?.(latestAuth);
@@ -346,15 +330,7 @@ export function postFormContentToParent(content: Omit<FormContentMessage, 'sourc
   const message: FormContentMessage = { source: GATEWAY_SOURCE, type: 'form-content', ...content };
   if (!postToTrustedParent(message)) {
     logGatewayError('form-content dropped: no trusted platform origin known');
-    return;
   }
-
-  logGateway('→ parent: form-content', {
-    hasImage: Boolean(content.image),
-    hasVideo: Boolean(content.video),
-    hasText: Boolean(content.text),
-    chatType: content.chat.type,
-  });
 }
 
 // Posts a private-data message strictly to the verified platform origin (falls back to the
@@ -379,8 +355,6 @@ function isTrustedOrigin(origin: string) {
 // Applies only known settings; unknown fields from newer platform versions are ignored.
 // Each push replaces the previous state (incl. the permissions block appearing/disappearing).
 function handleSettingsMessage(message: SettingsMessage) {
-  logGateway('← parent: settings | blurImages', message.blurImages, '| permissions', message.permissions);
-
   applyBlurImagesSetting(message.blurImages);
 
   // Missing block → undefined → fail-open (see `getGatewayPermissions` consumers)
@@ -409,8 +383,6 @@ function isSettingsMessage(data: unknown): data is SettingsMessage {
 // Route validity is checked by the navigate handler; an unusable route keeps the default screen.
 function handleNavigateMessage(message: NavigateMessage) {
   if (!currentAccountId || message.accountId !== currentAccountId) {
-    logGateway('navigate ignored: accountId mismatch (message:', message.accountId,
-      '| current:', currentAccountId, ')');
     return;
   }
   if (message.route.length > MAX_ROUTE_LENGTH) {
@@ -418,7 +390,6 @@ function handleNavigateMessage(message: NavigateMessage) {
     return;
   }
 
-  logGateway('← parent: navigate', { route: message.route });
   navigateHandler?.(message.route);
 }
 

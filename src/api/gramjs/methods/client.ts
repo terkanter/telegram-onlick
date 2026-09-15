@@ -22,7 +22,7 @@ import {
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, TELEGRAM_API_HASH, TELEGRAM_API_ID, UPLOAD_WORKERS,
 } from '../../../config';
 import Deferred from '../../../util/Deferred';
-import { logGateway, logGatewayError, setGatewayVerbose } from '../../../util/gatewayLog';
+import { logGatewayError, setGatewayVerbose } from '../../../util/gatewayLog';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
 import {
@@ -267,7 +267,6 @@ async function initGatewayClient(args: GatewayInitArgs, onConnected?: NoneToVoid
     gatewayUrl, gatewayToken, userAgent, platform, langCode,
   } = args;
 
-  logGateway('worker: initGatewayClient →', gatewayUrl);
   gatewayOnConnected = onConnected;
   gatewayTransport = new GatewayTransport({ url: gatewayUrl, token: gatewayToken, onClose: onGatewayClose });
   client = new TelegramClient(
@@ -294,7 +293,6 @@ async function initGatewayClient(args: GatewayInitArgs, onConnected?: NoneToVoid
 export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: string; gatewayToken: string }) {
   if (!gatewayTransport) return;
 
-  logGateway('worker: reinitGateway →', gatewayUrl);
   await connectGateway(() => client.reconnectGateway({ url: gatewayUrl, token: gatewayToken }));
 }
 
@@ -309,7 +307,6 @@ async function connectGateway(connect: () => Promise<void>) {
   }
 
   if (isGatewayPostConnectDone) {
-    logGateway('worker: reconnected');
     void fetchCurrentUser();
     return;
   }
@@ -317,14 +314,12 @@ async function connectGateway(connect: () => Promise<void>) {
   isGatewayPostConnectDone = true;
   const accountId = gatewayTransport!.getAccountId();
   if (accountId) {
-    logGateway('worker: connected as', accountId, '; waiting for cache barrier');
     gatewayCacheBarrier = new Deferred<void>();
     sendApiUpdate({ '@type': 'updateGatewayAccountId', accountId });
     await Promise.race([gatewayCacheBarrier.promise, pause(GATEWAY_CACHE_BARRIER_TIMEOUT)]);
     gatewayCacheBarrier = undefined;
   }
 
-  logGateway('worker: proceeding to ready; fetching current user');
   gatewayOnConnected?.();
   onAuthReady();
   sendApiUpdate({ '@type': 'updateApiReady' });
