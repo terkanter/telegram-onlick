@@ -103,6 +103,7 @@ import {
 import { updateGroupCall } from '../../reducers/calls';
 import { updateTabState } from '../../reducers/tabs';
 import {
+  addMissingMainThreads,
   replaceThreadLocalStateParam,
   replaceThreadReadStateParam,
   updateMainThreadReadStates,
@@ -3749,6 +3750,8 @@ async function loadChats(
     if (result.threadReadStatesById) {
       global = updateMainThreadReadStates(global, result.threadReadStatesById);
     }
+  } else if (result.threadReadStatesById) {
+    global = addMissingMainThreads(global, result.threadInfos, result.threadReadStatesById);
   }
 
   if (listType === 'active' || listType === 'archived') {

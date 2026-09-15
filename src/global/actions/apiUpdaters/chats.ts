@@ -1,11 +1,14 @@
-import type { ApiChat, ApiUpdateChat } from '../../../api/types';
-import type { ActionReturnType } from '../../types';
+import { addCallback, removeCallback } from '../../../lib/teact/teactn';
+
+import type { ApiChat, ApiMessage, ApiUpdateChat } from '../../../api/types';
+import type { ActionReturnType, GlobalState } from '../../types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
 import { ARCHIVED_FOLDER_ID, MAX_ACTIVE_PINNED_CHATS, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import { buildCollectionByKey, omit } from '../../../util/iteratees';
 import { isLocalMessageId } from '../../../util/keys/messageKey';
 import { closeMessageNotifications, notifyAboutMessage } from '../../../util/notifications';
+import { onTickEnd } from '../../../util/schedulers';
 import { checkIfHasUnreadReactions, isChatChannel } from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
@@ -44,6 +47,8 @@ import {
 import { selectThreadLocalStateParam, selectThreadReadState } from '../../selectors/threads';
 
 const TYPING_STATUS_CLEAR_DELAY = 6000; // 6 seconds
+// Covers the throttled chat list reload that brings a chat seen for the first time
+const NEW_CHAT_NOTIFICATION_TIMEOUT = 30000; // 30 seconds
 const INVALIDATE_FULL_CHAT_FIELDS = new Set<keyof ApiChat>([
   'boostLevel', 'isForum', 'isLinkedInDiscussion', 'fakeType', 'restrictionReasons', 'isJoinToSend', 'isJoinRequest',
   'type',
@@ -232,6 +237,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       const chat = selectChat(global, chatId);
       if (!chat) {
+        // The counter comes with the chat list reload that brings the chat, see `addMissingMainThreads`
+        notifyWhenChatIsListed(chatId, message);
         return undefined;
       }
 
@@ -634,3 +641,24 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
   return undefined;
 });
+
+function notifyWhenChatIsListed(chatId: string, message: ApiMessage) {
+  let isDone = false;
+  const timeout = setTimeout(stop, NEW_CHAT_NOTIFICATION_TIMEOUT);
+  addCallback(handleGlobalChange);
+
+  function handleGlobalChange(global: GlobalState) {
+    const chat = selectChat(global, chatId);
+    if (isDone || !chat?.isListed) return;
+
+    stop();
+    void notifyAboutMessage({ chat, message });
+  }
+
+  function stop() {
+    isDone = true;
+    clearTimeout(timeout);
+    // Global callbacks may be running right now, and removing one mid-iteration skips the next
+    onTickEnd(() => removeCallback(handleGlobalChange));
+  }
+}

@@ -223,6 +223,22 @@ export function updateMainThreadReadStates<T extends GlobalState>(
   return global;
 }
 
+// A chat can enter the list without a main thread, like one that has just got its first message. The partial
+// chat list reload skips read states, so such a chat takes them from the server here or shows no unread badge.
+export function addMissingMainThreads<T extends GlobalState>(
+  global: T, threadInfos: ApiThreadInfo[], threadReadStates: Record<string, ThreadReadState>,
+): T {
+  threadInfos.forEach((threadInfo) => {
+    if (threadInfo.isCommentsInfo || threadInfo.threadId !== MAIN_THREAD_ID) return;
+    if (selectThread(global, threadInfo.chatId, MAIN_THREAD_ID)) return;
+
+    global = updateThreadInfo(global, threadInfo);
+    global = updateThreadReadState(global, threadInfo.chatId, MAIN_THREAD_ID, threadReadStates[threadInfo.chatId]);
+  });
+
+  return global;
+}
+
 export function updateThreadReadStates<T extends GlobalState>(
   global: T, chatId: string, threadReadStates: Record<ThreadId, ThreadReadState>,
 ): T {
