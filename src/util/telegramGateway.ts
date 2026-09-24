@@ -154,8 +154,6 @@ let blurGenerationCounter = 0;
 
 let authHandler: ((auth: GatewayAuth) => void) | undefined;
 let navigateHandler: ((route: string) => void) | undefined;
-// An `auth` that arrived before any handler was registered; handed over once, since tokens are single-use
-let unhandledAuth: GatewayAuth | undefined;
 // The request an `auth` must answer in protocol v2; a reply to anything else is stale
 let pendingAuthRequestId: string | undefined;
 let authRequestCounter = 0;
@@ -189,11 +187,6 @@ export function requestGatewaySettings() {
 // and later ones pushed when the manager switches account in the platform switcher.
 export function setGatewayAuthHandler(handler: (auth: GatewayAuth) => void) {
   authHandler = handler;
-  if (!unhandledAuth) return;
-
-  const auth = unhandledAuth;
-  unhandledAuth = undefined;
-  handler(auth);
 }
 
 export function notifyGatewayReady(accountId: string) {
@@ -352,13 +345,15 @@ function handleParentMessage(event: MessageEvent) {
   if (!checkIsAuthExpected(event.data)) return;
 
   verifiedParentOrigin = event.origin;
-  pendingAuthRequestId = undefined;
-  const auth = { token: event.data.token, gatewayUrl: event.data.gatewayUrl };
-  if (authHandler) {
-    authHandler(auth);
-  } else {
-    unhandledAuth = auth;
+  // The bridge starts before `initApi` registers the handler, which then requests a fresh token itself;
+  // an earlier `auth` is an unsolicited push and applying it too would cost a second token and a reload
+  if (!authHandler) {
+    logGateway('auth ignored: the tab has not requested one');
+    return;
   }
+
+  pendingAuthRequestId = undefined;
+  authHandler({ token: event.data.token, gatewayUrl: event.data.gatewayUrl });
 }
 
 // A token for another account, or a reply to a request this tab is not waiting for, would reconnect
