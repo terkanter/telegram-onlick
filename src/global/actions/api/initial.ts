@@ -21,7 +21,7 @@ import * as cacheApi from '../../../util/cacheApi';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { setGatewayVerbose } from '../../../util/gatewayLog';
 import {
-  ACCOUNT_SLOT, getAccountsInfo, getAccountSlotUrl, getFirstLoggedInAccountSlot,
+  ACCOUNT_SLOT, GATEWAY_ACCOUNT, getAccountsInfo, getAccountSlotUrl, getFirstLoggedInAccountSlot,
 } from '../../../util/multiaccount';
 import { unsubscribe } from '../../../util/notifications';
 import { clearEncryptedSession, encryptSession, forgetPasscode } from '../../../util/passcode';
@@ -36,7 +36,7 @@ import {
 } from '../../../util/sessions';
 import { checkStaleBuild } from '../../../util/staleBuild';
 import {
-  consumeGatewayReconnect, initGatewayBridge, requestGatewayAuth, setGatewayAuthHandler, setGatewayNavigateHandler,
+  consumeGatewayReconnect, requestGatewayAuth, setGatewayAuthHandler, setGatewayNavigateHandler,
 } from '../../../util/telegramGateway';
 import { clearWallpaperBlobs } from '../../../util/wallpaperStorage';
 import { forceWebsync } from '../../../util/websync';
@@ -76,7 +76,6 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
 
     setGatewayVerbose(checkIsGatewayVerbose());
     void checkStaleBuild(true);
-    initGatewayBridge();
     // Analytics telemetry (variant A): presence/unread timers start once; `message` events and
     // history backfill flow through the update/sync handlers. See `telegram-fork-events.md`.
     startAnalytics();
@@ -94,7 +93,8 @@ addActionHandler('initApi', (global, actions): ActionReturnType => {
         return;
       }
 
-      if (consumeGatewayReconnect()) {
+      // With the account in the URL the iframe never changes account, so any later token is a reconnect
+      if (consumeGatewayReconnect() || GATEWAY_ACCOUNT) {
         // Same account, fresh token — reconnect in place, keep cache and update state.
         void callApi('reinitGateway', { gatewayUrl: auth.gatewayUrl, gatewayToken: auth.token });
         return;

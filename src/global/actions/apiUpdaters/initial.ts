@@ -52,8 +52,18 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       void onUpdateGatewayAccountId(update);
       break;
 
-    case 'updateGatewayClosed':
-      handleGatewayClose(update);
+    case 'updateGatewayClosed': {
+      const gatewayStopReason = handleGatewayClose(update);
+      if (gatewayStopReason) {
+        global = { ...global, gatewayStopReason };
+        setGlobal(global);
+      }
+      break;
+    }
+
+    // A reload boots the account the platform hands out now, without touching the previous account's cache
+    case 'updateGatewayAccountMismatch':
+      window.location.reload();
       break;
 
     case 'updateAuthorizationState':

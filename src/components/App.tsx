@@ -3,6 +3,7 @@ import { withGlobal } from '../global';
 
 import type { GlobalState } from '../global/types';
 import type { ThemeKey } from '../types';
+import type { GatewayStopReason } from '../util/telegramGateway';
 import type { UiLoaderPage } from './common/UiLoader';
 
 import {
@@ -20,13 +21,11 @@ import { ACCOUNT_SLOT, getAccountSlotUrl, getFirstLoggedInAccountSlot } from '..
 import { hasEncryptedSession } from '../util/passcode';
 import { getInitialLocationHash, parseInitialLocationHash } from '../util/routing';
 import { checkSessionLocked, hasStoredSession } from '../util/sessions';
-import { getGatewayStatus } from '../util/telegramGateway';
 import { getActionMessageBg, getWallpaperBaseColor } from '../util/wallpaper';
 import { updateSizes } from '../util/windowSize';
 
 import useTauriDrag from '../hooks/tauri/useTauriDrag';
 import useAppLayout from '../hooks/useAppLayout';
-import useDerivedState from '../hooks/useDerivedState';
 import useFileHoverOpen, {
   FILE_HOVER_OPEN_SELECTOR, hasFiles,
 } from '../hooks/useFileHoverOpen';
@@ -49,6 +48,7 @@ import styles from './App.module.scss';
 
 type StateProps = {
   authState: GlobalState['auth']['state'];
+  gatewayStopReason?: GatewayStopReason;
   isScreenLocked?: boolean;
   hasPasscode?: boolean;
   inactiveReason?: 'auth' | 'otherClient';
@@ -73,6 +73,7 @@ const INACTIVE_PAGE_TITLE = `${ACTIVE_PAGE_TITLE} ${INACTIVE_MARKER}`;
 
 const App = ({
   authState,
+  gatewayStopReason,
   isScreenLocked,
   hasPasscode,
   inactiveReason,
@@ -85,9 +86,8 @@ const App = ({
   const { isMobile } = useAppLayout();
   const isMobileOs = PLATFORM_ENV === 'iOS' || PLATFORM_ENV === 'Android';
   // The gateway can stop mid-session (access revoked, account not serviceable); the screen must
-  // appear even once `authState` is ready, so gate on the status signal rather than only on auth state
-  const gatewayStatus = useDerivedState(getGatewayStatus);
-  const isGatewayStopped = IS_GATEWAY && (gatewayStatus === 'revoked' || gatewayStatus === 'error');
+  // appear even once `authState` is ready, so gate on the stop reason rather than only on auth state
+  const isGatewayStopped = IS_GATEWAY && Boolean(gatewayStopReason);
 
   useEffect(() => {
     if (IS_INSTALL_PROMPT_SUPPORTED) {
@@ -232,7 +232,7 @@ const App = ({
       case AppScreens.inactive:
         return <AppInactive inactiveReason={inactiveReason!} />;
       case AppScreens.gateway:
-        return <GatewayPending />;
+        return <GatewayPending stopReason={gatewayStopReason} />;
     }
   }
 
@@ -297,6 +297,7 @@ export default withLogin(withGlobal(
 
     return {
       authState,
+      gatewayStopReason: global.gatewayStopReason,
       isScreenLocked: global.passcode?.isScreenLocked,
       hasPasscode: global.passcode?.hasPasscode,
       inactiveReason: selectTabState(global).inactiveReason,

@@ -8,7 +8,7 @@ import {
 } from './global';
 
 import {
-  DEBUG, STRICTERDOM_ENABLED,
+  DEBUG, IS_GATEWAY, STRICTERDOM_ENABLED,
 } from './config';
 import { enableStrict, requestMutation } from './lib/fasterdom/fasterdom';
 import { selectChat, selectCurrentMessageList, selectPeerFullInfo, selectTabState } from './global/selectors';
@@ -25,6 +25,7 @@ import { checkAndAssignPermanentWebVersion } from './util/permanentWebVersion';
 import { onBeforeUnload } from './util/schedulers';
 import initTauriApi from './util/tauri/initTauriApi';
 import setupTauriListeners from './util/tauri/setupTauriListeners';
+import { initGatewayBridge, requestGatewaySettings } from './util/telegramGateway';
 import updateWebmanifest from './util/updateWebmanifest';
 
 import App from './components/App';
@@ -53,6 +54,12 @@ async function init() {
 
   checkAndAssignPermanentWebVersion();
   listenOtherClients();
+
+  // Every tab talks to its own platform page, while only the master tab requests auth
+  if (IS_GATEWAY) {
+    initGatewayBridge();
+    requestGatewaySettings();
+  }
 
   subscribeToMultitabBroadcastChannel();
   await requestGlobal(APP_VERSION);

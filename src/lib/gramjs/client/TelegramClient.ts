@@ -574,6 +574,7 @@ class TelegramClient {
     try {
       this.disconnect();
       this._sender?.destroy();
+      this._gatewayTransport?.close();
     } catch (err) {
       // Do nothing
     }

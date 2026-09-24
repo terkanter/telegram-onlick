@@ -15,6 +15,8 @@ export const PRODUCTION_URL = 'https://web.telegram.org/a';
 export const WEB_VERSION_BASE = 'https://web.telegram.org/'; // Used to redirect to other versions
 export const BASE_URL = import.meta.env.TG_PUBLIC_URL;
 export const ACCOUNT_QUERY = 'account';
+// The platform account the gateway iframe is opened for. Not `account`, which upstream parses as a numeric slot
+export const GATEWAY_ACCOUNT_QUERY = 'tgAccount';
 
 export const IS_MOCKED_CLIENT = import.meta.env.TG_APP_MOCKED_CLIENT === '1';
 export const IS_TEST = APP_ENV === 'test';

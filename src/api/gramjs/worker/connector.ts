@@ -5,14 +5,14 @@ import type { LocalDb } from '../localDb';
 import type { MethodArgs, MethodResponse, Methods } from '../methods/types';
 import type { OriginPayload, ThenArg, WorkerMessageEvent } from './types';
 
-import { DEBUG, IGNORE_UNHANDLED_ERRORS } from '../../../config';
+import { DEBUG, GATEWAY_ACCOUNT_QUERY, IGNORE_UNHANDLED_ERRORS } from '../../../config';
 import { IS_TAURI } from '../../../util/browser/globalEnvironment';
 import { IS_SAFARI } from '../../../util/browser/windowEnvironment';
 import { logDebugMessage } from '../../../util/debugConsole';
 import Deferred from '../../../util/Deferred';
 import { getCurrentTabId, subscribeToMasterChange } from '../../../util/establishMultitabRole';
 import generateUniqueId from '../../../util/generateUniqueId';
-import { ACCOUNT_SLOT, DATA_BROADCAST_CHANNEL_NAME } from '../../../util/multiaccount';
+import { ACCOUNT_SLOT, DATA_BROADCAST_CHANNEL_NAME, GATEWAY_ACCOUNT } from '../../../util/multiaccount';
 import { pause, throttleWithTickEnd } from '../../../util/schedulers';
 
 type RequestState = {
@@ -96,6 +96,9 @@ export function initApi(onUpdate: OnApiUpdate, initialArgs: ApiInitialArgs) {
     const params = new URLSearchParams();
     if (ACCOUNT_SLOT) {
       params.set('account', String(ACCOUNT_SLOT));
+    }
+    if (GATEWAY_ACCOUNT) {
+      params.set(GATEWAY_ACCOUNT_QUERY, GATEWAY_ACCOUNT);
     }
 
     worker = new Worker(new URL('./worker.ts', import.meta.url), {

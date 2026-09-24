@@ -22,6 +22,8 @@ export interface GatewayTransport {
   setUpdateHandler(handler: (updateB64: string) => void): void;
   // Fire-and-forget frame (analytics `events`/`unread`) over the same WS; false if not open.
   sendData(frame: Record<string, unknown>): boolean;
+  // Closes the WS for good without reporting a close: unanswered requests fail, nothing reconnects.
+  close(): void;
 }
 
 // Rejection shape from `invoke`, carrying the fields needed to rebuild a gramjs `RPCError`.

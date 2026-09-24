@@ -3,6 +3,7 @@ import type { ApiUpdateGatewayClosed } from '../api/types';
 import { GATEWAY_ALLOWED_ORIGINS, IS_GATEWAY } from '../config';
 import { GATEWAY_CLOSE_ACCESS_REVOKED, GATEWAY_CLOSE_UNAUTHORIZED } from './gatewayClosePolicy';
 import { logGateway, logGatewayError } from './gatewayLog';
+import { GATEWAY_ACCOUNT } from './multiaccount';
 import { debounce } from './schedulers';
 import { createSignal } from './signals';
 
@@ -22,13 +23,17 @@ export type GatewayAuth = {
   gatewayUrl: string;
 };
 
-export type GatewayStatus = 'connecting' | 'ready' | 'revoked' | 'error';
+// A terminal stop of the gateway; until one happens the fork is connecting or connected
+export type GatewayStopReason = 'revoked' | 'error';
 
+// Protocol v2 adds `tgAccount` and `requestId`, echoed from `request-auth`; the old platform sends neither
 type AuthMessage = {
   source: typeof GATEWAY_SOURCE;
   type: 'auth';
   token: string;
   gatewayUrl: string;
+  tgAccount?: string;
+  requestId?: string;
 };
 
 // Sent for every WS close the fork could not replay silently (see `telegram-fork-tasks-09.md` §C).
@@ -41,6 +46,7 @@ type AuthErrorMessage = {
   reason: string;
   retrying: boolean;
   accountId?: string;
+  tgAccount?: string;
   message?: string;
 };
 
@@ -72,6 +78,7 @@ type RouteChangeMessage = {
   source: typeof GATEWAY_SOURCE;
   type: 'route-change';
   accountId: string;
+  tgAccount?: string;
   route: string;
 };
 
@@ -131,10 +138,8 @@ type FormContentMessage = {
   chat: FormContentChat;
   user?: FormContentUser;
   sender?: FormContentSender;
+  tgAccount?: string;
 };
-
-const [getGatewayStatus, setGatewayStatus] = createSignal<GatewayStatus>('connecting');
-export { getGatewayStatus };
 
 // `0` means blur is off. Each enable produces a new monotonic generation, so media
 // revealed with the per-media eye control get hidden again on re-enable.
@@ -149,7 +154,11 @@ let blurGenerationCounter = 0;
 
 let authHandler: ((auth: GatewayAuth) => void) | undefined;
 let navigateHandler: ((route: string) => void) | undefined;
-let latestAuth: GatewayAuth | undefined;
+// An `auth` that arrived before any handler was registered; handed over once, since tokens are single-use
+let unhandledAuth: GatewayAuth | undefined;
+// The request an `auth` must answer in protocol v2; a reply to anything else is stale
+let pendingAuthRequestId: string | undefined;
+let authRequestCounter = 0;
 let isBridgeInited = false;
 // The account announced to the parent in the last `ready`; stamps outgoing `route-change`
 // and fences off `navigate` from a stale account during a switch
@@ -166,19 +175,30 @@ let verifiedParentOrigin: string | undefined;
 // The parent (cross-origin) does not know when the iframe is ready, so the fork
 // asks first; the parent replies with a freshly minted token (lives ~2 min).
 export function requestGatewayAuth() {
-  postToParent({ type: 'request-auth' });
+  authRequestCounter += 1;
+  pendingAuthRequestId = `${Date.now()}-${authRequestCounter}`;
+  postToParent({ type: 'request-auth', tgAccount: GATEWAY_ACCOUNT, requestId: pendingAuthRequestId });
+}
+
+// Every tab asks, not only the one holding the connection, so role limits and blur apply everywhere
+export function requestGatewaySettings() {
+  postToParent({ type: 'request-settings', tgAccount: GATEWAY_ACCOUNT });
 }
 
 // Registers the handler invoked for every valid `auth` — both the initial token
 // and later ones pushed when the manager switches account in the platform switcher.
 export function setGatewayAuthHandler(handler: (auth: GatewayAuth) => void) {
   authHandler = handler;
-  if (latestAuth) handler(latestAuth);
+  if (!unhandledAuth) return;
+
+  const auth = unhandledAuth;
+  unhandledAuth = undefined;
+  handler(auth);
 }
 
 export function notifyGatewayReady(accountId: string) {
   currentAccountId = accountId;
-  postToParent({ type: 'ready', accountId });
+  postToParent({ type: 'ready', accountId, tgAccount: GATEWAY_ACCOUNT });
 }
 
 // The account already announced via `ready`, if any — lets callers avoid duplicate announces
@@ -209,7 +229,7 @@ function postRouteChangeToParent(route: string) {
   }
 
   const message: RouteChangeMessage = {
-    source: GATEWAY_SOURCE, type: 'route-change', accountId: currentAccountId, route,
+    source: GATEWAY_SOURCE, type: 'route-change', accountId: currentAccountId, tgAccount: GATEWAY_ACCOUNT, route,
   };
   if (!postToTrustedParent(message)) {
     logGatewayError('route-change dropped: no trusted platform origin known');
@@ -219,9 +239,10 @@ function postRouteChangeToParent(route: string) {
 // Applies the worker's verdict on a WS close (`gatewayClosePolicy.ts`): tells the platform what
 // happened unless the close is being replayed silently, then either waits out the backoff before
 // asking for a fresh token or parks the app on the terminal screen. See `telegram-fork-tasks-09.md` §A–C.
+// Returns the stop reason when the gateway will not be retried.
 export function handleGatewayClose({
   code, reason, closeClass, retrying, delayMs, isSilent, accountId,
-}: Omit<ApiUpdateGatewayClosed, '@type'>) {
+}: Omit<ApiUpdateGatewayClosed, '@type'>): GatewayStopReason | undefined {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = undefined;
@@ -236,19 +257,19 @@ export function handleGatewayClose({
   if (!retrying) {
     const isAccessRevoked = closeClass === 'stop' && ACCESS_REVOKED_CLOSE_CODES.has(code);
     logGateway('gateway stopped', { code, reason, isAccessRevoked });
-    setGatewayStatus(isAccessRevoked ? 'revoked' : 'error');
-    return;
+    return isAccessRevoked ? 'revoked' : 'error';
   }
 
   if (!delayMs) {
     markGatewayReconnect();
-    return;
+    return undefined;
   }
 
   reconnectTimer = setTimeout(() => {
     reconnectTimer = undefined;
     markGatewayReconnect();
   }, delayMs);
+  return undefined;
 }
 
 // Strictly to the platform origin (never `'*'`) like the rest of the post-`auth` protocol
@@ -262,6 +283,7 @@ function postAuthErrorToParent({
     reason,
     retrying,
     accountId,
+    tgAccount: GATEWAY_ACCOUNT,
     message: reason ? `Gateway closed (${code}): ${reason}` : `Gateway closed (${code})`,
   };
   if (!postToTrustedParent(message)) {
@@ -274,6 +296,19 @@ function postAuthErrorToParent({
 function markGatewayReconnect() {
   isReconnectPending = true;
   requestGatewayAuth();
+}
+
+// A tab that stops being the master no longer owns the connection: a pending backoff or token request
+// must not reconnect the socket the new master now holds
+export function resetGatewayAuthFlow() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+
+  isReconnectPending = false;
+  pendingAuthRequestId = undefined;
+  authHandler = undefined;
 }
 
 // Reads and clears the reconnect flag — true means "reconnect", false means "account switch".
@@ -301,6 +336,7 @@ function handleParentMessage(event: MessageEvent) {
     return;
   }
   if (isSettingsMessage(event.data)) {
+    verifiedParentOrigin = event.origin;
     handleSettingsMessage(event.data);
     return;
   }
@@ -313,9 +349,34 @@ function handleParentMessage(event: MessageEvent) {
     return;
   }
 
+  if (!checkIsAuthExpected(event.data)) return;
+
   verifiedParentOrigin = event.origin;
-  latestAuth = { token: event.data.token, gatewayUrl: event.data.gatewayUrl };
-  authHandler?.(latestAuth);
+  pendingAuthRequestId = undefined;
+  const auth = { token: event.data.token, gatewayUrl: event.data.gatewayUrl };
+  if (authHandler) {
+    authHandler(auth);
+  } else {
+    unhandledAuth = auth;
+  }
+}
+
+// A token for another account, or a reply to a request this tab is not waiting for, would reconnect
+// it into the wrong session. Without `tgAccount` in the URL the platform is the old one and every `auth` counts.
+function checkIsAuthExpected({ tgAccount, requestId }: AuthMessage) {
+  if (!GATEWAY_ACCOUNT) return true;
+
+  if (tgAccount && tgAccount !== GATEWAY_ACCOUNT) {
+    logGatewayError('auth rejected: token for another account', { tgAccount, expected: GATEWAY_ACCOUNT });
+    return false;
+  }
+
+  if (requestId && requestId !== pendingAuthRequestId) {
+    logGatewayError('auth ignored: no pending request with this id', { requestId });
+    return false;
+  }
+
+  return true;
 }
 
 // Posts selected chat content to the platform. Strictly targeted at the verified origin
@@ -327,7 +388,9 @@ export function postFormContentToParent(content: Omit<FormContentMessage, 'sourc
     return;
   }
 
-  const message: FormContentMessage = { source: GATEWAY_SOURCE, type: 'form-content', ...content };
+  const message: FormContentMessage = {
+    source: GATEWAY_SOURCE, type: 'form-content', ...content, tgAccount: GATEWAY_ACCOUNT,
+  };
   if (!postToTrustedParent(message)) {
     logGatewayError('form-content dropped: no trusted platform origin known');
   }

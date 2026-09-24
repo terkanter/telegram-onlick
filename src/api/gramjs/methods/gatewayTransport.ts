@@ -163,6 +163,20 @@ export default class GatewayTransport implements IGatewayTransport {
     return this.accountId;
   }
 
+  // A tab that stops being the master hands the connection to the new one, so its socket must not
+  // linger or reconnect on its own
+  close() {
+    const ws = this.ws;
+    this.ws = undefined;
+    this.state = 'stopped';
+    this.clearReadyTimer();
+    this.clearKeepAlive();
+    ws?.close();
+
+    const error = toGatewayError('Gateway closed by the fork', DEFAULT_ERROR_CODE);
+    Array.from(this.pending.keys()).forEach((id) => this.takePending(id)!.reject(error));
+  }
+
   private openSocket() {
     this.state = 'connecting';
     this.readyDeferred = new Deferred<void>();

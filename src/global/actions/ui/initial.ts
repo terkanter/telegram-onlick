@@ -20,6 +20,7 @@ import { applyPerformanceSettings } from '../../../util/perfomanceSettings';
 import { hasStoredSession, storeSession } from '../../../util/sessions';
 import switchTheme from '../../../util/switchTheme';
 import { getSystemTheme, setSystemThemeChangeCallback } from '../../../util/systemTheme';
+import { resetGatewayAuthFlow } from '../../../util/telegramGateway';
 import { startWebsync, stopWebsync } from '../../../util/websync';
 import { callApi } from '../../../api/gramjs';
 import { clearCaching, setupCaching } from '../../cache';
@@ -63,6 +64,7 @@ addActionHandler('switchMultitabRole', async (global, actions, payload): Promise
 
   if (!isMasterTab) {
     void unsubscribe();
+    resetGatewayAuthFlow();
     actions.destroyConnection();
     stopWebsync();
     destroySharedStatePort();

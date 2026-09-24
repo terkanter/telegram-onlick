@@ -80,6 +80,7 @@ import type {
   WebPageMediaSize,
 } from '../../types';
 import type { RegularLangFnParameters } from '../../util/localization';
+import type { GatewayStopReason } from '../../util/telegramGateway';
 import type { SharedState } from './sharedState';
 import type { TabState } from './tabState';
 
@@ -100,6 +101,8 @@ export type GlobalState = {
   };
   isCacheApiSupported?: boolean;
   connectionState?: ApiUpdateConnectionStateType;
+  // Gateway mode: set by the tab that holds the connection and synced to the other tabs of the account
+  gatewayStopReason?: GatewayStopReason;
   currentUserId?: string;
   isSyncing?: boolean;
   isAppConfigLoaded?: boolean;

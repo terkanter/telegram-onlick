@@ -23,6 +23,7 @@ import {
 } from '../../../config';
 import Deferred from '../../../util/Deferred';
 import { logGatewayError, setGatewayVerbose } from '../../../util/gatewayLog';
+import { GATEWAY_ACCOUNT } from '../../../util/multiaccount';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
 import {
@@ -299,6 +300,8 @@ export async function reinitGateway({ gatewayUrl, gatewayToken }: { gatewayUrl: 
 // A failed attempt needs nothing here: the transport has already reported the close and its
 // verdict through `onGatewayClose`, and the main thread brings the next token
 async function connectGateway(connect: () => Promise<void>) {
+  const previousAccountId = gatewayTransport?.getAccountId();
+
   try {
     await connect();
   } catch (err) {
@@ -306,13 +309,27 @@ async function connectGateway(connect: () => Promise<void>) {
     return;
   }
 
+  const accountId = gatewayTransport!.getAccountId();
+
   if (isGatewayPostConnectDone) {
+    // A token of another account arrived while reconnecting; this client's state belongs to the previous one
+    if (previousAccountId && accountId !== previousAccountId) {
+      logGatewayError('worker: reconnected to another account', { previousAccountId, accountId });
+      sendApiUpdate({ '@type': 'updateGatewayAccountMismatch', accountId });
+      return;
+    }
+
     void fetchCurrentUser();
     return;
   }
 
+  if (GATEWAY_ACCOUNT && accountId !== GATEWAY_ACCOUNT) {
+    logGatewayError('worker: gateway account differs from the iframe account', {
+      accountId, expected: GATEWAY_ACCOUNT,
+    });
+  }
+
   isGatewayPostConnectDone = true;
-  const accountId = gatewayTransport!.getAccountId();
   if (accountId) {
     gatewayCacheBarrier = new Deferred<void>();
     sendApiUpdate({ '@type': 'updateGatewayAccountId', accountId });
@@ -346,6 +363,9 @@ export async function destroy(noLogOut = false, noClearLocalDb = false) {
   }
 
   client.destroy();
+  // The next `initApi` of this worker builds a fresh gateway client and must go through the post-connect phase again
+  gatewayTransport = undefined;
+  isGatewayPostConnectDone = false;
 }
 
 export function disconnect() {

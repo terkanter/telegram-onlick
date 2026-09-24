@@ -64,6 +64,13 @@ export type ApiUpdateGatewayAccountId = {
   accountId: string;
 };
 
+// Gateway mode: a reconnect landed on another account than the one this client holds, so its
+// state must not be reused. The main thread takes the account switch path instead.
+export type ApiUpdateGatewayAccountMismatch = {
+  '@type': 'updateGatewayAccountMismatch';
+  accountId?: string;
+};
+
 // Gateway mode: the WS closed and the worker applied the close policy (`gatewayClosePolicy.ts`).
 // While `retrying`, the transport keeps unanswered requests and waits for a fresh token, which
 // the main thread requests after `delayMs`; `accountId` comes from the last gateway `ready`.
@@ -1002,7 +1009,8 @@ export type ApiUpdateWebPage = {
 };
 
 export type ApiUpdate = (
-  ApiUpdateReady | ApiUpdateGatewayAccountId | ApiUpdateGatewayClosed | ApiUpdateSession |
+  ApiUpdateReady | ApiUpdateGatewayAccountId | ApiUpdateGatewayAccountMismatch | ApiUpdateGatewayClosed |
+  ApiUpdateSession |
   ApiUpdateWebAuthTokenFailed | ApiUpdateRequestUserUpdate |
   ApiUpdateAuthorizationState | ApiUpdateAuthorizationError | ApiUpdateConnectionState | ApiUpdateCurrentUser |
   ApiUpdateChat | ApiUpdateChatTypingStatus | ApiUpdateChatFullInfo | ApiUpdatePinnedChatIds |

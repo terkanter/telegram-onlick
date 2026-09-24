@@ -4,7 +4,9 @@ import {
   ACCOUNT_QUERY,
   DATA_BROADCAST_CHANNEL_PREFIX,
   ESTABLISH_BROADCAST_CHANNEL_PREFIX,
+  GATEWAY_ACCOUNT_QUERY,
   GLOBAL_STATE_CACHE_PREFIX,
+  IS_GATEWAY,
   MULTITAB_LOCALSTORAGE_KEY_PREFIX,
   SESSION_ACCOUNT_PREFIX,
 } from '../config';
@@ -13,16 +15,29 @@ import { IS_MULTIACCOUNT_SUPPORTED } from './browser/globalEnvironment';
 const WORKER_NAME = typeof WorkerGlobalScope !== 'undefined' && globalThis.self instanceof WorkerGlobalScope
   ? globalThis.self.name : undefined;
 const WORKER_ACCOUNT_SLOT = WORKER_NAME ? Number(new URLSearchParams(WORKER_NAME).get(ACCOUNT_QUERY)) : undefined;
+const GATEWAY_ACCOUNT_REGEX = /^[\w-]{1,64}$/;
 
 export const ACCOUNT_SLOT = WORKER_ACCOUNT_SLOT || (
   IS_MULTIACCOUNT_SUPPORTED ? getAccountSlot(globalThis.location.href) : undefined
 );
 
-export const DATA_BROADCAST_CHANNEL_NAME = `${DATA_BROADCAST_CHANNEL_PREFIX}_${ACCOUNT_SLOT || 1}`;
-export const ESTABLISH_BROADCAST_CHANNEL_NAME = `${ESTABLISH_BROADCAST_CHANNEL_PREFIX}_${ACCOUNT_SLOT || 1}`;
-export const MULTITAB_STORAGE_KEY = `${MULTITAB_LOCALSTORAGE_KEY_PREFIX}_${ACCOUNT_SLOT || 1}`;
+// Tabs of one platform account share a multitab group and its connection, tabs of different accounts stay apart.
+// The worker learns it from its name, since its own location is the script URL.
+export const GATEWAY_ACCOUNT = IS_GATEWAY
+  ? parseGatewayAccount(WORKER_NAME ? new URLSearchParams(WORKER_NAME) : new URL(globalThis.location.href).searchParams)
+  : undefined;
+const MULTITAB_SCOPE = GATEWAY_ACCOUNT ? `gw_${GATEWAY_ACCOUNT}` : String(ACCOUNT_SLOT || 1);
+
+export const DATA_BROADCAST_CHANNEL_NAME = `${DATA_BROADCAST_CHANNEL_PREFIX}_${MULTITAB_SCOPE}`;
+export const ESTABLISH_BROADCAST_CHANNEL_NAME = `${ESTABLISH_BROADCAST_CHANNEL_PREFIX}_${MULTITAB_SCOPE}`;
+export const MULTITAB_STORAGE_KEY = `${MULTITAB_LOCALSTORAGE_KEY_PREFIX}_${MULTITAB_SCOPE}`;
 export const GLOBAL_STATE_CACHE_KEY = ACCOUNT_SLOT
   ? `${GLOBAL_STATE_CACHE_PREFIX}_${ACCOUNT_SLOT}` : GLOBAL_STATE_CACHE_PREFIX;
+
+function parseGatewayAccount(params: URLSearchParams) {
+  const account = params.get(GATEWAY_ACCOUNT_QUERY);
+  return account && GATEWAY_ACCOUNT_REGEX.test(account) ? account : undefined;
+}
 
 export function getAccountSlot(url: string) {
   const params = new URL(url).searchParams;
