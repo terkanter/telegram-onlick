@@ -23,11 +23,12 @@ import {
   selectUser,
   selectUserFullInfo,
 } from '../../../global/selectors';
-import { IFRAME_ALLOW_ATTRIBUTES, IFRAME_SANDBOX_ATTRIBUTES } from '../../../util/browser/iframe';
+import { IFRAME_ALLOW_ATTRIBUTES, WEB_APP_SANDBOX_ATTRIBUTES } from '../../../util/browser/iframe';
 import { getGeolocationStatus, IS_GEOLOCATION_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle.ts';
 import download from '../../../util/download';
+import { isLiteralObject } from '../../../util/iteratees';
 import { extractCurrentThemeParams, FALLBACK_THEME_PARAMS, validateHexColor } from '../../../util/themeStyle';
 import { callApi } from '../../../api/gramjs';
 import { REM } from '../../common/helpers/mediaDimensions';
@@ -98,6 +99,11 @@ const ANIMATION_WAIT = 400;
 const COLLAPSING_WAIT = 350;
 const POPUP_SEQUENTIAL_LIMIT = 3;
 const POPUP_RESET_DELAY = 2000; // 2s
+const POPUP_TITLE_MAX_LENGTH = 64;
+const POPUP_MESSAGE_MAX_LENGTH = 256;
+const POPUP_BUTTON_TEXT_MAX_LENGTH = 64;
+const POPUP_MAX_BUTTONS = 3;
+const POPUP_BUTTON_TYPES = ['ok', 'close', 'cancel', 'default', 'destructive'];
 const APP_NAME_DISPLAY_DURATION = 3800;
 const DEFAULT_BUTTON_TEXT: Record<string, string> = {
   ok: 'OK',
@@ -714,6 +720,8 @@ const WebAppTab = ({
     }
 
     if (eventType === 'web_app_setup_main_button') {
+      if (!eventData || (eventData.text !== undefined && typeof eventData.text !== 'string')) return;
+
       setMainButton((prevButton) => {
         const color = getValidHexColor(eventData.color) || prevButton?.color
           || themeParams.button_color;
@@ -734,6 +742,8 @@ const WebAppTab = ({
     }
 
     if (eventType === 'web_app_setup_secondary_button') {
+      if (!eventData || (eventData.text !== undefined && typeof eventData.text !== 'string')) return;
+
       setSecondaryButton((prevButton) => {
         const color = getValidHexColor(eventData.color) || prevButton?.color
           || themeParams.button_color;
@@ -759,8 +769,9 @@ const WebAppTab = ({
     }
 
     if (eventType === 'web_app_open_popup') {
-      if (popupParameters || !eventData.message.trim().length || !eventData.buttons?.length
-        || eventData.buttons.length > 3 || isRequestingPhone || isRequestingWriteAccess
+      if (!validatePopupParameters(eventData)) return;
+
+      if (popupParameters || isRequestingPhone || isRequestingWriteAccess
         || unlockPopupsAt > Date.now()) {
         handleAppPopupClose(undefined);
         return;
@@ -924,16 +935,8 @@ const WebAppTab = ({
     }
   }
 
-  const mainButtonCurrentColor = useCurrentOrPrev(mainButton?.color, true);
-  const mainButtonCurrentTextColor = useCurrentOrPrev(mainButton?.textColor, true);
-  const mainButtonCurrentIsActive = useCurrentOrPrev(mainButton && Boolean(mainButton.isActive), true);
-  const mainButtonCurrentText = useCurrentOrPrev(mainButton?.text, true);
-
-  const secondaryButtonCurrentPosition = useCurrentOrPrev(secondaryButton?.position, true);
-  const secondaryButtonCurrentColor = useCurrentOrPrev(secondaryButton?.color, true);
-  const secondaryButtonCurrentTextColor = useCurrentOrPrev(secondaryButton?.textColor, true);
-  const secondaryButtonCurrentIsActive = useCurrentOrPrev(secondaryButton && Boolean(secondaryButton.isActive), true);
-  const secondaryButtonCurrentText = useCurrentOrPrev(secondaryButton?.text, true);
+  const renderingMainButton = useCurrentOrPrev(isMainButtonVisible ? mainButton : undefined, true);
+  const renderingSecondaryButton = useCurrentOrPrev(isSecondaryButtonVisible ? secondaryButton : undefined, true);
 
   const [shouldDecreaseWebFrameSize, setShouldDecreaseWebFrameSize] = useState(false);
   const [shouldHideMainButton, setShouldHideMainButton] = useState(true);
@@ -953,10 +956,11 @@ const WebAppTab = ({
     }, isTransforming ? 0 : ANIMATION_WAIT);
   }, [shouldShowSecondaryButton, shouldHideSecondaryButton,
     shouldShowMainButton, shouldShowMainButton,
-    secondaryButton?.position, sendViewport, isTransforming, modalHeight,
+    renderingSecondaryButton?.position, sendViewport, isTransforming, modalHeight,
     sendSafeArea]);
 
-  const isVerticalLayout = secondaryButtonCurrentPosition === 'top' || secondaryButtonCurrentPosition === 'bottom';
+  const isVerticalLayout = renderingSecondaryButton?.position === 'top'
+    || renderingSecondaryButton?.position === 'bottom';
   const isHorizontalLayout = !isVerticalLayout;
 
   const rowsCount = (isVerticalLayout && shouldShowMainButton && shouldShowSecondaryButton) ? 2
@@ -1238,7 +1242,7 @@ const WebAppTab = ({
         style={frameStyle}
         src={url}
         title={lang('AriaMiniApp', { bot: bot?.firstName })}
-        sandbox={IFRAME_SANDBOX_ATTRIBUTES}
+        sandbox={WEB_APP_SANDBOX_ATTRIBUTES}
         allow={IFRAME_ALLOW_ATTRIBUTES}
         allowFullScreen
         ref={frameRef}
@@ -1248,10 +1252,10 @@ const WebAppTab = ({
           style={`background-color: ${bottomBarColor};`}
           className={buildClassName(
             styles.buttonsContainer,
-            secondaryButtonCurrentPosition === 'left' && styles.leftToRight,
-            secondaryButtonCurrentPosition === 'right' && styles.rightToLeft,
-            secondaryButtonCurrentPosition === 'top' && styles.topToBottom,
-            secondaryButtonCurrentPosition === 'bottom' && styles.bottomToTop,
+            renderingSecondaryButton?.position === 'left' && styles.leftToRight,
+            renderingSecondaryButton?.position === 'right' && styles.rightToLeft,
+            renderingSecondaryButton?.position === 'top' && styles.topToBottom,
+            renderingSecondaryButton?.position === 'bottom' && styles.bottomToTop,
             hideDirection === 'horizontal' && styles.hideHorizontal,
             rowsCount === 1 && styles.oneRow,
             rowsCount === 2 && styles.twoRows,
@@ -1264,17 +1268,20 @@ const WebAppTab = ({
               shouldHideSecondaryButton && styles.hidden,
             )}
             fluid
-            style={`background-color: ${secondaryButtonCurrentColor}; color: ${secondaryButtonCurrentTextColor}`}
-            disabled={!secondaryButtonCurrentIsActive && !secondaryButton?.isProgressVisible}
-            nonInteractive={secondaryButton?.isProgressVisible}
-            isShiny={secondaryButton?.hasShineEffect && !secondaryButton?.isProgressVisible}
+            style={buildStyle(
+              `background-color: ${renderingSecondaryButton?.color}`,
+              `color: ${renderingSecondaryButton?.textColor}`,
+            )}
+            disabled={!renderingSecondaryButton?.isActive && !renderingSecondaryButton?.isProgressVisible}
+            nonInteractive={renderingSecondaryButton?.isProgressVisible}
+            isShiny={renderingSecondaryButton?.hasShineEffect && !renderingSecondaryButton?.isProgressVisible}
             onClick={handleSecondaryButtonClick}
           >
-            {!secondaryButton?.isProgressVisible && renderBottomButtonContent(
-              secondaryButtonCurrentText,
-              secondaryButton?.iconCustomEmojiId,
+            {!renderingSecondaryButton?.isProgressVisible && renderBottomButtonContent(
+              renderingSecondaryButton?.text,
+              renderingSecondaryButton?.iconCustomEmojiId,
             )}
-            {secondaryButton?.isProgressVisible
+            {renderingSecondaryButton?.isProgressVisible
               && <Spinner className={styles.mainButtonSpinner} color="blue" />}
           </Button>
           <Button
@@ -1284,17 +1291,17 @@ const WebAppTab = ({
               shouldHideMainButton && styles.hidden,
             )}
             fluid
-            style={`background-color: ${mainButtonCurrentColor}; color: ${mainButtonCurrentTextColor}`}
-            disabled={!mainButtonCurrentIsActive && !mainButton?.isProgressVisible}
-            nonInteractive={mainButton?.isProgressVisible}
-            isShiny={mainButton?.hasShineEffect && !mainButton?.isProgressVisible}
+            style={`background-color: ${renderingMainButton?.color}; color: ${renderingMainButton?.textColor}`}
+            disabled={!renderingMainButton?.isActive && !renderingMainButton?.isProgressVisible}
+            nonInteractive={renderingMainButton?.isProgressVisible}
+            isShiny={renderingMainButton?.hasShineEffect && !renderingMainButton?.isProgressVisible}
             onClick={handleMainButtonClick}
           >
-            {!mainButton?.isProgressVisible && renderBottomButtonContent(
-              mainButtonCurrentText,
-              mainButton?.iconCustomEmojiId,
+            {!renderingMainButton?.isProgressVisible && renderBottomButtonContent(
+              renderingMainButton?.text,
+              renderingMainButton?.iconCustomEmojiId,
             )}
-            {mainButton?.isProgressVisible && <Spinner className={styles.mainButtonSpinner} color="white" />}
+            {renderingMainButton?.isProgressVisible && <Spinner className={styles.mainButtonSpinner} color="white" />}
           </Button>
         </div>
       )}
@@ -1386,6 +1393,30 @@ const WebAppTab = ({
     </div>
   );
 };
+
+function validatePopupParameters(value: unknown): value is PopupOptions {
+  if (!isLiteralObject(value)) return false;
+
+  const { title, message, buttons } = value;
+  if (title !== undefined && (typeof title !== 'string' || title.length > POPUP_TITLE_MAX_LENGTH)) return false;
+  if (typeof message !== 'string' || !message.trim().length || message.length > POPUP_MESSAGE_MAX_LENGTH) return false;
+  if (!Array.isArray(buttons) || !buttons.length || buttons.length > POPUP_MAX_BUTTONS) return false;
+
+  const buttonIds = new Set<string>();
+  return buttons.every((button) => {
+    if (!isLiteralObject(button)) return false;
+
+    const { id, type, text } = button;
+    if (typeof id !== 'string' || buttonIds.has(id)) return false;
+    if (typeof type !== 'string' || !POPUP_BUTTON_TYPES.includes(type)) return false;
+    if (text !== undefined && (typeof text !== 'string' || text.length > POPUP_BUTTON_TEXT_MAX_LENGTH)) return false;
+    if ((type === 'default' || type === 'destructive')
+      && (typeof text !== 'string' || !text.trim().length)) return false;
+
+    buttonIds.add(id);
+    return true;
+  });
+}
 
 export default memo(withGlobal<OwnProps>(
   (global, { modal, webApp }): Complete<StateProps> => {

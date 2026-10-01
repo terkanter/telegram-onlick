@@ -278,7 +278,7 @@ const ChatOrUserPicker = ({
 
     const checkboxElement = selectedIds ? (
       <div className={buildClassName('picker-checkbox', (isSelected || hasSelectedTopics) && 'selected')}>
-        {(isSelected || hasSelectedTopics) && <Icon name="check-bold" />}
+        {(isSelected || hasSelectedTopics) && <Icon name="check" />}
         {hasSelectedTopics && (
           <div className="picker-checkbox-count">{selectedTopicsCount}</div>
         )}
@@ -363,7 +363,7 @@ const ChatOrUserPicker = ({
 
               const topicCheckboxElement = isMultiSelect ? (
                 <div className={buildClassName('picker-checkbox', isTopicSelected && 'selected')}>
-                  {isTopicSelected && <Icon name="check-bold" />}
+                  {isTopicSelected && <Icon name="check" />}
                 </div>
               ) : undefined;
 

@@ -87,7 +87,7 @@ export function getMessageSendToParentWindowOptions(
 
     options.push({
       label: lang('OnlikSendTextAndImage'),
-      icon: 'photo',
+      icon: 'media',
       handler: (afterEffectInternal?: () => void) => {
         // @ts-ignore
         function getText() {
@@ -126,7 +126,7 @@ export function getMessageSendToParentWindowOptions(
   if (canImageBeCopied || canDocumentBeCopied) {
     options.push({
       label: lang('OnlikSendImage'),
-      icon: 'photo',
+      icon: 'media',
       handler: (afterEffectInternal?: () => void) => {
         const hash = documentMediaHash || mediaHash;
         Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
@@ -182,7 +182,7 @@ export function getMessageSendToParentWindowOptions(
 
     options.push({
       label: getCopyLabel(lang, hasSelection),
-      icon: 'quote-text',
+      icon: 'quote',
       handler: (afterEffectInternal?: () => void) => {
         if (checkHasMultiMessageSelection() && onCopyMessages) {
           // Spanning several messages is the copy flow's job, not the posting form's

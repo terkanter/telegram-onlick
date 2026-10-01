@@ -5,64 +5,117 @@ declare const self: ServiceWorkerGlobalScope;
 
 // An attempt to fix freezing UI on iOS
 const TIMEOUT = 3000;
+const CACHE_UPDATE_TIMEOUT = 30000;
 
 export async function respondWithCacheNetworkFirst(e: FetchEvent) {
-  const remotePromise = fetch(e.request);
-  // A response that misses the timeout still refreshes the cache, so a slow network serves a stale copy only once
-  e.waitUntil(saveToCache(e.request, remotePromise));
+  const abortController = new AbortController();
+  const cachePromise = self.caches.open(ASSET_CACHE_NAME);
+  const remotePromise = fetchAsset(e.request, abortController.signal);
 
-  const remote = await withTimeout(() => remotePromise, TIMEOUT);
-  if (!remote?.ok) {
-    return respondWithCache(e);
+  e.waitUntil(cacheAssetResponse(e.request, cachePromise, remotePromise, abortController));
+
+  const remote = await resolveWithTimeout(remotePromise, TIMEOUT);
+  if (remote?.response.ok) {
+    return remote.response;
   }
 
-  return remote;
+  const cached = await resolveCachedResponse(e.request, cachePromise);
+  // The fetch keeps running, so a response that misses the timeout still refreshes the cache
+  // and a slow network serves a stale copy only once
+  if (cached) return cached;
+
+  return remote ? remote.response : (await remotePromise).response;
 }
 
-export async function respondWithCache(e: FetchEvent) {
-  const cacheResult = await withTimeout(async () => {
-    const cache = await self.caches.open(ASSET_CACHE_NAME);
-    const cached = await cache.match(e.request);
+export function respondWithCache(e: FetchEvent) {
+  const abortController = new AbortController();
+  const cachePromise = self.caches.open(ASSET_CACHE_NAME);
+  const responsePromise = resolveCacheFirst(e.request, cachePromise, abortController.signal);
 
-    return { cache, cached };
-  }, TIMEOUT);
+  e.waitUntil(cacheAssetResponse(e.request, cachePromise, responsePromise, abortController));
 
-  const { cache, cached } = cacheResult || {};
-
-  if (cache && cached) {
-    if (cached.ok) {
-      return cached;
-    } else {
-      await cache.delete(e.request);
-    }
-  }
-
-  const remote = await fetch(e.request);
-
-  if (remote.ok && cache) {
-    cache.put(e.request, remote.clone());
-  }
-
-  return remote;
+  return responsePromise.then(({ response }) => response);
 }
 
-async function saveToCache(request: Request, remotePromise: Promise<Response>) {
-  const remote = await remotePromise.catch(() => undefined);
-  if (!remote?.ok) return;
-
-  // Cloned before the next `await`, while the page has not started reading the body
-  const toCache = remote.clone();
-  const cache = await self.caches.open(ASSET_CACHE_NAME);
-  await cache.put(request, toCache);
+export function clearAssetCache() {
+  return self.caches.delete(ASSET_CACHE_NAME);
 }
 
-async function withTimeout<T>(cb: () => Promise<T>, timeout: number) {
+interface AssetResponse {
+  response: Response;
+  responseToCache?: Response;
+}
+
+async function resolveCacheFirst(
+  request: Request,
+  cachePromise: Promise<Cache>,
+  abortSignal: AbortSignal,
+): Promise<AssetResponse> {
+  const cached = await resolveCachedResponse(request, cachePromise);
+  if (cached) return { response: cached };
+
+  return fetchAsset(request, abortSignal);
+}
+
+async function resolveCachedResponse(request: Request, cachePromise: Promise<Cache>) {
+  const cached = await resolveWithTimeout(
+    cachePromise.then((cache) => cache.match(request)),
+    TIMEOUT,
+  );
+
+  if (!cached) return undefined;
+  if (cached.ok) return cached;
+
+  const cache = await cachePromise;
+  await cache.delete(request);
+  return undefined;
+}
+
+async function fetchAsset(request: Request, abortSignal: AbortSignal): Promise<AssetResponse> {
+  const response = await fetch(request, { signal: abortSignal });
+
+  return {
+    response,
+    responseToCache: response.ok ? response.clone() : undefined,
+  };
+}
+
+async function cacheAssetResponse(
+  request: Request,
+  cachePromise: Promise<Cache>,
+  responsePromise: Promise<AssetResponse>,
+  abortController: AbortController,
+) {
+  const isCompleted = await Promise.race([
+    updateAssetCache(request, cachePromise, responsePromise).then(
+      () => true,
+      () => true,
+    ),
+    pause(CACHE_UPDATE_TIMEOUT).then(() => false),
+  ]);
+
+  if (!isCompleted) abortController.abort();
+}
+
+async function updateAssetCache(
+  request: Request,
+  cachePromise: Promise<Cache>,
+  responsePromise: Promise<AssetResponse>,
+) {
+  const { responseToCache } = await responsePromise;
+  if (!responseToCache) return;
+
+  const cache = await cachePromise;
+  await cache.put(request, responseToCache);
+}
+
+async function resolveWithTimeout<T>(promise: Promise<T>, timeout: number) {
   let isResolved = false;
 
   try {
     return await Promise.race([
       pause(timeout).then(() => (isResolved ? undefined : Promise.reject(new Error('TIMEOUT')))),
-      cb(),
+      promise,
     ]);
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -71,8 +124,4 @@ async function withTimeout<T>(cb: () => Promise<T>, timeout: number) {
   } finally {
     isResolved = true;
   }
-}
-
-export function clearAssetCache() {
-  return self.caches.delete(ASSET_CACHE_NAME);
 }

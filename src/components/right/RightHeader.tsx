@@ -1,4 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
 import {
   useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
@@ -132,7 +131,7 @@ enum HeaderContent {
   NewDiscussionGroup,
 }
 
-const RightHeader: FC<OwnProps & StateProps> = ({
+const RightHeader = ({
   chatId,
   threadId,
   isColumnOpen,
@@ -170,7 +169,7 @@ const RightHeader: FC<OwnProps & StateProps> = ({
   isOwnProfile,
   onClose,
   onScreenSelect,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     toggleManagement,
     openAddContactDialog,
@@ -349,8 +348,8 @@ const RightHeader: FC<OwnProps & StateProps> = ({
     return oldLang('GroupInfo.Title');
   }
 
-  const PrimaryLinkMenuButton: FC<{ onTrigger: () => void; isOpen?: boolean }> = useMemo(() => {
-    return ({ onTrigger, isOpen }) => (
+  const PrimaryLinkMenuButton = useMemo(() => {
+    return ({ onTrigger, isOpen }: { onTrigger: () => void; isOpen?: boolean }) => (
       <Button
         round
         ripple={!isMobile}
@@ -509,7 +508,7 @@ const RightHeader: FC<OwnProps & StateProps> = ({
                   autoClose={false}
                 >
                   <MenuItem
-                    icon={giftsSortType === 'byDate' ? 'cash-circle' : 'calendar-filter'}
+                    icon={giftsSortType === 'byDate' ? 'cash-circle' : 'calendar'}
 
                     onClick={() => updateGiftProfileFilter(
                       { peerId: chatId, filter: { sortType: giftsSortType === 'byDate' ? 'byValue' : 'byDate' } },

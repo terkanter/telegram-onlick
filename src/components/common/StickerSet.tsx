@@ -286,7 +286,7 @@ const StickerSet = ({
       {!shouldHideHeader && (
         <div className="symbol-set-header">
           <p className={buildClassName('symbol-set-title', withAddSetButton && 'symbol-set-title-external')}>
-            {isLocked && <Icon name="lock-badge" className="symbol-set-locked-icon" />}
+            {isLocked && <Icon name="lock-filled" className="symbol-set-locked-icon" />}
             <span className="symbol-set-name">{stickerSet.title}</span>
             {(isChatEmojiSet || isChatStickerSet) && (
               <span className="symbol-set-chat">{lang(isChatEmojiSet ? 'GroupEmoji' : 'GroupStickers')}</span>

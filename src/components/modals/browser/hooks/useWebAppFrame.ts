@@ -36,7 +36,7 @@ const SCROLLBAR_STYLE = `* {
 const RELOAD_TIMEOUT = 500;
 const FULLSCREEN_BUTTONS_AREA_HEIGHT = 3.675 * REM;
 
-const useWebAppFrame = (
+function useWebAppFrame(
   ref: ElementRef<HTMLIFrameElement>,
   isOpen: boolean,
   isFullscreen: boolean,
@@ -44,7 +44,7 @@ const useWebAppFrame = (
   onEvent: (event: WebAppInboundEvent) => void,
   webApp?: WebApp,
   onLoad?: () => void,
-) => {
+) {
   const {
     showNotification,
     setWebAppPaymentSlug,
@@ -58,15 +58,31 @@ const useWebAppFrame = (
   const isReloadSupportedRef = useRef<boolean>(false);
   const reloadTimeoutRef = useRef<number>();
   const ignoreEventsRef = useRef<boolean>(false);
+  const pendingEventsRef = useRef<WebAppOutboundEvent[]>([]);
   const lastFrameSizeRef = useRef<{ width: number; height: number; isResizing?: boolean }>();
   const windowSize = useWindowSize();
   const isSameOrigin = webApp?.isSameOrigin;
   const webAppOrigin = isSameOrigin ? getWebAppOrigin(webApp.url) : undefined;
 
+  const flushPendingEvents = useCallback(() => {
+    const frame = ref.current;
+    if (!frame?.contentWindow || (isSameOrigin && !webAppOrigin)) return;
+    // The initial `about:blank` document inherits the parent's origin
+    if (getIsFrameBlank(frame)) return;
+
+    const events = pendingEventsRef.current;
+    pendingEventsRef.current = [];
+    events.forEach((event) => {
+      frame.contentWindow!.postMessage(JSON.stringify(event), webAppOrigin || '*');
+    });
+  }, [isSameOrigin, ref, webAppOrigin]);
+
   useEffect(() => {
     if (!ref.current || !isOpen) return undefined;
 
     const handleLoad = () => {
+      if (getIsFrameBlank(ref.current!)) return;
+      flushPendingEvents();
       onLoad?.();
     };
 
@@ -75,12 +91,13 @@ const useWebAppFrame = (
     return () => {
       frame.removeEventListener('load', handleLoad);
     };
-  }, [onLoad, ref, isOpen]);
+  }, [onLoad, ref, isOpen, flushPendingEvents]);
 
   const sendEvent = useCallback((event: WebAppOutboundEvent) => {
-    if (!ref.current?.contentWindow || (isSameOrigin && !webAppOrigin)) return;
-    ref.current.contentWindow.postMessage(JSON.stringify(event), webAppOrigin || '*');
-  }, [isSameOrigin, ref, webAppOrigin]);
+    if (isSameOrigin && !webAppOrigin) return;
+    pendingEventsRef.current.push(event);
+    flushPendingEvents();
+  }, [isSameOrigin, webAppOrigin, flushPendingEvents]);
 
   const sendFullScreenChanged = useCallback((value: boolean) => {
     sendEvent({
@@ -131,9 +148,6 @@ const useWebAppFrame = (
   }, [sendEvent, ref]);
 
   const sendSafeArea = useCallback(() => {
-    if (!ref.current) {
-      return;
-    }
     sendEvent({
       eventType: 'safe_area_changed',
       eventData: {
@@ -153,7 +167,7 @@ const useWebAppFrame = (
         bottom: 0,
       },
     });
-  }, [sendEvent, isFullscreen, ref]);
+  }, [sendEvent, isFullscreen]);
 
   const sendTheme = useCallback(() => {
     sendEvent({
@@ -164,14 +178,7 @@ const useWebAppFrame = (
     });
   }, [sendEvent]);
 
-  const sendCustomStyle = useCallback((style: string) => {
-    sendEvent({
-      eventType: 'set_custom_style',
-      eventData: style,
-    });
-  }, [sendEvent]);
-
-  const handleMessage = useCallback((event: MessageEvent<string>) => {
+  const handleMessage = useLastCallback((event: MessageEvent<string>) => {
     if (ignoreEventsRef.current) {
       return;
     }
@@ -183,27 +190,22 @@ const useWebAppFrame = (
     try {
       const data = JSON.parse(event.data) as WebAppInboundEvent;
       const { eventType, eventData } = data;
+      flushPendingEvents();
       // Handle some app requests here to simplify hook usage
       if (eventType === 'web_app_ready') {
         onLoad?.();
       }
 
-      if (eventType === 'web_app_close') {
-        if (webApp) {
-          const key = getWebAppKey(webApp);
-          closeBrowserTab({ key, skipClosingConfirmation: true });
-        }
+      if (eventType === 'web_app_close' && webApp) {
+        const key = getWebAppKey(webApp);
+        closeBrowserTab({ key, skipClosingConfirmation: true });
       }
 
       if (eventType === 'web_app_request_viewport') {
         sendViewport(windowSize.isResizing);
       }
 
-      if (eventType === 'web_app_request_safe_area') {
-        sendSafeArea();
-      }
-
-      if (eventType === 'web_app_request_content_safe_area') {
+      if (eventType === 'web_app_request_safe_area' || eventType === 'web_app_request_content_safe_area') {
         sendSafeArea();
       }
 
@@ -213,7 +215,10 @@ const useWebAppFrame = (
 
       if (eventType === 'iframe_ready') {
         const scrollbarColor = getComputedStyle(document.body).getPropertyValue('--color-scrollbar');
-        sendCustomStyle(SCROLLBAR_STYLE.replace(/%SCROLLBAR_COLOR%/g, scrollbarColor));
+        sendEvent({
+          eventType: 'set_custom_style',
+          eventData: SCROLLBAR_STYLE.replace(/%SCROLLBAR_COLOR%/g, scrollbarColor),
+        });
         isReloadSupportedRef.current = Boolean(eventData.reload_supported);
       }
 
@@ -384,11 +389,7 @@ const useWebAppFrame = (
     } catch (err) {
       // Ignore other messages
     }
-  }, [
-    isSimpleView, isSameOrigin, sendEvent, onEvent, sendCustomStyle, webApp, webAppOrigin,
-    sendTheme, sendViewport, sendSafeArea, onLoad, windowSize.isResizing,
-    ref,
-  ]);
+  });
 
   useEffect(() => {
     const { width, height, isResizing } = windowSize;
@@ -400,10 +401,7 @@ const useWebAppFrame = (
 
   useEffect(() => {
     if (!webApp?.plannedEvents?.length) return;
-    const events = webApp.plannedEvents;
-    events.forEach((event) => {
-      sendEvent(event);
-    });
+    webApp.plannedEvents.forEach(sendEvent);
 
     updateWebApp({
       key: getWebAppKey(webApp),
@@ -416,7 +414,7 @@ const useWebAppFrame = (
   useEffect(() => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [handleMessage, ref]);
+  }, [ref]);
 
   useEffect(() => {
     if (isOpen && ref.current?.contentWindow) {
@@ -431,7 +429,11 @@ const useWebAppFrame = (
   return {
     sendEvent, sendFullScreenChanged, reloadFrame, sendViewport, sendSafeArea, sendTheme,
   };
-};
+}
+
+function getIsFrameBlank(frame: HTMLIFrameElement) {
+  return frame.src === 'about:blank' || frame.contentDocument?.URL === 'about:blank';
+}
 
 function getWebAppOrigin(url: string) {
   try {

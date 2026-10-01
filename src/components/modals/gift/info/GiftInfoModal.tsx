@@ -12,7 +12,7 @@ import { STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../../../config';
 import { getHasAdminRight } from '../../../../global/helpers';
 import { getPeerTitle, isApiPeerChat, isApiPeerUser } from '../../../../global/helpers/peers';
 import { getMainUsername } from '../../../../global/helpers/users';
-import { selectPeer, selectUser } from '../../../../global/selectors';
+import { selectPeer, selectPeerPaidMessagesStars, selectUser } from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../../util/clipboard';
 import { formatDateTimeToString } from '../../../../util/dates/oldDateFormat';
@@ -46,6 +46,7 @@ import Button from '../../../ui/Button';
 import Checkbox from '../../../ui/Checkbox';
 import ConfirmDialog from '../../../ui/ConfirmDialog';
 import Link from '../../../ui/Link';
+import TextArea from '../../../ui/TextArea';
 import TableInfoModal, { type TableData } from '../../common/TableInfoModal';
 import UniqueGiftHeader from '../UniqueGiftHeader';
 
@@ -67,6 +68,8 @@ type StateProps = {
   tonExplorerUrl?: string;
   currentUser?: ApiUser;
   recipientPeer?: ApiPeer;
+  giftMessageLimit?: number;
+  paidMessagesStars?: number;
 };
 
 const STICKER_SIZE = 120;
@@ -84,6 +87,8 @@ const GiftInfoModal = ({
   tonExplorerUrl,
   currentUser,
   recipientPeer,
+  giftMessageLimit,
+  paidMessagesStars,
 }: OwnProps & StateProps) => {
   const {
     closeGiftInfoModal,
@@ -108,6 +113,8 @@ const GiftInfoModal = ({
   const oldLang = useOldLang();
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [shouldPayInTon, setShouldPayInTon] = useState<boolean>(false);
+  const [giftMessage, setGiftMessage] = useState('');
+  const [shouldHideName, setShouldHideName] = useState(true);
 
   const uniqueGiftHeaderRef = useRef<HTMLDivElement>();
 
@@ -226,6 +233,8 @@ const GiftInfoModal = ({
 
   const handleBuyGift = useLastCallback(() => {
     if (gift?.type !== 'starGiftUnique' || !getResalePrice()) return;
+    setGiftMessage('');
+    setShouldHideName(true);
     setIsConfirmModalOpen(true);
   });
 
@@ -239,7 +248,13 @@ const GiftInfoModal = ({
     if (!peer || !price || gift?.type !== 'starGiftUnique') return;
     closeConfirmModal();
     closeGiftModal();
-    buyStarGift({ peerId: peer.id, slug: gift.slug, price });
+    buyStarGift({
+      peerId: peer.id,
+      slug: gift.slug,
+      price,
+      message: recipientPeer && !paidMessagesStars && giftMessage ? { text: giftMessage } : undefined,
+      shouldShowName: recipientPeer && !shouldHideName ? true : undefined,
+    });
   });
 
   const handleOpenValueModal = useLastCallback(() => {
@@ -576,21 +591,21 @@ const GiftInfoModal = ({
     );
 
     const tableData: TableData = [];
+    const hasFrom = fromId || isNameHidden;
+
+    if (hasFrom) {
+      tableData.push([
+        lang('GiftInfoFrom'),
+        !fromId ? (
+          <>
+            <Avatar size="small" peer={CUSTOM_PEER_HIDDEN} />
+            <span className={styles.unknown}>{oldLang(CUSTOM_PEER_HIDDEN.titleKey!)}</span>
+          </>
+        ) : { chatId: fromId },
+      ]);
+    }
+
     if (gift.type === 'starGift') {
-      const hasFrom = fromId || isNameHidden;
-
-      if (hasFrom) {
-        tableData.push([
-          lang('GiftInfoFrom'),
-          !fromId ? (
-            <>
-              <Avatar size="small" peer={CUSTOM_PEER_HIDDEN} />
-              <span className={styles.unknown}>{oldLang(CUSTOM_PEER_HIDDEN.titleKey!)}</span>
-            </>
-          ) : { chatId: fromId },
-        ]);
-      }
-
       if (savedGift?.date) {
         tableData.push([
           lang('GiftInfoDate'),
@@ -646,13 +661,13 @@ const GiftInfoModal = ({
           </div>,
         ]);
       }
+    }
 
-      if (savedGift?.message) {
-        tableData.push([
-          undefined,
-          renderTextWithEntities(savedGift.message),
-        ]);
-      }
+    if (savedGift?.message) {
+      tableData.push([
+        undefined,
+        renderTextWithEntities(savedGift.message),
+      ]);
     }
 
     if (isGiftUnique) {
@@ -926,6 +941,30 @@ const GiftInfoModal = ({
                 })}
               </p>
             )}
+          {recipientPeer && (
+            <div className={styles.resaleOptions}>
+              {!paidMessagesStars && (
+                <TextArea
+                  className={styles.resaleMessage}
+                  label={lang('GiftMessagePlaceholder')}
+                  value={giftMessage}
+                  maxLength={giftMessageLimit}
+                  onChange={(e) => setGiftMessage(e.target.value)}
+                />
+              )}
+              <Checkbox
+                className={styles.checkBox}
+                label={lang('GiftHideMyName')}
+                checked={shouldHideName}
+                onCheck={setShouldHideName}
+              />
+              <div className={styles.checkBoxDescription}>
+                {isApiPeerUser(recipientPeer)
+                  ? lang('GiftHideNameDescription', { receiver: getPeerTitle(lang, recipientPeer)! })
+                  : lang('GiftHideNameDescriptionChannel')}
+              </div>
+            </div>
+          )}
           {!uniqueGift.resaleTonOnly && (
             <>
               <Checkbox
@@ -1009,6 +1048,8 @@ export default memo(withGlobal<OwnProps>(
       collectibleEmojiStatuses,
       currentUser,
       recipientPeer,
+      giftMessageLimit: global.appConfig.starGiftMaxMessageLength,
+      paidMessagesStars: recipientPeer ? selectPeerPaidMessagesStars(global, recipientPeer.id) : undefined,
     };
   },
 )(GiftInfoModal));

@@ -213,6 +213,7 @@ function LeftColumn({
         case SettingsScreens.PrivacyBio:
         case SettingsScreens.PrivacyBirthday:
         case SettingsScreens.PrivacyGifts:
+        case SettingsScreens.PrivacySavedMusic:
         case SettingsScreens.PrivacyPhoneCall:
         case SettingsScreens.PrivacyPhoneP2P:
         case SettingsScreens.PrivacyForwarding:
@@ -239,6 +240,8 @@ function LeftColumn({
           return;
 
         case SettingsScreens.PasscodeChangePasscodeCurrent:
+        case SettingsScreens.PasscodePasskeyAddConfirm:
+        case SettingsScreens.PasscodePasskeyRemoveConfirm:
         case SettingsScreens.PasscodeTurnOff:
           openSettingsScreen({ screen: SettingsScreens.PasscodeEnabled });
           return;
@@ -278,6 +281,10 @@ function LeftColumn({
         case SettingsScreens.PrivacyGiftsAllowedContacts:
         case SettingsScreens.PrivacyGiftsDeniedContacts:
           openSettingsScreen({ screen: SettingsScreens.PrivacyGifts });
+          return;
+        case SettingsScreens.PrivacySavedMusicAllowedContacts:
+        case SettingsScreens.PrivacySavedMusicDeniedContacts:
+          openSettingsScreen({ screen: SettingsScreens.PrivacySavedMusic });
           return;
         case SettingsScreens.PrivacyPhoneCallAllowedContacts:
         case SettingsScreens.PrivacyPhoneCallDeniedContacts:

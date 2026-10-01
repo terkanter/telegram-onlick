@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import { memo, useEffect } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
@@ -42,7 +41,7 @@ type StateProps = {
   tonBalance?: ApiTonAmount;
 };
 
-const SettingsMain: FC<OwnProps & StateProps> = ({
+const SettingsMain = ({
   isActive,
   currentUserId,
   sessionCount,
@@ -51,7 +50,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
   starsBalance,
   tonBalance,
   onReset,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     loadMoreProfilePhotos,
     openPremiumModal,
@@ -221,7 +220,7 @@ const SettingsMain: FC<OwnProps & StateProps> = ({
         <Island>
           {canBuyPremium && (
             <ListItem
-              icon="premium-filled"
+              icon="star"
               iconBg="premium"
               narrow
               onClick={() => openPremiumModal()}

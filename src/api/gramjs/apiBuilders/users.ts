@@ -121,7 +121,7 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
 
   const {
     id, firstName, lastName, fake, scam, support, closeFriend, storiesUnavailable,
-    bot, botActiveUsers, botVerificationIcon, botInlinePlaceholder, botAttachMenu, botCanEdit,
+    botActiveUsers, botVerificationIcon, botInlinePlaceholder, botAttachMenu, botCanEdit,
     sendPaidMessagesStars, profileColor, botForumView, botForumCanManageTopics, botGuestchat,
     botGuard,
   } = mtpUser;
@@ -137,18 +137,18 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
     id: buildApiPeerId(id, 'user'),
     isMin: Boolean(mtpUser.min),
     fakeType: scam ? 'scam' : (fake ? 'fake' : undefined),
-    ...(mtpUser.self && { isSelf: true }),
+    isSelf: mtpUser.self || undefined,
     isPremium: Boolean(mtpUser.premium),
-    ...(mtpUser.verified && { isVerified: true }),
-    ...(closeFriend && { isCloseFriend: true }),
-    ...(support && { isSupport: true }),
-    ...((mtpUser.contact || mtpUser.mutualContact) && { isContact: true }),
+    isVerified: mtpUser.verified || undefined,
+    isCloseFriend: closeFriend || undefined,
+    isSupport: support || undefined,
+    isContact: mtpUser.contact || mtpUser.mutualContact || undefined,
     type: userType,
     firstName,
     lastName,
     hasMainMiniApp: Boolean(mtpUser.botHasMainApp),
     canEditBot: botCanEdit,
-    ...(userType === 'userTypeBot' && { canBeInvitedToGroup: !mtpUser.botNochats }),
+    canBotBeInvitedToGroup: userType === 'userTypeBot' ? !mtpUser.botNochats : undefined,
     usernames,
     hasUsername,
     phoneNumber: mtpUser.phone || '',
@@ -160,8 +160,8 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
     areStoriesHidden: Boolean(mtpUser.storiesHidden),
     maxStoryId: storiesMaxId,
     hasStories: Boolean(storiesMaxId) && !storiesUnavailable,
-    ...(bot && botInlinePlaceholder && { botPlaceholder: botInlinePlaceholder }),
-    ...(bot && botAttachMenu && { isAttachBot: botAttachMenu }),
+    botPlaceholder: botInlinePlaceholder || undefined,
+    isAttachBot: botAttachMenu || undefined,
     botActiveUsers,
     botVerificationIconId: botVerificationIcon?.toString(),
     color: mtpUser.color && buildApiPeerColor(mtpUser.color),
@@ -170,7 +170,7 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
     isBotForum: botForumView,
     canManageBotForumTopics: botForumCanManageTopics,
     isGuestChatBot: botGuestchat,
-    isGuardBot: bot && botGuard,
+    isGuardBot: botGuard || undefined,
   };
 }
 

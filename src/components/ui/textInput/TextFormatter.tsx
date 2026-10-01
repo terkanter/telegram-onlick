@@ -4,10 +4,13 @@ import { memo, useEffect, useState } from '../../../lib/teact/teact';
 import type { IconName } from '../../../types/icons';
 import type { RichEditorFormatterState } from '../../common/tooltips/types';
 
+import { normalizeButtonText } from '../../../global/helpers/buttons';
 import { formatLinkUrl } from '../../../util/browser/url';
 import buildClassName from '../../../util/buildClassName';
 import stopEvent from '../../../util/stopEvent';
+import { EMPTY_RICH_BUTTON } from '../../../util/tiptap/extensions/richButton';
 import { isRichEditorBlockquoteActive } from './richEditorFormatting';
+import { buildRichTextFromTiptapContent, buildTiptapInlineContentFromRichText } from './richText';
 
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
@@ -202,6 +205,14 @@ const TextFormatter = ({
     onClose();
   });
 
+  const handleInsertButton = useLastCallback(() => {
+    if (!restoreEditorSelection()) return;
+    const content = editor.state.doc.slice(range.from, range.to).content.toJSON();
+    const text = normalizeButtonText(buildRichTextFromTiptapContent(content));
+    editor.chain().insertContent({ ...EMPTY_RICH_BUTTON, content: buildTiptapInlineContentFromRichText(text) }).run();
+    onClose();
+  });
+
   const handleOpenDatePicker = useLastCallback(() => {
     closeLinkControl();
     setSelectedDateAt(roundDateToMinute(new Date()).getTime());
@@ -300,6 +311,7 @@ const TextFormatter = ({
         />
         {capabilities === 'full' && isRichInputExpanded && (
           <>
+            <FormatButton ariaLabel={lang('RichButtonInline')} iconName="button" onClick={handleInsertButton} />
             <div className={styles.divider} />
             <FormatButton
               ariaLabel={lang('FormattingMarkedAria')}

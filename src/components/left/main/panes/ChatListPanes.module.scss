@@ -21,7 +21,7 @@
     box-shadow: inset 0 1px var(--color-borders);
   }
 
-  :global(.AudioPlayer.full-width-player) {
+  .panePlayer {
     border-radius: 0;
     box-shadow: none;
   }

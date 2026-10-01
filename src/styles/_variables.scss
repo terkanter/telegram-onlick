@@ -102,7 +102,7 @@
     --color-interactive-inactive: rgba(var(--color-text-secondary-rgb), 0.25);
     --color-interactive-buffered: rgba(var(--color-text-secondary-rgb), 0.25); // Overlays underlying inactive element
     --color-interactive-element-hover: rgba(var(--color-text-secondary-rgb), 0.08);
-    --color-composer-button: #{$color-text-secondary}CC;
+    --color-composer-button: #{$color-black};
     --color-toast-background: #202020CC;
 
     --color-voice-transcribe-button: #e8f3ff;
@@ -228,8 +228,8 @@
 
     --vh: 1vh;
 
-    --border-radius-button: 1rem;
-    --border-radius-button-tiny: 0.875rem;
+    --border-radius-button: 1.75rem;
+    --border-radius-button-tiny: 1.125rem;
     --border-radius-modal: 2rem;
     --border-radius-toast: 1rem;
     --border-radius-island: 1.5rem;
@@ -300,6 +300,7 @@
     --z-left-header: 11;
     --z-middle-header: 11;
     --z-middle-footer: 11;
+    --z-middle-header-panes: 10;
     --z-scroll-notch: 10;
     --z-story-ribbon: 10;
     --z-country-code-input-group: 10;

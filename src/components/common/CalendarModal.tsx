@@ -353,7 +353,7 @@ const CalendarModal = ({
           onClick={handleRepeatModeClick}
           noForcedUpperCase
           isText
-          iconName={isCurrentUserPremium ? 'down' : 'lock-badge'}
+          iconName={isCurrentUserPremium ? 'down' : 'lock-filled'}
           iconClassName={isCurrentUserPremium ? dropDownIconClass : undefined}
           iconAlignment="end"
         >

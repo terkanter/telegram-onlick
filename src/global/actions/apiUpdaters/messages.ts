@@ -13,12 +13,15 @@ import { MAIN_THREAD_ID } from '../../../api/types';
 import { ARCHIVED_FOLDER_ID, SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import reportMessage from '../../../util/analytics/reportMessage';
 import { areDeepEqual } from '../../../util/areDeepEqual';
+import { makeMessageTrackKey } from '../../../util/audioPlayback/mediaPool';
+import * as playbackController from '../../../util/audioPlayback/playbackController';
 import { isUserId } from '../../../util/entities/ids';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import {
   buildCollectionByKey, omit, unique,
 } from '../../../util/iteratees';
 import { getMessageKey, isLocalMessageId } from '../../../util/keys/messageKey';
+import { buildSearchResultKey } from '../../../util/keys/searchResultKey';
 import { notifyAboutMessage } from '../../../util/notifications';
 import { onTickEnd } from '../../../util/schedulers';
 import { getServerTime } from '../../../util/serverTime';
@@ -36,6 +39,7 @@ import {
   isMessageLocal,
   isUserBot,
   pickMatchingTypingDraftMessage,
+  WINDOWED_MEDIA_SEARCH_TYPES,
 } from '../../helpers';
 import { getMessageReplyInfo, getStoryReplyInfo } from '../../helpers/replies';
 import {
@@ -72,6 +76,8 @@ import {
   updateQuickReplyMessage,
   updateScheduledMessage,
 } from '../../reducers';
+import { appendShufflePlaylist, removeTrackFromShuffle } from '../../reducers/audioPlayer';
+import { removeMessagesFromGlobalSearchResults } from '../../reducers/globalSearch';
 import { addUnreadPollVotes } from '../../reducers/polls';
 import { addUnreadReactions, removeUnreadReactions } from '../../reducers/reactions';
 import { updateTabState } from '../../reducers/tabs';
@@ -111,6 +117,9 @@ import {
   selectUser,
   selectViewportIds,
 } from '../../selectors';
+import {
+  selectIsPlaylistFullyLoaded, selectPlaybackSource, selectPlaylistKeys,
+} from '../../selectors/audioPlayer';
 import {
   selectSavedDialogIdFromMessage,
   selectThread,
@@ -155,6 +164,7 @@ function removeTypingDraftEntries<T extends GlobalState>(
   chatId: string,
   threadId: ThreadId,
   typingDraftEntries: TypingDraftEntry[],
+  shouldSkipAnimation?: boolean,
 ) {
   if (!typingDraftEntries.length) {
     return global;
@@ -183,7 +193,9 @@ function removeTypingDraftEntries<T extends GlobalState>(
   );
 
   if (messageIdsToDelete.length) {
-    global = deleteChatMessages(global, chatId, messageIdsToDelete);
+    global = shouldSkipAnimation
+      ? deleteChatMessages(global, chatId, messageIdsToDelete)
+      : deleteChatMessagesWithAnimation(global, chatId, messageIdsToDelete);
   }
 
   return global;
@@ -243,7 +255,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       setGlobal(global);
       scheduleEphemeralExpiration(global);
 
-      if (update['@type'] === 'newEphemeralMessage' && update.shouldForceReply) {
+      if (update['@type'] === 'newEphemeralMessage' && update.shouldForceReply && !message.anchorMsgId) {
         Object.values(global.byTabId).forEach(({ id: tabId }) => {
           if (!isEphemeralMessageInCurrentThread(global, tabId, message)) return;
 
@@ -309,7 +321,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       global = updateListedAndViewportIds(global, nextMessage);
 
       if (hasTypingDraftsInThread && matchedTypingDraftEntry) {
-        global = removeTypingDraftEntries(global, chatId, threadId, [matchedTypingDraftEntry]);
+        global = removeTypingDraftEntries(global, chatId, threadId, [matchedTypingDraftEntry], true);
       }
 
       const newMessage = selectChatMessage(global, chatId, id)!;
@@ -329,7 +341,16 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         }
 
         const messageThreadId = selectThreadIdFromMessage(global, newMessage);
-        global = updateChatMediaLoadingState(global, newMessage, chatId, messageThreadId, tabId);
+        WINDOWED_MEDIA_SEARCH_TYPES.forEach((mediaType) => {
+          global = updateChatMediaLoadingState(global, newMessage, chatId, messageThreadId, mediaType, tabId);
+        });
+
+        const playbackSource = selectPlaybackSource(global, tabId);
+        if (playbackSource?.type === 'chat' && playbackSource.chatId === chatId
+          && playbackSource.threadId === messageThreadId
+          && selectPlaylistKeys(global, tabId)?.includes(newMessage.id)) {
+          global = appendShufflePlaylist(global, [newMessage.id], selectIsPlaylistFullyLoaded(global, tabId), tabId);
+        }
 
         if (selectIsMessageInCurrentMessageList(global, chatId, message, tabId)) {
           if (isLocal && message.isOutgoing && !(message.content?.action) && !storyReplyInfo?.storyId
@@ -394,7 +415,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       if (shouldClearTypingDraftsAfterRender) {
         onTickEnd(() => {
           global = getGlobal();
-          global = removeTypingDraftEntries(global, chatId, threadId, typingDraftEntries);
+          global = removeTypingDraftEntries(global, chatId, threadId, typingDraftEntries, true);
           setGlobal(global);
         });
       }
@@ -635,7 +656,16 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         return;
       }
 
-      if (message.content?.text?.text !== currentMessage?.content?.text?.text) {
+      const hasRichMessageEdit = (message.content?.richMessage || currentMessage.content.richMessage)
+        && message.editDate !== undefined
+        && message.editDate !== currentMessage.editDate;
+      const hasContentChanged = message.content && (
+        message.content.text?.text !== currentMessage.content.text?.text
+        || !areDeepEqual(message.content.richMessage?.blocks, currentMessage.content.richMessage?.blocks)
+        || message.content.richMessage?.isRtl !== currentMessage.content.richMessage?.isRtl
+      );
+
+      if (hasRichMessageEdit || hasContentChanged) {
         global = clearMessageTranslation(global, chatId, id);
         global = clearMessageSummary(global, chatId, id);
       }
@@ -773,6 +803,34 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       const newMessage = selectChatMessage(global, chatId, message.id)!;
       global = updateChatLastMessage(global, chatId, newMessage);
+
+      Object.values(global.byTabId).forEach(({ id: tabId }) => {
+        const { activeItem, source } = selectTabState(global, tabId).audioPlayer;
+        if (activeItem?.type !== 'message' || activeItem.chatId !== chatId || activeItem.messageId !== localId) return;
+
+        if (tabId === getCurrentTabId()) {
+          playbackController.renameTrack(
+            makeMessageTrackKey(chatId, localId, activeItem.documentId),
+            makeMessageTrackKey(chatId, message.id, activeItem.documentId),
+          );
+        }
+        const { voice, video } = message.content;
+        const nextSource = source?.type === 'richMessage' && source.messageId === localId
+          ? { ...source, messageId: message.id }
+          : source;
+        global = updateTabState(global, {
+          audioPlayer: {
+            ...selectTabState(global, tabId).audioPlayer,
+            activeItem: { ...activeItem, messageId: message.id },
+            source: nextSource?.type === 'single' ? {
+              type: 'chat',
+              chatId,
+              threadId: activeItem.threadId,
+              mediaType: (voice || video) ? 'voice' : 'audio',
+            } : nextSource,
+          },
+        }, tabId);
+      });
 
       const thread = selectThreadByMessage(global, message);
       // For some reason Telegram requires to manually mark outgoing thread messages read
@@ -1197,29 +1255,45 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'updateMessageTranslations': {
       const {
-        chatId, messageIds, toLanguageCode, translations, tone,
+        chatId, messageIds, toLanguageCode, translations, requestId, tone,
       } = update;
 
-      global = updateMessageTranslations(global, chatId, messageIds, toLanguageCode, translations, tone);
+      global = updateMessageTranslations(global, chatId, messageIds, toLanguageCode, translations, requestId, tone);
 
       setGlobal(global);
       break;
     }
 
     case 'failedMessageTranslations': {
-      const { chatId, messageIds, toLanguageCode, tone } = update;
+      const { chatId, messageIds, toLanguageCode, requestId, tone } = update;
 
-      global = updateMessageTranslations(global, chatId, messageIds, toLanguageCode, [], tone);
+      global = updateMessageTranslations(global, chatId, messageIds, toLanguageCode, [], requestId, tone);
 
       setGlobal(global);
       break;
     }
 
+    case 'updateChatTypingDraftStopped': {
+      const { id, chatId, threadId = MAIN_THREAD_ID } = update;
+      const entries = getTypingDraftEntries(global, chatId, threadId);
+      const entry = entries.find(({ randomId }) => randomId === id);
+      if (!entry) return undefined;
+
+      if (entry.message.typingDraft?.shouldKeepOnStop) {
+        return updateChatMessage(global, chatId, entry.message.id, {
+          typingDraft: { ...entry.message.typingDraft, canStop: undefined },
+        });
+      }
+
+      return removeTypingDraftEntries(global, chatId, threadId, [entry]);
+    }
     case 'updateChatTypingDraft': {
-      const { id, chatId, threadId = MAIN_THREAD_ID, text, richMessage } = update;
+      const { id, chatId, threadId = MAIN_THREAD_ID, text, richMessage, canStop, shouldKeepOnStop } = update;
       const thread = selectThread(global, chatId, threadId);
       if (!thread) return undefined;
 
+      const replacedDrafts = getTypingDraftEntries(global, chatId, threadId).filter(({ randomId }) => randomId !== id);
+      global = removeTypingDraftEntries(global, chatId, threadId, replacedDrafts);
       let typingDraftStore = selectThreadLocalStateParam(global, chatId, threadId, 'typingDraftIdByRandomId');
       const messageId = typingDraftStore?.[id];
 
@@ -1239,11 +1313,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
             // Already deleted or replaced with a new message
             if (!currentMessage || getServerTime() - currentMessage.editDate! < global.appConfig.typingDraftTtl) return;
 
-            const newTypingDraftIds = omit(currentTypingDraftStore, [id]);
-            global = replaceThreadLocalStateParam(
-              global, chatId, threadId, 'typingDraftIdByRandomId', newTypingDraftIds,
-            );
-            global = deleteChatMessages(global, chatId, [currentMessageId]);
+            global = removeTypingDraftEntries(global, chatId, threadId, [{ randomId: id, message: currentMessage }]);
             setGlobal(global);
           }
         }, global.appConfig.typingDraftTtl * 1000);
@@ -1256,6 +1326,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
             richMessage,
           },
           editDate: getServerTime(),
+          typingDraft: { canStop, shouldKeepOnStop },
+          shouldSkipTypingAnimation: undefined,
         });
         rescheduleDraftRemoval();
         return global;
@@ -1273,6 +1345,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         text,
         richMessage,
       });
+      newMessage.typingDraft = { canStop, shouldKeepOnStop };
+      newMessage.shouldSkipTypingAnimation = replacedDrafts.length ? true : undefined;
 
       actions.apiUpdate({
         '@type': 'newMessage',
@@ -1577,11 +1651,9 @@ export function deleteMessages<T extends GlobalState>(
     const threadIdsToUpdate = new Set<ThreadId>();
     threadIdsToUpdate.add(MAIN_THREAD_ID);
 
-    ids.forEach((id) => {
-      global = updateChatMessage(global, chatId, id, {
-        isDeleting: true,
-      });
+    global = deleteChatMessagesWithAnimation(global, chatId, ids);
 
+    ids.forEach((id) => {
       if (selectTopic(global, chatId, id)) {
         global = deleteTopic(global, chatId, id);
       }
@@ -1604,6 +1676,25 @@ export function deleteMessages<T extends GlobalState>(
     actions.requestChatUpdate({ chatId });
 
     const idsSet = new Set(ids);
+
+    Object.values(global.byTabId).forEach(({ id: tabId }) => {
+      const { activeItem, source } = selectTabState(global, tabId).audioPlayer;
+      if (activeItem?.type === 'message' && activeItem.chatId === chatId && idsSet.has(activeItem.messageId)) {
+        actions.closeAudioPlayer({ tabId });
+      }
+
+      global = removeMessagesFromGlobalSearchResults(global, chatId, ids, tabId);
+
+      if (source?.type === 'chat' && source.chatId === chatId) {
+        ids.forEach((id) => {
+          global = removeTrackFromShuffle(global, id, tabId);
+        });
+      } else if (source?.type === 'globalSearch') {
+        ids.forEach((id) => {
+          global = removeTrackFromShuffle(global, buildSearchResultKey(chatId, id), tabId);
+        });
+      }
+    });
 
     threadIdsToUpdate.forEach((threadId) => {
       if (chat.isForum && threadId !== MAIN_THREAD_ID) {
@@ -1629,16 +1720,6 @@ export function deleteMessages<T extends GlobalState>(
 
     setGlobal(global);
 
-    const isAnimatingAsSnap = selectCanAnimateSnapEffect(global);
-
-    setTimeout(() => {
-      global = getGlobal();
-      // Prevent local deletion of sent messages in case of desync
-      const stillDeletedIds = ids.filter((id) => selectChatMessage(global, chatId, id)?.isDeleting);
-      global = deleteChatMessages(global, chatId, stillDeletedIds);
-      setGlobal(global);
-    }, isAnimatingAsSnap ? SNAP_ANIMATION_DELAY : ANIMATION_DELAY);
-
     return;
   }
 
@@ -1651,9 +1732,7 @@ export function deleteMessages<T extends GlobalState>(
     if (commonBoxChatId) {
       chatIdsToUpdate.push(commonBoxChatId);
 
-      global = updateChatMessage(global, commonBoxChatId, id, {
-        isDeleting: true,
-      });
+      global = deleteChatMessagesWithAnimation(global, commonBoxChatId, [id]);
 
       const newLastMessage = findLastMessage(global, commonBoxChatId);
       if (newLastMessage) {
@@ -1676,13 +1755,20 @@ export function deleteMessages<T extends GlobalState>(
         global = deletePeerPhoto(global, commonBoxChatId, message.content.action.photo.id, true);
       }
 
-      const isAnimatingAsSnap = selectCanAnimateSnapEffect(global);
+      Object.values(global.byTabId).forEach(({ id: tabId }) => {
+        const { activeItem, source } = selectTabState(global, tabId).audioPlayer;
+        if (activeItem?.type === 'message' && activeItem.chatId === commonBoxChatId && activeItem.messageId === id) {
+          actions.closeAudioPlayer({ tabId });
+        }
 
-      setTimeout(() => {
-        global = getGlobal();
-        global = deleteChatMessages(global, commonBoxChatId, [id]);
-        setGlobal(global);
-      }, isAnimatingAsSnap ? SNAP_ANIMATION_DELAY : ANIMATION_DELAY);
+        global = removeMessagesFromGlobalSearchResults(global, commonBoxChatId, [id], tabId);
+
+        if (source?.type === 'chat' && source.chatId === commonBoxChatId) {
+          global = removeTrackFromShuffle(global, id, tabId);
+        } else if (source?.type === 'globalSearch') {
+          global = removeTrackFromShuffle(global, buildSearchResultKey(commonBoxChatId, id), tabId);
+        }
+      });
     }
   });
 
@@ -1691,6 +1777,23 @@ export function deleteMessages<T extends GlobalState>(
   unique(chatIdsToUpdate).forEach((id) => {
     actions.requestChatUpdate({ chatId: id });
   });
+}
+
+function deleteChatMessagesWithAnimation<T extends GlobalState>(global: T, chatId: string, ids: number[]) {
+  ids.forEach((id) => {
+    global = updateChatMessage(global, chatId, id, { isDeleting: true });
+  });
+
+  const isAnimatingAsSnap = selectCanAnimateSnapEffect(global);
+  setTimeout(() => {
+    global = getGlobal();
+    // Prevent local deletion of sent messages in case of desync
+    const stillDeletedIds = ids.filter((id) => selectChatMessage(global, chatId, id)?.isDeleting);
+    global = deleteChatMessages(global, chatId, stillDeletedIds);
+    setGlobal(global);
+  }, isAnimatingAsSnap ? SNAP_ANIMATION_DELAY : ANIMATION_DELAY);
+
+  return global;
 }
 
 export function deleteEphemeralMessagesWithAnimation<T extends GlobalState>(
@@ -1702,6 +1805,10 @@ export function deleteEphemeralMessagesWithAnimation<T extends GlobalState>(
   if (!messages.length) return;
 
   messages.forEach((message) => {
+    if (message.anchorMsgId) {
+      global = deleteEphemeralMessages(global, chatId, [message.id]);
+      return;
+    }
     global = updateEphemeralMessage(global, {
       ...message,
       isDeleting: true,

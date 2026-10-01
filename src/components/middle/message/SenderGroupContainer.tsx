@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import {
   memo,
   useEffect,
@@ -70,7 +69,7 @@ type StateProps = {
   chatMembers?: ApiChatMember[];
 };
 
-const SenderGroupContainer: FC<OwnProps & StateProps> = ({
+const SenderGroupContainer = ({
   message,
   withAvatar,
   children,
@@ -87,7 +86,7 @@ const SenderGroupContainer: FC<OwnProps & StateProps> = ({
   canRemoveSender,
   kickedMembers,
   chatMembers,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     openChat, updateInsertingPeerIdMention, openMiddleSearch, openDeleteMemberModal,
   } = getActions();
@@ -208,7 +207,7 @@ const SenderGroupContainer: FC<OwnProps & StateProps> = ({
         <>
           {isAvatarPeerUser && (
             <MenuItem
-              icon="comments"
+              icon="message"
               onClick={handleOpenChat}
             >
               {lang('SendMessage')}

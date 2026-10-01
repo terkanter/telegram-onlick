@@ -8,7 +8,9 @@ import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey, unique } from '../../../util/iteratees';
 import * as langProvider from '../../../util/oldLangProvider';
 import { callApi } from '../../../api/gramjs';
-import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import {
+  addActionHandler, getActions, getGlobal, setGlobal,
+} from '../../index';
 import {
   addUserStatuses,
   closeNewContactDialog,
@@ -37,6 +39,7 @@ import {
   selectUserFullInfo,
   selectUserSavedMusic,
 } from '../../selectors';
+import { selectPlaybackSource } from '../../selectors/audioPlayer';
 
 const PROFILE_PHOTOS_FIRST_LOAD_LIMIT = 10;
 
@@ -165,38 +168,81 @@ addActionHandler('loadCommonChats', async (global, actions, payload): Promise<vo
 });
 
 addActionHandler('loadSavedMusic', async (global, actions, payload): Promise<void> => {
-  const { userId } = payload;
+  const { userId, tabId = getCurrentTabId() } = payload;
 
-  const user = selectUser(global, userId);
   const savedMusic = selectUserSavedMusic(global, userId);
-  if (!user || savedMusic?.isFullyLoaded) {
+  if (savedMusic?.isLoading) {
     return;
   }
+
+  const user = selectUser(global, userId);
+  if (!user) {
+    global = updateUserSavedMusic(global, userId, {
+      byId: {}, ids: [], count: 0, isFullyLoaded: false, isLoaded: true,
+    });
+    setGlobal(global);
+    settlePlayerStepForSavedMusic(userId, tabId, false);
+    return;
+  }
+  if (savedMusic?.isFullyLoaded) {
+    settlePlayerStepForSavedMusic(userId, tabId, false);
+    return;
+  }
+
+  global = updateUserSavedMusic(global, userId, {
+    byId: savedMusic?.byId || {},
+    ids: savedMusic?.ids || [],
+    count: savedMusic?.count || 0,
+    isFullyLoaded: false,
+    isLoading: true,
+    isLoaded: savedMusic?.isLoaded,
+  });
+  setGlobal(global);
 
   const result = await callApi('fetchSavedMusic', {
     user,
     offset: savedMusic?.ids.length || 0,
     limit: SAVED_MUSIC_SLICE,
   });
+  global = getGlobal();
+  const latestSavedMusic = selectUserSavedMusic(global, userId);
+
   if (!result) {
+    global = updateUserSavedMusic(global, userId, { ...latestSavedMusic!, isLoading: false, isLoaded: true });
+    setGlobal(global);
+    settlePlayerStepForSavedMusic(userId, tabId, false);
     return;
   }
 
   const { audios, count } = result;
 
-  const prevIds = savedMusic?.ids || [];
+  const prevIds = latestSavedMusic?.ids || [];
   const ids = unique(prevIds.concat(audios.map(({ id }) => id)));
 
-  global = getGlobal();
   global = updateUserSavedMusic(global, userId, {
-    byId: { ...savedMusic?.byId, ...buildCollectionByKey(audios, 'id') },
+    byId: { ...latestSavedMusic?.byId, ...buildCollectionByKey(audios, 'id') },
     ids,
     count,
     isFullyLoaded: ids.length === prevIds.length || ids.length >= count,
+    isLoaded: true,
   });
-
   setGlobal(global);
+
+  global = getGlobal();
+  const source = selectPlaybackSource(global, tabId);
+  if (source?.type === 'savedMusic' && source.peerId === userId && global.audioPlayer.orderMode === 'shuffle') {
+    actions.loadShufflePlaylist({ tabId });
+  }
+  settlePlayerStepForSavedMusic(userId, tabId, true);
 });
+
+function settlePlayerStepForSavedMusic(userId: string, tabId: number, shouldContinue: boolean) {
+  const global = getGlobal();
+  const source = selectPlaybackSource(global, tabId);
+  if (source?.type !== 'savedMusic' || source.peerId !== userId) return;
+
+  getActions().settlePendingPlaylistStep({ shouldContinue, tabId });
+}
 
 addActionHandler('toggleNoPaidMessagesException', async (global, actions, payload): Promise<void> => {
   const { userId, shouldRefundCharged } = payload;

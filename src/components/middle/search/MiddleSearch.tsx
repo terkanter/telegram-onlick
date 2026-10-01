@@ -90,7 +90,7 @@ type StateProps = {
 
 const CHANNELS_PEER: CustomPeer = {
   isCustomPeer: true,
-  avatarIcon: 'channel-filled',
+  avatarIcon: 'megaphone-filled',
   titleKey: 'SearchPublicPosts',
 };
 const FOCUSED_SEARCH_TRIGGER_OFFSET = 5;

@@ -74,6 +74,7 @@ import type {
   LinkContext,
   PrivacyVisibility,
 } from '../../api/types';
+import type { ParsedCheckList } from '../../components/middle/composer/helpers/parseCheckList';
 import type { ApiCredentials } from '../../components/payment/PaymentModal';
 import type { FoldersActions } from '../../hooks/reducers/useFoldersReducer';
 import type { ReducerAction } from '../../hooks/useReducer';
@@ -81,7 +82,6 @@ import type { P2pMessage } from '../../lib/vibecalls';
 import type {
   AccountSettings,
   AttachmentCompression,
-  AudioOrigin,
   CallSound,
   ChatListType,
   ConfettiParams,
@@ -101,10 +101,14 @@ import type {
   MessageListType,
   MiddleSearchParams,
   NewChatMembersProgress,
+  OrderMode,
   PaymentStep,
   PerformanceType,
+  PlaybackItemRef,
+  PlaybackSource,
   Point,
   ProfileTabType,
+  RepeatMode,
   ResaleGiftsFilterOptions,
   ScrollTargetPosition,
   SendMessageParams,
@@ -122,9 +126,10 @@ import type {
 import type { BrowserModalStateType, BrowserTab } from '../../types/browser';
 import type { ClipboardTextFormat, MessageCopyRequest } from '../../types/messageCopy';
 import type { WebApp, WebAppOutboundEvent } from '../../types/webapp';
+import type { RegularLangFnParameters } from '../../util/localization';
 import type { DownloadableMedia } from '../helpers';
 import type { SharedState } from './sharedState';
-import type { ReactionDeletionContext, TabState } from './tabState';
+import type { AiEditorContent, ReactionDeletionContext, TabState } from './tabState';
 
 export type WithTabId = { tabId?: number };
 
@@ -365,6 +370,7 @@ export interface ActionPayloads {
     direction?: LoadMoreDirection;
     chatId?: string;
     threadId?: ThreadId;
+    mediaType?: SharedMediaType;
     limit?: number;
   } & WithTabId;
   searchMessagesByDate: {
@@ -724,6 +730,11 @@ export interface ActionPayloads {
     chatId: string;
     threadId: ThreadId;
   };
+  stopTypingDraft: {
+    chatId: string;
+    threadId: ThreadId;
+    randomId: string;
+  } & WithTabId;
   reportChannelSpam: {
     chatId: string;
     participantId: string;
@@ -1068,7 +1079,7 @@ export interface ActionPayloads {
     screen?: ManagementScreens;
   } & WithTabId) | undefined;
   closeManagement: WithTabId | undefined;
-  checkPublicLink: { username: string } & WithTabId;
+  checkPublicLink: { chatId: string; username: string } & WithTabId;
   updatePublicLink: { username: string; shouldDisableUsernames?: boolean } & WithTabId;
   updatePrivateLink: WithTabId | undefined;
   resetManagementError: { chatId: string } & WithTabId;
@@ -1629,6 +1640,7 @@ export interface ActionPayloads {
   markMessagesTranslationPending: {
     chatId: string;
     messageIds: number[];
+    requestId?: string;
     toLanguageCode?: string;
     tone?: TranslationTone;
   };
@@ -1934,10 +1946,8 @@ export interface ActionPayloads {
     timestamp: number;
   } & WithTabId;
   openAudioPlayer: {
-    chatId: string;
-    threadId?: ThreadId;
-    messageId: number;
-    origin?: AudioOrigin;
+    item?: PlaybackItemRef;
+    source?: PlaybackSource;
     volume?: number;
     playbackRate?: number;
     isMuted?: boolean;
@@ -1954,11 +1964,26 @@ export interface ActionPayloads {
   setAudioPlayerMuted: {
     isMuted: boolean;
   } & WithTabId;
-  setAudioPlayerOrigin: {
-    origin: AudioOrigin;
+  setAudioPlaybackSource: {
+    source: PlaybackSource;
   } & WithTabId;
+  playNextTrack: {
+    isAuto?: boolean;
+  } & WithTabId;
+  playPreviousTrack: WithTabId | undefined;
+  setAudioPlayerRepeatMode: {
+    repeatMode: RepeatMode;
+  } & WithTabId;
+  setAudioPlayerOrderMode: {
+    orderMode: OrderMode;
+  } & WithTabId;
+  openAudioPlaylistModal: WithTabId | undefined;
+  closeAudioPlaylistModal: WithTabId | undefined;
+  loadShufflePlaylist: WithTabId | undefined;
   loadSavedMusicIds: undefined;
   toggleMusicInProfile: { audio: ApiAudio } & WithTabId;
+  reportMusicListen: { audio: ApiAudio; listenedDuration: number; isPageUnload?: boolean };
+  reorderSavedMusic: { audioId: string; afterAudioId?: string } & WithTabId;
 
   // Downloads
   downloadSelectedMessages: WithTabId | undefined;
@@ -2025,9 +2050,12 @@ export interface ActionPayloads {
   loadCommonChats: {
     userId: string;
   };
+  settlePendingPlaylistStep: {
+    shouldContinue?: boolean;
+  } & WithTabId;
   loadSavedMusic: {
     userId: string;
-  };
+  } & WithTabId;
   reportSpam: { chatId: string } & WithTabId;
   loadFullUser: { userId: string; withPhotos?: boolean };
   openAddContactDialog: { userId?: string } & WithTabId;
@@ -2101,6 +2129,9 @@ export interface ActionPayloads {
   setIsRichInputExpanded: {
     isRichInputExpanded?: boolean;
   } & WithTabId;
+  changeRichMediaUploadBlocking: {
+    delta: 1 | -1;
+  } & WithTabId;
 
   // Replies
   openReplyMenu: {
@@ -2115,6 +2146,7 @@ export interface ActionPayloads {
     fromChatId: string;
     messageIds?: number[];
     storyId?: number;
+    audioItem?: PlaybackItemRef;
     groupedId?: string;
     withMyScore?: boolean;
   } & WithTabId;
@@ -2150,6 +2182,8 @@ export interface ActionPayloads {
   forwardStory: {
     toChatId: string;
   } & WithTabId;
+  forwardAudio: { toChatId: string; toThreadId?: ThreadId; confirmedStars?: number } & WithTabId;
+  clearAudioPendingSend: WithTabId | undefined;
 
   // GIFs
   loadSavedGifs: undefined;
@@ -2297,8 +2331,8 @@ export interface ActionPayloads {
   };
 
   clickBotInlineButton: {
-    chatId: string;
-    messageId: number;
+    chatId?: string;
+    messageId?: number;
     threadId?: ThreadId;
     button: ApiKeyboardButton;
   } & WithTabId;
@@ -2543,6 +2577,7 @@ export interface ActionPayloads {
     chatId: string;
     messageId?: number;
     forNewTask?: boolean;
+    initialCheckList?: ParsedCheckList;
   } & WithTabId;
   closeTodoListModal: WithTabId | undefined;
   requestConfetti: (ConfettiParams & WithTabId) | WithTabId;
@@ -2690,14 +2725,19 @@ export interface ActionPayloads {
   setPasscode: { passcode: string } & WithTabId;
   clearPasscode: undefined;
   lockScreen: undefined;
-  unlockScreen: { sessionJson: string; globalJson: string; sharedStateJson?: string };
+  unlockScreen: { passcode: string };
+  unlockScreenWithPasskey: { isConditional?: boolean } | undefined;
+  setPasscodeKeepBackground: { shouldKeep: boolean };
+  setPasscodeAutolockDuration: { duration?: number };
+  setupUnlockPasskey: { passcode: string } & WithTabId;
+  removeUnlockPasskey: { passcode: string } & WithTabId;
+  signOutAllAccounts: undefined;
+  onPasscodeStateChangedRemotely: { dek?: ArrayBuffer; generation?: string };
+  onPasscodeSessionsChanged: { generation: string };
   softSignIn: undefined;
-  logInvalidUnlockAttempt: undefined;
-  resetInvalidUnlockAttempts: undefined;
-  setPasscodeError: { error: string };
+  resetInvalidUnlockAttempts: { timeoutUntil: number };
+  setPasscodeError: { errorKey: RegularLangFnParameters };
   clearPasscodeError: undefined;
-  skipLockOnUnload: undefined;
-
   // Settings
   updateShouldDebugExportedSenders: undefined;
   updateShouldEnableDebugLog: undefined;
@@ -2763,9 +2803,11 @@ export interface ActionPayloads {
 
   openAiMessageEditorModal: {
     chatId: string;
-    text: ApiFormattedText;
+    threadId: ThreadId;
+    content: AiEditorContent;
     initialTab?: 'translate' | 'style' | 'fix';
     isFromAttachment?: boolean;
+    isEditing?: boolean;
   } & WithTabId;
   closeAiMessageEditorModal: WithTabId | undefined;
   setAiMessageEditorTab: {
@@ -2779,6 +2821,7 @@ export interface ActionPayloads {
   } & WithTabId;
   setAiMessageEditorStyleOptions: {
     selectedTone?: ApiInputAiComposeTone;
+    customPrompt?: string;
     shouldEmojify?: boolean;
     clearResult?: boolean;
   } & WithTabId;
@@ -2938,6 +2981,11 @@ export interface ActionPayloads {
     chatId: string;
     messageId: number;
   };
+  saveVoiceWaveform: {
+    chatId: string;
+    messageId: number;
+    waveform: number[];
+  };
 
   loadPremiumGifts: undefined;
   loadTonGifts: undefined;
@@ -2973,6 +3021,8 @@ export interface ActionPayloads {
     peerId: string;
     slug: string;
     price: ApiTypeCurrencyAmount;
+    shouldShowName?: true;
+    message?: ApiFormattedText;
   } & WithTabId;
   sendPremiumGiftByStars: {
     userId: string;
@@ -3249,7 +3299,7 @@ export interface ActionPayloads {
     status: ApiPaymentStatus;
   } & WithTabId;
 
-  openPaymentMessageConfirmDialogOpen: WithTabId | undefined;
+  openPaymentMessageConfirmDialogOpen: { dialogKey: string } & WithTabId;
   closePaymentMessageConfirmDialogOpen: WithTabId | undefined;
   openPriceConfirmModal: {
     originalAmount: number;

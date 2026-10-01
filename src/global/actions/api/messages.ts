@@ -47,11 +47,12 @@ import {
   SUPPORTED_VIDEO_CONTENT_TYPES,
   TON_CURRENCY_CODE,
 } from '../../../config';
-import { ensureProtocol, isSuspiciousUrl } from '../../../util/browser/url';
+import { ensureProtocol } from '../../../util/browser/url';
 import { IS_IOS } from '../../../util/browser/windowEnvironment';
 import { copyTextToClipboardFromPromise } from '../../../util/clipboard';
 import { isDeepLink } from '../../../util/deepLinkParser';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
+import generateUniqueId from '../../../util/generateUniqueId';
 import {
   areSortedArraysIntersecting,
   buildCollectionByKey,
@@ -134,10 +135,12 @@ import {
 } from '../../reducers/threads';
 import {
   selectCanForwardMessage,
+  selectCanForwardMessages,
   selectChat,
   selectChatFullInfo,
   selectChatLastMessageId,
   selectChatMessage,
+  selectChatMessageOrEphemeral,
   selectChatMessages,
   selectCurrentChat,
   selectCurrentMessageList,
@@ -170,6 +173,7 @@ import {
   selectReplyCanBeSentToChat,
   selectScheduledMessage,
   selectSendAs,
+  selectStoppableTypingDraftId,
   selectTabState,
   selectTranslationLanguage,
   selectUser,
@@ -178,6 +182,7 @@ import {
   selectViewportIds,
   selectWebPage,
 } from '../../selectors';
+import { makeTrackKeyFromItem, selectPlaybackMedia } from '../../selectors/audioPlayer';
 import {
   selectDraft,
   selectEditingId,
@@ -216,6 +221,7 @@ const TTL_CLEANUP_DELAY_BUFFER = SECOND_IN_MS;
 const uploadProgressCallbacks = new Map<MessageKey, ApiOnProgress>();
 
 const ttlCleanupTimersByChatId = new Map<string, { timer: number; expiresAt: number }>();
+const audioForwardTokens = new Map<number, symbol>();
 
 const runDebouncedForMarkRead = debounce((cb) => cb(), 500, false);
 
@@ -402,22 +408,33 @@ addActionHandler('loadMessage', async (global, actions, payload): Promise<void> 
   setGlobal(global);
 });
 
+const richMessageLoads = new Map<string, Promise<void>>();
+
 addActionHandler('loadRichMessage', async (global, actions, payload): Promise<void> => {
-  const {
-    chatId, messageId, isScheduled,
-  } = payload;
+  const { chatId, messageId, isScheduled } = payload;
 
   const chat = selectChat(global, chatId);
   if (!chat) {
     return;
   }
 
+  // Several callers (expanding, copying, playing) may request the same message while a load is pending
+  const loadKey = `${chatId}-${messageId}${isScheduled ? '-scheduled' : ''}`;
+  let load = richMessageLoads.get(loadKey);
+  if (!load) {
+    load = fetchAndStoreRichMessage(chat, messageId, isScheduled).finally(() => richMessageLoads.delete(loadKey));
+    richMessageLoads.set(loadKey, load);
+  }
+  await load;
+});
+
+async function fetchAndStoreRichMessage(chat: ApiChat, messageId: number, isScheduled?: boolean) {
   const result = await callApi('fetchRichMessage', { chat, messageId });
   if (!result) {
     return;
   }
 
-  global = getGlobal();
+  let global = getGlobal();
   const currentMessage = isScheduled
     ? selectScheduledMessage(global, chat.id, messageId)
     : selectChatMessage(global, chat.id, messageId);
@@ -438,7 +455,7 @@ addActionHandler('loadRichMessage', async (global, actions, payload): Promise<vo
     ? updateScheduledMessage(global, chat.id, messageId, updatedMessage)
     : updateChatMessage(global, chat.id, messageId, updatedMessage);
   setGlobal(global);
-});
+}
 
 addActionHandler('startEditingMessage', async (global, actions, payload): Promise<void> => {
   const { messageId, tabId = getCurrentTabId() } = payload;
@@ -927,8 +944,7 @@ addActionHandler('editTodo', (global, actions, payload): ActionReturnType => {
 addActionHandler('cancelUploadMedia', (global, actions, payload): ActionReturnType => {
   const { chatId, messageId } = payload;
 
-  const message = selectChatMessage(global, chatId, messageId)
-    || selectEphemeralMessage(global, chatId, messageId);
+  const message = selectChatMessageOrEphemeral(global, chatId, messageId);
   if (!message) return;
 
   if (message.isEphemeral) {
@@ -1299,10 +1315,10 @@ addActionHandler('deleteEphemeralMessage', async (global, actions, payload): Pro
   if (!message) return;
 
   const isLocal = isLocalMessageId(message.id);
-  const shouldDeleteOnServer = !isLocal && message.isOutgoing;
+  const shouldDeleteOnServer = !isLocal && (message.isOutgoing || Boolean(message.anchorMsgId));
   const chat = shouldDeleteOnServer ? selectChat(global, chatId) : undefined;
-  const receiver = shouldDeleteOnServer && message.ephemeralBotId
-    ? selectUser(global, message.ephemeralBotId) : undefined;
+  const receiverId = message.anchorMsgId ? message.ephemeralReceiverId : message.ephemeralBotId;
+  const receiver = shouldDeleteOnServer && receiverId ? selectUser(global, receiverId) : undefined;
   if (shouldDeleteOnServer && (!chat || !receiver)) {
     runForFocusedTabs(global, (tabId) => {
       actions.showNotification({ message: { key: 'ErrorUnspecified' }, tabId });
@@ -1592,6 +1608,16 @@ addActionHandler('reportMessages', async (global, actions, payload): Promise<voi
     }, tabId);
     setGlobal(global);
   }
+});
+
+addActionHandler('stopTypingDraft', async (global, actions, payload): Promise<void> => {
+  const { chatId, threadId, randomId } = payload;
+  const draftId = selectStoppableTypingDraftId(global, chatId, threadId);
+  const peer = selectPeer(global, chatId);
+  if (!peer || draftId !== randomId) return;
+
+  actions.apiUpdate({ '@type': 'updateChatTypingDraftStopped', chatId, threadId, id: randomId });
+  await callApi('sendMessageAction', { peer, threadId, action: { type: 'stopDraft', randomId } });
 });
 
 addActionHandler('sendMessageAction', async (global, actions, payload): Promise<void> => {
@@ -1943,6 +1969,23 @@ addActionHandler('rescheduleMessage', (global, actions, payload): ActionReturnTy
   });
 });
 
+addActionHandler('saveVoiceWaveform', (global, actions, payload): ActionReturnType => {
+  const { chatId, messageId, waveform } = payload;
+
+  const message = selectChatMessage(global, chatId, messageId);
+  const voice = message?.content.voice;
+  if (!voice || voice.waveform?.length) {
+    return undefined;
+  }
+
+  return updateChatMessage(global, chatId, messageId, {
+    content: {
+      ...message.content,
+      voice: { ...voice, waveform },
+    },
+  });
+});
+
 addActionHandler('transcribeAudio', async (global, actions, payload): Promise<void> => {
   const { messageId, chatId } = payload;
 
@@ -2023,7 +2066,7 @@ async function executeForwardMessages(global: GlobalState, sendParams: SendMessa
   const messages = fromChatId && messageIds
     ? messageIds
       .sort((a, b) => a - b)
-      .map((id) => selectChatMessage(global, fromChatId, id)).filter(Boolean)
+      .map((id) => selectChatMessageOrEphemeral(global, fromChatId, id)).filter(Boolean)
     : undefined;
 
   if (!fromChat || !toChat || !messages || (toThreadId && !isToMainThread && !toChat.isForum)) {
@@ -2038,10 +2081,13 @@ async function executeForwardMessages(global: GlobalState, sendParams: SendMessa
 
   const [realMessages, serviceMessages] = partition(messages, (m) => !isServiceNotificationMessage(m));
   const forwardableRealMessages = realMessages.filter((message) => selectCanForwardMessage(global, message));
-  if (forwardableRealMessages.length) {
+  const [ephemeralMessages, regularMessages] = partition(forwardableRealMessages, (message) => message.isEphemeral);
+  for (const messagesToForward of [regularMessages, ephemeralMessages]) {
+    if (!messagesToForward.length) continue;
+
     const messageSlices = global.config?.maxForwardedCount
-      ? splitMessagesForForwarding(forwardableRealMessages, global.config.maxForwardedCount)
-      : [forwardableRealMessages];
+      ? splitMessagesForForwarding(messagesToForward, global.config.maxForwardedCount)
+      : [messagesToForward];
     for (const slice of messageSlices) {
       const forwardParams: ForwardMessagesParams = {
         fromChat,
@@ -2107,7 +2153,11 @@ async function executeForwardMessages(global: GlobalState, sendParams: SendMessa
   return localMessages;
 }
 
-function cleanupExpiredMessagesForChat(actions: RequiredGlobalActions, chatId: string, messageIds?: number[]) {
+function cleanupExpiredMessagesForChat(
+  actions: RequiredGlobalActions,
+  chatId: string,
+  messageIds?: number[],
+) {
   const global = getGlobal();
   const byId = selectChatMessages(global, chatId);
   if (!byId) return;
@@ -2155,7 +2205,12 @@ function cleanupExpiredMessagesForChat(actions: RequiredGlobalActions, chatId: s
   scheduleTtlCleanup(actions, chatId, closestExpiresAt, serverTime);
 }
 
-function scheduleTtlCleanup(actions: RequiredGlobalActions, chatId: string, expiresAt: number, serverTime: number) {
+function scheduleTtlCleanup(
+  actions: RequiredGlobalActions,
+  chatId: string,
+  expiresAt: number,
+  serverTime: number,
+) {
   const current = ttlCleanupTimersByChatId.get(chatId);
   if (current) {
     clearTimeout(current.timer);
@@ -3013,7 +3068,6 @@ addActionHandler('openUrl', async (global, actions, payload): Promise<void> => {
   } = payload;
   const urlWithProtocol = ensureProtocol(url);
   const parsedUrl = new URL(urlWithProtocol);
-  const isSuspicious = isSuspiciousUrl(urlWithProtocol);
 
   if (!ignoreDeepLinks && isDeepLink(urlWithProtocol)) {
     actions.closeStoryViewer({ tabId });
@@ -3067,7 +3121,7 @@ addActionHandler('openUrl', async (global, actions, payload): Promise<void> => {
   const shouldDisplayModal = !urlWithProtocol.match(RE_TELEGRAM_LINK) && !shouldSkipModal && !isWhitelisted;
 
   if (shouldDisplayModal) {
-    actions.toggleSafeLinkModal({ url: isSuspicious ? parsedUrl.toString() : urlWithProtocol, tabId });
+    actions.toggleSafeLinkModal({ url: urlWithProtocol, tabId });
   } else {
     window.open(parsedUrl, '_blank', 'noopener');
   }
@@ -3279,29 +3333,34 @@ function forwardMessagesToChat({
   }
 
   if (realMessages.length) {
-    const messageSlices = global.config?.maxForwardedCount
-      ? splitMessagesForForwarding(realMessages, global.config.maxForwardedCount)
-      : [realMessages];
+    const [ephemeralMessages, regularMessages] = partition(realMessages, (message) => message.isEphemeral);
+    const messageGroups = [regularMessages, ephemeralMessages].filter((messages) => messages.length);
 
-    for (const slice of messageSlices) {
-      const forwardParams: ForwardMessagesParams = {
-        fromChat,
-        toChat,
-        toThreadId,
-        messages: slice,
-        isSilent: true,
-        sendAs,
-        withMyScore,
-        noAuthors,
-        noCaptions,
-        privateForwardName,
-        isCurrentUserPremium,
-        wasDrafted: false,
-        lastMessageId,
-        messagePriceInStars,
-      };
+    for (const messagesToForward of messageGroups) {
+      const messageSlices = global.config?.maxForwardedCount
+        ? splitMessagesForForwarding(messagesToForward, global.config.maxForwardedCount)
+        : [messagesToForward];
 
-      callApi('forwardMessages', forwardParams);
+      for (const slice of messageSlices) {
+        const forwardParams: ForwardMessagesParams = {
+          fromChat,
+          toChat,
+          toThreadId,
+          messages: slice,
+          isSilent: true,
+          sendAs,
+          withMyScore,
+          noAuthors,
+          noCaptions,
+          privateForwardName,
+          isCurrentUserPremium,
+          wasDrafted: false,
+          lastMessageId,
+          messagePriceInStars,
+        };
+
+        callApi('forwardMessages', forwardParams);
+      }
     }
   }
 
@@ -3336,7 +3395,7 @@ addActionHandler('forwardToMultipleChats', (global, actions, payload): ActionRet
   const messages = fromChatId && messageIds
     ? messageIds
       .sort((a, b) => a - b)
-      .map((id) => selectChatMessage(global, fromChatId, id)).filter(Boolean)
+      .map((id) => selectChatMessageOrEphemeral(global, fromChatId, id)).filter(Boolean)
     : undefined;
 
   if (!fromChat || !messages?.length) {
@@ -3412,6 +3471,88 @@ addActionHandler('forwardStory', (global, actions, payload): ActionReturnType =>
   setGlobal(global);
 });
 
+addActionHandler('forwardAudio', async (global, actions, payload): Promise<void> => {
+  const {
+    toChatId, toThreadId = MAIN_THREAD_ID, confirmedStars, tabId = getCurrentTabId(),
+  } = payload;
+
+  const { audioItem } = selectTabState(global, tabId).forwardMessages;
+  const toChat = selectChat(global, toChatId);
+  if (!toChat || !audioItem) {
+    return;
+  }
+
+  const forwardToken = Symbol('audioForward');
+  audioForwardTokens.set(tabId, forwardToken);
+
+  const messagePriceInStars = await getPeerStarsForMessage(global, toChatId);
+
+  global = getGlobal();
+  if (audioForwardTokens.get(tabId) !== forwardToken) {
+    return;
+  }
+  const currentItem = selectTabState(global, tabId).forwardMessages.audioItem;
+  if (!currentItem || makeTrackKeyFromItem(currentItem) !== makeTrackKeyFromItem(audioItem)) {
+    return;
+  }
+  audioForwardTokens.delete(tabId);
+
+  // Resolved after the await, since the source message may have changed meanwhile
+  const media = selectPlaybackMedia(global, audioItem);
+  const audio = media?.mediaType === 'audio' ? media : undefined;
+  const canForward = audioItem.type !== 'message'
+    || selectCanForwardMessages(global, audioItem.chatId, [audioItem.messageId]);
+  if (!audio || !canForward) {
+    return;
+  }
+
+  if (messagePriceInStars) {
+    const shouldAutoApprove = global.settings.byKey.shouldPaidMessageAutoApprove;
+    if (messagePriceInStars !== confirmedStars && !shouldAutoApprove) {
+      global = updateTabState(global, {
+        forwardMessages: {
+          ...selectTabState(global, tabId).forwardMessages,
+          audioPendingSend: { toChatId, toThreadId, stars: messagePriceInStars },
+        },
+      }, tabId);
+      setGlobal(global);
+      return;
+    }
+
+    const starsBalance = global.stars?.balance?.amount || 0;
+    if (messagePriceInStars > starsBalance) {
+      actions.openStarsBalanceModal({ topup: { balanceNeeded: messagePriceInStars }, tabId });
+      return;
+    }
+  }
+
+  const lastMessageId = selectChatLastMessageId(global, toChatId);
+  const topicId = typeof toThreadId === 'number' && toThreadId !== MAIN_THREAD_ID ? toThreadId : undefined;
+  void sendMessage(global, {
+    chat: toChat,
+    audio,
+    lastMessageId,
+    messagePriceInStars,
+    isPending: messagePriceInStars ? true : undefined,
+    replyInfo: topicId ? { type: 'message', replyToMsgId: topicId, replyToTopId: topicId } : undefined,
+  });
+
+  actions.showNotification({
+    message: toChatId === global.currentUserId ? {
+      key: 'AudioForwardedToSaved',
+      options: { withNodes: true, withMarkdown: true },
+    } : { key: 'AudioForwardedToChat' },
+    tabId,
+  });
+
+  global = getGlobal();
+  global = updateTabState(global, {
+    forwardMessages: {},
+    isShareMessageModalShown: false,
+  }, tabId);
+  setGlobal(global);
+});
+
 addActionHandler('requestMessageTranslation', (global, actions, payload): ActionReturnType => {
   const {
     chatId, id, toLanguageCode = selectTranslationLanguage(global), tone, tabId = getCurrentTabId(),
@@ -3440,12 +3581,13 @@ addActionHandler('showOriginalMessage', (global, actions, payload): ActionReturn
 
 addActionHandler('markMessagesTranslationPending', (global, actions, payload): ActionReturnType => {
   const {
-    chatId, messageIds, toLanguageCode = selectLanguageCode(global), tone,
+    chatId, messageIds, requestId, toLanguageCode = selectLanguageCode(global), tone,
   } = payload;
 
   messageIds.forEach((id) => {
     global = updateMessageTranslation(global, chatId, id, toLanguageCode, {
       isPending: true,
+      requestId,
     }, tone);
   });
 
@@ -3460,14 +3602,31 @@ addActionHandler('translateMessages', (global, actions, payload): ActionReturnTy
   const chat = selectChat(global, chatId);
   if (!chat) return undefined;
 
-  actions.markMessagesTranslationPending({ chatId, messageIds, toLanguageCode, tone });
+  const requestId = generateUniqueId();
+  actions.markMessagesTranslationPending({ chatId, messageIds, requestId, toLanguageCode, tone });
 
-  callApi('translateText', {
-    chat,
-    messageIds,
-    toLanguageCode,
-    tone,
-  });
+  const [richMessageIds, textMessageIds] = partition(
+    messageIds, (id) => Boolean(selectChatMessage(global, chatId, id)?.content.richMessage),
+  );
+
+  if (textMessageIds.length) {
+    callApi('translateText', {
+      chat,
+      messageIds: textMessageIds,
+      requestId,
+      toLanguageCode,
+      tone,
+    });
+  }
+  if (richMessageIds.length) {
+    callApi('translateRichMessage', {
+      chat,
+      messageIds: richMessageIds,
+      requestId,
+      toLanguageCode,
+      tone,
+    });
+  }
 
   return global;
 });

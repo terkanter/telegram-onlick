@@ -23,6 +23,7 @@ export interface ApiInitialArgs {
   isWebmSupported?: boolean;
   maxBufferSize?: number;
   webAuthToken?: string;
+  webAuthUserId?: string;
   dcId?: number;
   mockScenario?: string;
   shouldAllowHttpTransport?: boolean;
@@ -69,6 +70,10 @@ export interface ApiAttachment {
     height: number;
     duration?: number;
   };
+  sourceDimensions?: {
+    width: number;
+    height: number;
+  };
   voice?: {
     duration: number;
     waveform: number[];
@@ -80,10 +85,12 @@ export interface ApiAttachment {
   };
   previewBlobUrl?: string;
 
+  isPreparing?: true;
+
   shouldSendAsFile?: true;
   shouldSendAsSpoiler?: true;
 
-  uniqueId?: string;
+  uniqueId: string;
   ttlSeconds?: number;
   isRoundVideo?: boolean;
   shouldSendInHighQuality?: boolean;

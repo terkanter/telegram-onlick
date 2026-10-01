@@ -47,6 +47,7 @@ export type OwnProps<T> = {
   layout?: 'intrinsic' | 'fill';
   shouldAffectAppendix?: boolean;
   nonInteractive?: boolean;
+  noSpoilerReveal?: boolean;
   isDownloading?: boolean;
   isProtected?: boolean;
   theme: ThemeKey;
@@ -73,6 +74,7 @@ const Photo = <T,>({
   size = 'inline',
   layout = 'intrinsic',
   nonInteractive,
+  noSpoilerReveal,
   shouldAffectAppendix,
   isDownloading,
   isProtected,
@@ -187,6 +189,11 @@ const Photo = <T,>({
       return;
     }
 
+    if (isSpoilerShown && noSpoilerReveal) {
+      onClick?.(clickArg!, e);
+      return;
+    }
+
     if (!fullMediaData) {
       setIsLoadAllowed((isAllowed) => !isAllowed);
       return;
@@ -283,7 +290,7 @@ const Photo = <T,>({
       )}
       <MediaSpoiler
         isVisible={isSpoilerShown}
-        withAnimation
+        withAnimation={noSpoilerReveal ? undefined : true}
         thumbDataUri={thumbDataUri}
         width={width}
         height={height}

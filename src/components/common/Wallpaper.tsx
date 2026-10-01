@@ -23,6 +23,7 @@ type OwnProps = {
   inert?: boolean;
   // Previews don't animate: draw the same gradient once on a 2D canvas instead of a live WebGL renderer.
   isStatic?: boolean;
+  backgroundMode?: 'default' | 'lockScreen';
   onClick?: NoneToVoidFunction;
 };
 
@@ -31,6 +32,8 @@ type StateProps = {
   canAnimateGradient?: boolean;
   themeSettings?: IThemeSettings;
 };
+
+const EMPTY_THEME_SETTINGS: IThemeSettings = {};
 
 // Wraps the chat content and renders the wallpaper behind it: the animated gradient + doodle pattern
 // (or a custom image / solid color), plus the CSS variables message bubbles read. Pulls the active
@@ -44,6 +47,7 @@ const Wallpaper = ({
   style,
   inert,
   isStatic,
+  backgroundMode,
   onClick,
   theme,
   canAnimateGradient,
@@ -55,8 +59,9 @@ const Wallpaper = ({
 
   const background = useChatBackground({
     theme,
-    wallpaper: themeSettings || {},
+    wallpaper: themeSettings || EMPTY_THEME_SETTINGS,
     isStatic: isStaticGradient,
+    source: backgroundMode === 'lockScreen' ? 'lockScreen' : undefined,
   });
 
   return (
@@ -86,13 +91,13 @@ const Wallpaper = ({
 
 // No `memo`: `children` change on nearly every parent render, so memoization would never apply
 export default withGlobal<OwnProps>(
-  (global): Complete<StateProps> => {
+  (global, { backgroundMode }): Complete<StateProps> => {
     const theme = selectTheme(global);
 
     return {
       theme,
       canAnimateGradient: selectPerformanceSettingsValue(global, 'messageSendingAnimations'),
-      themeSettings: selectThemeValues(global, theme),
+      themeSettings: backgroundMode === 'default' ? EMPTY_THEME_SETTINGS : selectThemeValues(global, theme),
     };
   },
 )(Wallpaper);

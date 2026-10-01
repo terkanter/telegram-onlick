@@ -1,12 +1,13 @@
-import type { ApiChat, ApiKeyboardButton } from '../../api/types';
+import type { ApiChat, ApiKeyboardButton, ApiMessage } from '../../api/types';
 import type { SendMessageParams } from '../../types';
 import type { GlobalState } from '../types';
 
+import { isUserId } from '../../util/entities/ids';
 import { selectChatFullInfo, selectUser, selectUserFullInfo } from '../selectors';
 import { isChatGroup } from './chats';
 import { getMainUsername } from './users';
 
-const UNSUPPORTED_EPHEMERAL_BUTTON_TYPES = new Set<ApiKeyboardButton['type']>([
+const UNSUPPORTED_EPHEMERAL_BUTTON_TYPES = new Set<ApiKeyboardButton['action']['type']>([
   'buy',
   'game',
   'requestPhone',
@@ -14,8 +15,46 @@ const UNSUPPORTED_EPHEMERAL_BUTTON_TYPES = new Set<ApiKeyboardButton['type']>([
   'urlAuth',
 ]);
 
+export function buildAnchoredEphemeralMessage(anchor: ApiMessage, ephemeral: ApiMessage): ApiMessage {
+  return {
+    ...ephemeral,
+    id: anchor.id,
+    ephemeralId: ephemeral.id,
+    date: anchor.date,
+    senderId: anchor.senderId,
+    isOutgoing: anchor.isOutgoing,
+    replyInfo: anchor.replyInfo,
+    forwardInfo: anchor.forwardInfo,
+    viaBotId: anchor.viaBotId,
+    viaBusinessBotId: anchor.viaBusinessBotId,
+    guestChatViaId: anchor.guestChatViaId,
+    postAuthorTitle: anchor.postAuthorTitle,
+    fromRank: anchor.fromRank,
+    senderBoosts: anchor.senderBoosts,
+    viewsCount: anchor.viewsCount,
+    forwardsCount: anchor.forwardsCount,
+    hasUnreadMention: anchor.hasUnreadMention,
+    isProtected: anchor.isProtected || ephemeral.isProtected,
+    isPinned: anchor.isPinned,
+  };
+}
+
+export function isMessageLocalOnly(message: ApiMessage) {
+  return Boolean(message.isEphemeral && !message.anchorMsgId);
+}
+
+export function getCanReplyToEphemeralMessage(message: ApiMessage) {
+  return Boolean(
+    message.isEphemeral
+    && !message.anchorMsgId
+    && !message.isOutgoing
+    && message.ephemeralBotId
+    && isUserId(message.ephemeralBotId),
+  );
+}
+
 export function isKeyboardButtonUnsupportedForEphemeral(button: ApiKeyboardButton) {
-  return UNSUPPORTED_EPHEMERAL_BUTTON_TYPES.has(button.type);
+  return UNSUPPORTED_EPHEMERAL_BUTTON_TYPES.has(button.action.type);
 }
 
 export function isEphemeralSendSupported({

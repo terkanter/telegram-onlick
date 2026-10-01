@@ -1,6 +1,5 @@
 @use "sass:map";
 @use "../../../styles/icons";
-@use "../../../styles/mixins";
 
 @mixin subheader-styles() {
   overflow: hidden;
@@ -13,8 +12,7 @@
 
   font-size: calc(var(--message-text-size, 1rem) - 0.125rem);
 
-  @include mixins.action-message-bg;
-
+  background-color: var(--action-message-bg);
   box-shadow: 0 1px 2px var(--color-default-shadow);
 
   @media (max-width: 600px) {
@@ -307,7 +305,7 @@
 
     font-size: calc(var(--message-text-size, 1rem) - 0.125rem);
     font-weight: var(--font-weight-medium);
-    line-height: 1.25rem;
+    line-height: 1.25;
     color: var(--accent-color);
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -335,7 +333,6 @@
 
     .sender-title {
       overflow: hidden;
-      line-height: normal;
       text-overflow: ellipsis;
     }
 
@@ -357,7 +354,6 @@
     .via-sender {
       display: flex;
       align-items: center;
-      line-height: normal;
     }
 
     .sender-hidden {
@@ -419,8 +415,12 @@
       user-select: none;
     }
 
-    .admin-title-badge:last-child {
-      margin-right: -0.1875rem;
+    .admin-title-badge {
+      padding: 0.125rem 0.375rem;
+
+      &:last-child {
+        margin-right: -0.1875rem;
+      }
     }
 
     .admin-title-plain {
@@ -474,10 +474,6 @@
     .message-title {
       color: white;
     }
-  }
-
-  .message-topic {
-    align-self: flex-start;
   }
 
   &.has-shadow {
@@ -795,8 +791,7 @@
   > .WebPage-text,
   > .Reactions,
   & ~ .Reactions.is-outside {
-    width: 0;
-    min-width: 100%;
+    contain: inline-size;
   }
 }
 
@@ -862,7 +857,7 @@
   }
 
   .message-media-duration {
-    background: var(--pattern-color);
+    background-color: var(--action-message-bg);
   }
 
   .media-inner {

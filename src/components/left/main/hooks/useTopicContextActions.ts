@@ -112,7 +112,7 @@ export default function useTopicContextActions({
       }
       : {
         title: oldLang('lng_forum_topic_close'),
-        icon: 'close-topic',
+        icon: 'pause-circle',
         handler: () => editTopic({ chatId, topicId, isClosed: true }),
       }) : undefined;
 

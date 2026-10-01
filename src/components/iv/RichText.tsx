@@ -18,11 +18,13 @@ import Spoiler from '../common/spoiler/Spoiler';
 import MentionLink from '../middle/message/MentionLink';
 import InlineImage from './InlineImage';
 import Latex from './Latex';
+import RichButton from './RichButton';
 
 import styles from './RichContent.module.scss';
 
-type OwnProps = {
+export type RichTextProps = {
   text: ApiRichText;
+  isButtonLabel?: boolean;
   unsupportedText: string;
   containerId: string;
   pageUrl?: string;
@@ -37,6 +39,7 @@ type OwnProps = {
 
 const RichText = ({
   text,
+  isButtonLabel,
   unsupportedText,
   containerId,
   pageUrl,
@@ -47,8 +50,25 @@ const RichText = ({
   observeIntersectionForPlaying,
   sharedCanvasRef,
   sharedCanvasHqRef,
-}: OwnProps): TeactNode => {
+}: RichTextProps): TeactNode => {
   switch (text.type) {
+    case 'button':
+      return (
+        <RichButton
+          button={text}
+          chatId={chatId}
+          messageId={messageId}
+          threadId={threadId}
+          isInline
+          unsupportedText={unsupportedText}
+          containerId={containerId}
+          pageUrl={pageUrl}
+          observeIntersectionForLoading={observeIntersectionForLoading}
+          observeIntersectionForPlaying={observeIntersectionForPlaying}
+          sharedCanvasRef={sharedCanvasRef}
+          sharedCanvasHqRef={sharedCanvasHqRef}
+        />
+      );
     case 'empty':
       return undefined;
     case 'plain':
@@ -58,6 +78,7 @@ const RichText = ({
         <RichText
           key={index}
           text={part}
+          isButtonLabel={isButtonLabel}
           unsupportedText={unsupportedText}
           containerId={containerId}
           pageUrl={pageUrl}
@@ -200,6 +221,7 @@ const RichText = ({
       return (
         <FormattedDate
           entity={buildDateEntity(text)}
+          asPreview={isButtonLabel}
           chatId={chatId}
           messageId={messageId}
         >
@@ -229,6 +251,7 @@ const RichText = ({
     return (
       <RichText
         text={getNestedRichText(text)}
+        isButtonLabel={isButtonLabel}
         unsupportedText={unsupportedText}
         containerId={containerId}
         pageUrl={pageUrl}

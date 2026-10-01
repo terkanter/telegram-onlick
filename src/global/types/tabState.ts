@@ -12,7 +12,6 @@ import type {
   ApiChatType,
   ApiCheckedGiftCode,
   ApiCollectibleInfo,
-  ApiComposedMessageWithAI,
   ApiDialog,
   ApiEmojiStatusCollectible,
   ApiFormattedText,
@@ -21,6 +20,7 @@ import type {
   ApiGroupStatistics,
   ApiInputAiComposeTone,
   ApiInputInvoice,
+  ApiInputRichMessage,
   ApiLimitTypeWithModal,
   ApiMessage,
   ApiMissingInvitedUser,
@@ -64,12 +64,12 @@ import type {
   ApiUser,
   ApiVideo,
 } from '../../api/types';
+import type { ParsedCheckList } from '../../components/middle/composer/helpers/parseCheckList';
 import type { FoldersActions } from '../../hooks/reducers/useFoldersReducer';
 import type { ReducerAction } from '../../hooks/useReducer';
 import type {
   ActiveDownloads,
   ActiveEmojiInteraction,
-  AudioOrigin,
   ChatCreationProgress,
   ChatMediaSearchParams,
   ChatRequestedTranslations,
@@ -90,6 +90,8 @@ import type {
   MiddleSearchParams,
   NewChatMembersProgress,
   PaymentStep,
+  PlaybackItemRef,
+  PlaybackSource,
   ProfileEditProgress,
   ProfileTabType,
   ResaleGiftsFilterOptions,
@@ -97,6 +99,7 @@ import type {
   SettingsScreens,
   SharedMediaType,
   ShippingOption,
+  ShuffleState,
   StarGiftInfo,
   StoryViewerOrigin,
   TabThread,
@@ -118,9 +121,27 @@ export type ReactionDeletionContext = {
   count: number;
 };
 
+export type AiEditorContent = {
+  type: 'text';
+  text: ApiFormattedText;
+} | {
+  type: 'rich';
+  richMessage: ApiInputRichMessage;
+};
+
+export type AiEditorResult = {
+  type: 'text';
+  text: ApiFormattedText;
+  diffText?: ApiFormattedText;
+} | {
+  type: 'rich';
+  richMessage: ApiInputRichMessage;
+};
+
 export type AiEditorTabBase = {
   isLoading?: boolean;
-  result?: ApiComposedMessageWithAI;
+  requestId?: number;
+  result?: AiEditorResult;
   error?: 'floodPremium' | 'aiError' | 'generic';
 };
 
@@ -158,6 +179,7 @@ export type TabState = {
   inactiveReason?: 'auth' | 'otherClient';
   shouldPreventComposerAnimation?: boolean;
   isRichInputExpanded?: boolean;
+  richMediaUploadBlockingCount?: number;
   inviteHash?: string;
   canInstall?: boolean;
   isStatisticsShown?: boolean;
@@ -355,7 +377,7 @@ export type TabState = {
     byChatId: Record<string, ManagementState>;
   };
 
-  isPaymentMessageConfirmDialogOpen: boolean;
+  paymentMessageConfirmDialogKey?: string;
 
   storyViewer: {
     isRibbonShown?: boolean;
@@ -411,15 +433,20 @@ export type TabState = {
   };
 
   audioPlayer: {
-    chatId?: string;
-    messageId?: number;
-    threadId?: ThreadId;
-    origin?: AudioOrigin;
+    activeItem?: PlaybackItemRef;
+    source?: PlaybackSource;
     playbackRate: number;
     isPlaybackRateActive?: boolean;
     timestamp?: number;
     isMuted: boolean;
+    shuffle?: ShuffleState;
+    pendingStep?: {
+      direction: 'next' | 'prev';
+      isAuto?: boolean;
+    };
   };
+
+  isAudioPlaylistModalOpen?: boolean;
 
   webPagePreviewId?: string;
 
@@ -443,6 +470,8 @@ export type TabState = {
     fromChatId?: string;
     messageIds?: number[];
     storyId?: number;
+    audioItem?: PlaybackItemRef;
+    audioPendingSend?: { toChatId: string; toThreadId?: ThreadId; stars: number };
     toChatId?: string;
     toThreadId?: ThreadId;
     withMyScore?: boolean;
@@ -592,6 +621,7 @@ export type TabState = {
     chatId: string;
     messageId?: number;
     forNewTask?: boolean;
+    initialCheckList?: ParsedCheckList;
   };
 
   preparedMessageModal?: {
@@ -683,22 +713,25 @@ export type TabState = {
 
   aiMessageEditorModal?: {
     chatId: string;
-    text: ApiFormattedText;
+    threadId: ThreadId;
+    content: AiEditorContent;
     activeTab: 'translate' | 'style' | 'fix';
     isFromAttachment?: boolean;
+    isEditing?: boolean;
     translateTab?: AiEditorTabBase & {
       selectedLanguage?: string;
       selectedTone?: ApiInputAiComposeTone;
       shouldEmojify?: boolean;
-      cache?: Record<string, ApiComposedMessageWithAI>;
+      cache?: Record<string, AiEditorResult>;
     };
     styleTab?: AiEditorTabBase & {
       selectedTone?: ApiInputAiComposeTone;
+      customPrompt?: string;
       shouldEmojify?: boolean;
-      cache?: Record<string, ApiComposedMessageWithAI>;
+      cache?: Record<string, AiEditorResult>;
     };
     fixTab?: AiEditorTabBase & {
-      cache?: ApiComposedMessageWithAI;
+      cache?: AiEditorResult;
     };
   };
 
@@ -715,8 +748,10 @@ export type TabState = {
   };
 
   aiMessageEditorPendingResult?: {
-    text?: ApiFormattedText;
-    shouldClear?: boolean;
+    content: AiEditorContent;
+    chatId: string;
+    threadId: ThreadId;
+    shouldSend?: boolean;
     shouldSendWithAttachments?: boolean;
     isSilent?: boolean;
     scheduledAt?: number;

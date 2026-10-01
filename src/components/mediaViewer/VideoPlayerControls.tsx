@@ -1,4 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
 import {
   memo, useEffect, useLayoutEffect,
   useMemo,
@@ -70,7 +69,7 @@ const PLAYBACK_RATES = [
 
 const HIDE_CONTROLS_TIMEOUT_MS = 3000;
 
-const VideoPlayerControls: FC<OwnProps> = ({
+const VideoPlayerControls = ({
   storyboardInfo,
   bufferedRanges,
   bufferedProgress,
@@ -94,7 +93,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
   onPlayPause,
   onSeek,
   onSeekingChange,
-}) => {
+}: OwnProps) => {
   const [isPlaybackMenuOpen, openPlaybackMenu, closePlaybackMenu] = useFlag();
   const [getCurrentTime] = useCurrentTimeSignal();
   const currentTime = useDerivedState(() => Math.trunc(getCurrentTime()), [getCurrentTime]);
@@ -168,7 +167,7 @@ const VideoPlayerControls: FC<OwnProps> = ({
     if (volume === 0 || isMuted) return 'muted';
     if (volume < 0.3) return 'volume-1';
     if (volume < 0.6) return 'volume-2';
-    return 'volume-3';
+    return 'speaker';
   }, [volume, isMuted]);
 
   return (

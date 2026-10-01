@@ -7,6 +7,15 @@ import { CUSTOM_BG_CACHE_NAME } from '../config';
 import { MAIN_IDB_STORE } from './browser/idb';
 import * as cacheApi from './cacheApi';
 import { fetchBlob, preloadImage } from './files';
+import {
+  clearWallpaperVaultBlobs,
+  loadPasscodeMeta,
+  readWallpaperVaultBlob,
+  readWallpaperVaultBlobs,
+  removeWallpaperVaultBlob,
+  requestPasscodeStateLock,
+  writeWallpaperVaultBlob,
+} from './passcode';
 import { decodeWallpaperPatternBlob } from './wallpaper';
 
 type WallpaperUrlEntry = {
@@ -22,23 +31,38 @@ export type WallpaperUrlHandle = {
   release: NoneToVoidFunction;
 };
 
+export type WallpaperStorageSource = 'lockScreen';
+
 const THEME_KEYS: ThemeKey[] = ['light', 'dark'];
 const URL_REVOKE_DELAY_MS = 2000;
 const BLOB_CLEANUP_DELAY_MS = 5000;
 const WALLPAPER_STORE_KEY_PREFIX = 'wallpaper-';
+const LOCK_SCREEN_WALLPAPER_STORE_KEY_PREFIX = 'lock-screen-wallpaper-';
 
 const wallpaperUrlEntries = new Map<string, WallpaperUrlEntry>();
 const blobCleanupTimeouts = new Map<string, number>();
 
-export async function saveWallpaperBlob(slug: string, blob: Blob) {
-  try {
-    await MAIN_IDB_STORE.set(buildWallpaperStoreKey(slug), blob);
-    return true;
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn(err);
-    return false;
-  }
+export function saveWallpaperBlob(slug: string, blob: Blob) {
+  return requestPasscodeStateLock(async () => {
+    const storageKey = buildWallpaperStoreKey(slug);
+    const hasPasscode = Boolean(await loadPasscodeMeta());
+
+    try {
+      if (hasPasscode) {
+        await writeWallpaperVaultBlob(slug, blob);
+        await MAIN_IDB_STORE.del(storageKey);
+        return true;
+      }
+
+      await MAIN_IDB_STORE.set(storageKey, blob);
+      return true;
+    } catch (err) {
+      if (hasPasscode) await MAIN_IDB_STORE.del(storageKey).catch(() => undefined);
+      // eslint-disable-next-line no-console
+      console.warn(err);
+      return false;
+    }
+  });
 }
 
 export async function cacheWallpaperMedia(wallpaper: ApiWallpaper, mediaUrl: string) {
@@ -47,18 +71,66 @@ export async function cacheWallpaperMedia(wallpaper: ApiWallpaper, mediaUrl: str
   return saveWallpaperBlob(wallpaper.slug, blob);
 }
 
-export async function clearWallpaperBlobs() {
-  await Promise.all([
-    cacheApi.clearShared(CUSTOM_BG_CACHE_NAME),
-    cacheApi.clearAccountScopes(CUSTOM_BG_CACHE_NAME),
-  ]);
-
+export async function encryptWallpaperBlobs() {
   try {
-    const keys = await MAIN_IDB_STORE.keys();
-    const wallpaperKeys = keys.filter(
-      (key): key is string => typeof key === 'string' && key.startsWith(WALLPAPER_STORE_KEY_PREFIX),
-    );
-    await MAIN_IDB_STORE.delMany(wallpaperKeys);
+    const storageKeys = await getPlaintextWallpaperKeys();
+    for (const storageKey of storageKeys) {
+      const blob = await MAIN_IDB_STORE.get<Blob>(storageKey);
+      if (!blob) continue;
+
+      await writeWallpaperVaultBlob(getWallpaperSlug(storageKey), blob);
+    }
+
+    await removePlaintextWallpaperBlobs(storageKeys);
+  } catch (err) {
+    await clearPlaintextWallpaperBlobs().catch(() => undefined);
+    throw err;
+  }
+}
+
+export async function restoreWallpaperBlobsFromPasscode() {
+  const blobs = await readWallpaperVaultBlobs();
+  const entries: [string, Blob][] = blobs.map(([slug, blob]) => [buildWallpaperStoreKey(slug), blob]);
+  if (!entries.length) return;
+
+  await MAIN_IDB_STORE.setMany(entries);
+}
+
+export async function clearPlaintextWallpaperBlobs() {
+  const storageKeys = await getPlaintextWallpaperKeys();
+  await removePlaintextWallpaperBlobs(storageKeys);
+}
+
+export async function syncLockScreenWallpaperBlobs(selectedBackgrounds: string[]) {
+  const selectedSlugs = [...new Set(selectedBackgrounds.filter(isBlobWallpaper))];
+  const selectedStorageKeys = new Set(selectedSlugs.map(buildLockScreenWallpaperStoreKey));
+  const storedKeys = await getLockScreenWallpaperKeys();
+  const staleKeys = storedKeys.filter((storageKey) => !selectedStorageKeys.has(storageKey));
+  const entries: [string, Blob][] = [];
+
+  for (const slug of selectedSlugs) {
+    const blob = await loadStoredWallpaperBlob(slug);
+    if (blob) entries.push([buildLockScreenWallpaperStoreKey(slug), blob]);
+  }
+
+  if (entries.length) await MAIN_IDB_STORE.setMany(entries);
+  if (staleKeys.length) await MAIN_IDB_STORE.delMany(staleKeys);
+}
+
+export async function clearLockScreenWallpaperBlobs() {
+  const storageKeys = await getLockScreenWallpaperKeys();
+  if (storageKeys.length) await MAIN_IDB_STORE.delMany(storageKeys);
+}
+
+export async function clearWallpaperBlobs() {
+  try {
+    await Promise.all([
+      clearPlaintextWallpaperBlobs(),
+      clearLockScreenWallpaperBlobs(),
+      clearWallpaperVaultBlobs(),
+      cacheApi.clearShared(CUSTOM_BG_CACHE_NAME),
+      cacheApi.clearAccountScopes(CUSTOM_BG_CACHE_NAME),
+    ]);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(err);
@@ -90,8 +162,21 @@ export function updateSelectedWallpaperBlobs(
   selectedBackgrounds: string[],
   previousBackground: string | undefined,
   getSelectedBackgrounds: () => string[],
+  shouldKeepLockScreenBackground: boolean,
 ) {
   selectedBackgrounds.forEach(cancelBlobCleanup);
+
+  void requestPasscodeStateLock(async () => {
+    if (!await loadPasscodeMeta()) return;
+    if (!shouldKeepLockScreenBackground) {
+      await clearLockScreenWallpaperBlobs();
+      return;
+    }
+    await syncLockScreenWallpaperBlobs(selectedBackgrounds);
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(err);
+  });
 
   if (!isBlobWallpaper(previousBackground) || selectedBackgrounds.includes(previousBackground)) return;
 
@@ -128,12 +213,13 @@ export async function prefetchWallpaperUrl(background?: string) {
 
 // Synchronous counterpart of `acquireWallpaperUrl` for the first render: returns the URL only when
 // it is already loaded (e.g. prefetched). The caller must still acquire a handle to keep it alive.
-export function getResolvedWallpaperUrl(slug: string) {
-  return wallpaperUrlEntries.get(slug)?.url;
+export function getResolvedWallpaperUrl(slug: string, source?: WallpaperStorageSource) {
+  return wallpaperUrlEntries.get(buildWallpaperUrlKey(slug, source))?.url;
 }
 
-export function acquireWallpaperUrl(slug: string): WallpaperUrlHandle {
-  const entry = getOrCreateWallpaperUrlEntry(slug);
+export function acquireWallpaperUrl(slug: string, source?: WallpaperStorageSource): WallpaperUrlHandle {
+  const storageKey = buildWallpaperUrlKey(slug, source);
+  const entry = getOrCreateWallpaperUrlEntry(slug, source);
   entry.refCount += 1;
   if (entry.revokeTimeout !== undefined) {
     clearTimeout(entry.revokeTimeout);
@@ -146,32 +232,33 @@ export function acquireWallpaperUrl(slug: string): WallpaperUrlHandle {
     release() {
       if (isReleased) return;
       isReleased = true;
-      releaseWallpaperUrlEntry(slug, entry);
+      releaseWallpaperUrlEntry(storageKey, entry);
     },
   };
 }
 
-function getOrCreateWallpaperUrlEntry(slug: string) {
-  const existing = wallpaperUrlEntries.get(slug);
+function getOrCreateWallpaperUrlEntry(slug: string, source?: WallpaperStorageSource) {
+  const storageKey = buildWallpaperUrlKey(slug, source);
+  const existing = wallpaperUrlEntries.get(storageKey);
   if (existing) return existing;
 
   const entry: WallpaperUrlEntry = {
-    promise: loadWallpaperUrl(slug),
+    promise: loadWallpaperUrl(slug, source),
     refCount: 0,
   };
   entry.promise.then((url) => {
     entry.url = url;
   }, () => {
-    if (wallpaperUrlEntries.get(slug) === entry) {
-      wallpaperUrlEntries.delete(slug);
+    if (wallpaperUrlEntries.get(storageKey) === entry) {
+      wallpaperUrlEntries.delete(storageKey);
     }
   });
-  wallpaperUrlEntries.set(slug, entry);
+  wallpaperUrlEntries.set(storageKey, entry);
   return entry;
 }
 
-async function loadWallpaperUrl(slug: string) {
-  const blob = await loadWallpaperBlob(slug);
+async function loadWallpaperUrl(slug: string, source?: WallpaperStorageSource) {
+  const blob = await loadWallpaperBlob(slug, source);
   const url = URL.createObjectURL(blob);
 
   try {
@@ -184,9 +271,18 @@ async function loadWallpaperUrl(slug: string) {
   return url;
 }
 
-async function loadWallpaperBlob(slug: string): Promise<Blob> {
+async function loadWallpaperBlob(slug: string, source?: WallpaperStorageSource): Promise<Blob> {
+  if (source === 'lockScreen') {
+    const blob = await requestPasscodeStateLock(
+      () => MAIN_IDB_STORE.get<Blob>(buildLockScreenWallpaperStoreKey(slug)),
+    );
+    if (!blob) throw new Error('LOCK_SCREEN_BG_MISSING');
+    return blob;
+  }
+
   const storedBlob = await loadStoredWallpaperBlob(slug);
   if (storedBlob) return storedBlob;
+  if (await loadPasscodeMeta()) throw new Error('CUSTOM_BG_MISSING');
 
   const legacyBlob = await cacheApi.fetchShared(CUSTOM_BG_CACHE_NAME, slug, cacheApi.Type.Blob)
     || await cacheApi.fetchFromAccountScopes(CUSTOM_BG_CACHE_NAME, slug, cacheApi.Type.Blob);
@@ -200,7 +296,11 @@ async function loadWallpaperBlob(slug: string): Promise<Blob> {
 
 async function loadStoredWallpaperBlob(slug: string) {
   try {
-    return await MAIN_IDB_STORE.get<Blob>(buildWallpaperStoreKey(slug));
+    const meta = await loadPasscodeMeta();
+    if (!meta) {
+      return await MAIN_IDB_STORE.get<Blob>(buildWallpaperStoreKey(slug));
+    }
+    return await readWallpaperVaultBlob(slug);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(err);
@@ -215,20 +315,23 @@ async function removeWallpaperBlob(slug: string) {
   ]);
 
   try {
-    await MAIN_IDB_STORE.del(buildWallpaperStoreKey(slug));
+    await Promise.all([
+      MAIN_IDB_STORE.del(buildWallpaperStoreKey(slug)),
+      removeWallpaperVaultBlob(slug),
+    ]);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(err);
   }
 }
 
-function releaseWallpaperUrlEntry(slug: string, entry: WallpaperUrlEntry) {
+function releaseWallpaperUrlEntry(storageKey: string, entry: WallpaperUrlEntry) {
   entry.refCount -= 1;
   if (entry.refCount > 0) return;
 
   entry.revokeTimeout = window.setTimeout(() => {
-    if (wallpaperUrlEntries.get(slug) === entry) {
-      wallpaperUrlEntries.delete(slug);
+    if (wallpaperUrlEntries.get(storageKey) === entry) {
+      wallpaperUrlEntries.delete(storageKey);
     }
     entry.promise.then((url) => URL.revokeObjectURL(url)).catch(() => undefined);
   }, URL_REVOKE_DELAY_MS);
@@ -244,6 +347,42 @@ function cancelBlobCleanup(slug: string) {
 
 function buildWallpaperStoreKey(slug: string) {
   return `${WALLPAPER_STORE_KEY_PREFIX}${slug}`;
+}
+
+function buildLockScreenWallpaperStoreKey(slug: string) {
+  return `${LOCK_SCREEN_WALLPAPER_STORE_KEY_PREFIX}${slug}`;
+}
+
+function buildWallpaperUrlKey(slug: string, source?: WallpaperStorageSource) {
+  return source ? `${source}:${slug}` : slug;
+}
+
+function getWallpaperSlug(storageKey: string) {
+  return storageKey.slice(WALLPAPER_STORE_KEY_PREFIX.length);
+}
+
+async function getPlaintextWallpaperKeys() {
+  const storageKeys = await MAIN_IDB_STORE.keys();
+  return storageKeys.filter(
+    (storageKey): storageKey is string => (
+      typeof storageKey === 'string' && storageKey.startsWith(WALLPAPER_STORE_KEY_PREFIX)
+    ),
+  );
+}
+
+async function getLockScreenWallpaperKeys() {
+  const storageKeys = await MAIN_IDB_STORE.keys();
+  return storageKeys.filter(
+    (storageKey): storageKey is string => (
+      typeof storageKey === 'string' && storageKey.startsWith(LOCK_SCREEN_WALLPAPER_STORE_KEY_PREFIX)
+    ),
+  );
+}
+
+async function removePlaintextWallpaperBlobs(storageKeys: string[]) {
+  if (!storageKeys.length) return;
+
+  await MAIN_IDB_STORE.delMany(storageKeys);
 }
 
 function isBlobWallpaper(background?: string): background is string {

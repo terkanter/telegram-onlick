@@ -31,6 +31,7 @@ import { PREVIEW_AVATAR_COUNT } from '../../../config';
 import {
   areReactionsEmpty,
   getCanPostInChat,
+  getCanReplyToEphemeralMessage,
   getIsDownloading,
   getMessageAudio,
   getMessageVideo,
@@ -332,10 +333,10 @@ const ContextMenuContainer = ({
   const isMusicSaved = Boolean(audio && savedMusicById?.[audio.id]);
 
   useEffect(() => {
-    if (isOpen && audio && !isLocalMessage && !savedMusicById && !isSavedMusicLoading) {
+    if (isOpen && canManageMusicInProfile && !savedMusicById && !isSavedMusicLoading) {
       loadSavedMusicIds();
     }
-  }, [audio, isLocalMessage, isOpen, isSavedMusicLoading, loadSavedMusicIds, savedMusicById]);
+  }, [canManageMusicInProfile, isOpen, isSavedMusicLoading, loadSavedMusicIds, savedMusicById]);
 
   useEffect(() => {
     if (canShowSeenBy && isOpen) {
@@ -1006,7 +1007,7 @@ export default memo(withGlobal<OwnProps>(
     const messageTranslation = translationCacheKey
       ? selectMessageTranslations(global, message.chatId, translationCacheKey)[message.id]
       : undefined;
-    const hasTranslation = Boolean(messageTranslation?.text);
+    const hasTranslation = Boolean(messageTranslation?.text || messageTranslation?.richMessage);
     const canTranslate = !hasTranslation && selectCanTranslateMessage(global, message, detectedLanguage);
     const isChatTranslated = chatTranslationLanguage;
 
@@ -1033,13 +1034,15 @@ export default memo(withGlobal<OwnProps>(
       canReport: message.isEphemeral ? !message.isOutgoing : canReport,
       canSendNow: isScheduled,
       canReschedule: isScheduled,
-      canReply: message.isEphemeral ? !message.isOutgoing : !isPinned && !isScheduled && canReplyGlobally,
+      canReply: message.isEphemeral
+        ? getCanReplyToEphemeralMessage(message)
+        : !isPinned && !isScheduled && canReplyGlobally,
       canPin: !message.isEphemeral && !isScheduled && canPin,
       canUnpin: !message.isEphemeral && !isScheduled && canUnpin,
       canDelete: message.isEphemeral || canDelete,
       canEdit: !message.isEphemeral && !isPinned && canEdit,
       canAppendTodoList: !message.isEphemeral && canAppendTodoList,
-      canForward: !message.isEphemeral && !isScheduled && canForward,
+      canForward: !isScheduled && canForward,
       canFaveSticker: !message.isEphemeral && !isScheduled && canFaveSticker,
       canUnfaveSticker: !message.isEphemeral && !isScheduled && canUnfaveSticker,
       canCopy: (canCopyNumber || (!isProtected && canCopy)),

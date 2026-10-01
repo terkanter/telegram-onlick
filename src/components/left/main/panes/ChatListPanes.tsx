@@ -134,6 +134,7 @@ const ChatListPanes = ({
     >
       {(isMobile || isTablet) && (
         <AudioPlayer
+          className={styles.panePlayer}
           isCompact
           onPaneStateChange={setPlayerState}
         />

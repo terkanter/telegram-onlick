@@ -73,6 +73,7 @@ import Switch from '@gili/primitives/Switch';
 
 import styles from './PollModal.module.scss';
 
+const PAYMENT_DIALOG_KEY = 'poll';
 const MAX_OPTION_LENGTH = 100;
 const MAX_QUESTION_LENGTH = 255;
 const MAX_SOLUTION_LENGTH = 200;
@@ -112,7 +113,7 @@ type StateProps = {
   phoneCountryIso2?: string;
   countryList: ApiCountry[];
   paidMessagesStars?: number;
-  isPaymentMessageConfirmDialogOpen: boolean;
+  paymentMessageConfirmDialogKey?: string;
   starsBalance: number;
   isStarsBalanceModalOpen: boolean;
   isSilentPosting?: boolean;
@@ -153,7 +154,7 @@ const PollModal = ({
   phoneCountryIso2,
   countryList,
   paidMessagesStars,
-  isPaymentMessageConfirmDialogOpen,
+  paymentMessageConfirmDialogKey,
   starsBalance,
   isStarsBalanceModalOpen,
   isSilentPosting,
@@ -214,6 +215,7 @@ const PollModal = ({
     setAutoApprove,
     handleWithConfirmation,
   } = usePaidMessageConfirmation(
+    PAYMENT_DIALOG_KEY,
     paidMessagesStars || 0,
     isStarsBalanceModalOpen,
     starsBalance,
@@ -692,7 +694,7 @@ const PollModal = ({
                     ref={handleProps?.ref}
                   >
                     <Icon
-                      name={isAddOptionRow ? 'add' : 'sort'}
+                      name={isAddOptionRow ? 'add' : 'hamburger'}
                       className={styles.optionLeadingIconGlyph}
                     />
                   </div>
@@ -929,7 +931,7 @@ const PollModal = ({
         onSelectionLimit={handleCountrySelectionLimit}
       />
       <PaymentMessageConfirmDialog
-        isOpen={isPaymentMessageConfirmDialogOpen}
+        isOpen={paymentMessageConfirmDialogKey === PAYMENT_DIALOG_KEY}
         onClose={closeConfirmDialog}
         userName={chat ? getPeerTitle(lang, chat) : undefined}
         messagePriceInStars={paidMessagesStars || 0}
@@ -1030,7 +1032,7 @@ export default memo(withGlobal<OwnProps>(
       phoneCountryIso2: global.appConfig.phoneCountryIso2,
       countryList: global.countryList.general,
       paidMessagesStars: selectPeerPaidMessagesStars(global, chatId),
-      isPaymentMessageConfirmDialogOpen: tabState.isPaymentMessageConfirmDialogOpen,
+      paymentMessageConfirmDialogKey: tabState.paymentMessageConfirmDialogKey,
       starsBalance: global.stars?.balance.amount || 0,
       isStarsBalanceModalOpen: Boolean(tabState.starsBalanceModal),
       isSilentPosting: chat ? getChatNotifySettings(

@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
@@ -34,7 +33,7 @@ type StateProps = {
   adminMembersById?: Record<string, ApiChatMember>;
 };
 
-const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
+const ManageChatAdministrators = ({
   isActive,
   chat,
   isChannel,
@@ -43,7 +42,7 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
   onScreenSelect,
   onChatMemberSelect,
   onClose,
-}) => {
+}: OwnProps & StateProps) => {
   const { toggleSignatures } = getActions();
   const lang = useOldLang();
 
@@ -114,7 +113,7 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
       <div className="panel-content custom-scroll">
         <Island>
           <ListItem
-            icon="recent"
+            icon="clock"
             multiline
             disabled
           >

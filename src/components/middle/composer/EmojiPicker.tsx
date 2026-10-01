@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import {
   memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
@@ -115,7 +114,7 @@ const INTERSECTION_THROTTLE = 200;
 const LOAD_MORE_THRESHOLD = 500;
 const DEFAULT_ID_PREFIX = 'emoji-picker';
 
-const EmojiPicker: FC<OwnProps & StateProps> = ({
+const EmojiPicker = ({
   chatId,
   className,
   isHidden,
@@ -137,7 +136,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
   emojiGroups,
   onEmojiSelect,
   onCustomEmojiSelect,
-}) => {
+}: OwnProps & StateProps) => {
   const { loadStickers } = getActions();
 
   const containerRef = useRef<HTMLDivElement>();
@@ -608,7 +607,7 @@ const EmojiPicker: FC<OwnProps & StateProps> = ({
                   color="translucent"
                   onClick={handleRecentSelect}
                   ariaLabel={oldLang('RecentStickers')}
-                  iconName="recent"
+                  iconName="clock"
                 />
               )}
               <EmojiCategoryPill

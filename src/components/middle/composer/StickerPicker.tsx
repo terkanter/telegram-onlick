@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import {
   memo, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
@@ -115,7 +114,7 @@ const TRENDING_DISMISS_FALLBACK_MS = TRENDING_DISMISS_DURATION + 100;
 const RESULTS_INTERSECTION_THROTTLE = 200;
 const LOAD_MORE_THRESHOLD = 500;
 
-const StickerPicker: FC<OwnProps & StateProps> = ({
+const StickerPicker = ({
   chat,
   threadId,
   className,
@@ -143,7 +142,7 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
   idPrefix,
   onStickerSelect,
   isForEffects,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     loadRecentStickers,
     addRecentSticker,
@@ -509,9 +508,9 @@ const StickerPicker: FC<OwnProps & StateProps> = ({
           onClick={() => selectStickerSet(index)}
         >
           {stickerSet.id === RECENT_SYMBOL_SET_ID ? (
-            <Icon name="recent" />
+            <Icon name="clock" />
           ) : stickerSet.id === FAVORITE_SYMBOL_SET_ID ? (
-            <Icon name="favorite" />
+            <Icon name="star-regular" />
           ) : stickerSet.id === CHAT_STICKER_SET_ID ? (
             <Avatar peer={chat} size="small" />
           ) : (

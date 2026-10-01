@@ -1,5 +1,6 @@
 export {
-  destroy, disconnect, downloadMedia, fetchCurrentUser, repairFileReference, abortChatRequests, abortRequestGroup,
+  cancelWebTokenAuthorization, destroy, disconnect, downloadMedia, fetchCurrentUser, repairFileReference,
+  abortChatRequests, abortRequestGroup,
   setForceHttpTransport, setShouldDebugExportedSenders, setAllowHttpTransport, requestChannelDifference,
   setOpenedChannelIds, reinitGateway, continueGatewayInit, sendGatewayEvents, sendGatewayUnread,
 } from './client';

@@ -237,7 +237,7 @@ const SettingsGeneralBackground = ({
           {oldLang('SetColor')}
         </ListItem>
 
-        <ListItem icon="favorite" onClick={handleResetToDefault}>
+        <ListItem icon="star-regular" onClick={handleResetToDefault}>
           {oldLang('ThemeResetToDefaults')}
         </ListItem>
 

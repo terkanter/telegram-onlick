@@ -219,7 +219,7 @@ export function addUnreadCountersCallback(callback: (unreadCounters: typeof resu
 
 /* Global update handlers */
 
-function updateFolderManager(global: GlobalState) {
+export function updateFolderManager(global: GlobalState) {
   let DEBUG_startedAt: number;
   if (DEBUG) {
     DEBUG_startedAt = performance.now();
@@ -471,6 +471,8 @@ function updateChats(
   const newSavedFolderListIds = global.chats.listIds.saved;
 
   const newGeneralIds = [...newAllFolderListIds || [], ...newArchivedFolderListIds || []];
+  const newGeneralIdsSet = new Set(newGeneralIds);
+  const newSavedFolderListIdsSet = newSavedFolderListIds && new Set(newSavedFolderListIds);
   const newAllIds = [...newGeneralIds, ...newSavedFolderListIds || []];
   let allIds = newAllIds;
   if (newAllFolderListIds !== prevAllFolderListIds || newArchivedFolderListIds !== prevArchivedFolderListIds
@@ -529,8 +531,8 @@ function updateChats(
     let newFolderIds: number[];
     if (chat) {
       const currentSummary = prepared.chatSummariesById.get(chatId);
-      const isRemovedFromAll = !newGeneralIds.includes(chatId);
-      const isRemovedFromSaved = !newSavedFolderListIds?.includes(chatId);
+      const isRemovedFromAll = !newGeneralIdsSet.has(chatId);
+      const isRemovedFromSaved = !newSavedFolderListIdsSet?.has(chatId);
       const newSummary = buildChatSummary(
         global,
         chat,

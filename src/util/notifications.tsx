@@ -202,6 +202,14 @@ export async function unsubscribe() {
   await unsubscribeFromPush(subscription);
 }
 
+export async function unsubscribeLocally() {
+  if (!checkIfPushSupported()) return;
+  const serviceWorkerRegistration = await navigator.serviceWorker.getRegistration();
+  if (!serviceWorkerRegistration) return;
+  const subscription = await serviceWorkerRegistration.pushManager.getSubscription();
+  await subscription?.unsubscribe();
+}
+
 // Load custom emoji from the api if it's not cached already
 async function loadCustomEmoji(id: string) {
   let global = getGlobal();

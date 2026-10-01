@@ -19,6 +19,7 @@ import {
 } from '../../config';
 import { forceMeasure, forceMutation, requestMeasure, requestMutation } from '../../lib/fasterdom/fasterdom';
 import {
+  getApplicableRestrictionReasons,
   getIsSavedDialog,
   getMessageHtmlId,
   getMessageOriginalId,
@@ -32,6 +33,7 @@ import {
   selectBot,
   selectCanTranslateChat,
   selectChat,
+  selectChatAnchoredMessages,
   selectChatEphemeralMessages,
   selectChatFullInfo,
   selectChatLastMessage,
@@ -54,8 +56,7 @@ import {
   selectUser,
   selectUserFullInfo,
 } from '../../global/selectors';
-import { selectIsChatRestricted } from '../../global/selectors/chats';
-import { selectActiveRestrictionReasons, selectCurrentMessageList } from '../../global/selectors/messages';
+import { selectCurrentMessageList } from '../../global/selectors/messages';
 import {
   selectLastScrollOffset,
   selectScrollOffset,
@@ -143,10 +144,11 @@ type StateProps = {
   messageIds?: number[];
   messagesById?: Record<number, ApiMessage>;
   ephemeralById?: Record<number, ApiMessage>;
+  anchoredById?: Record<number, ApiMessage>;
   firstUnreadId?: number;
   isViewportNewest?: boolean;
-  isRestricted?: boolean;
   restrictionReasons?: ApiRestrictionReason[];
+  ignoreRestrictionReasons?: string[];
   focusingId?: number;
   isSelectModeActive?: boolean;
   lastMessage?: ApiMessage;
@@ -156,6 +158,7 @@ type StateProps = {
   isServiceNotificationsChat?: boolean;
   isEmptyThread?: boolean;
   isForum?: boolean;
+  withTopicSeparators?: boolean;
   currentUserId: string;
   isAccountFrozen?: boolean;
   areAdsEnabled?: boolean;
@@ -198,6 +201,8 @@ const BOTTOM_SNAP_THRESHOLD = 7;
 const UNREAD_DIVIDER_TOP = 10;
 const SCROLL_DEBOUNCE = 200;
 const MESSAGE_ANIMATION_DURATION = 500;
+// Keep join message above real ones
+const CHANNEL_JOIN_MESSAGE_ID = 0.01;
 const MIN_SEND_COLLAPSE_REVEAL_SHIFT = 1;
 const SEND_FOCUS_DURATION = SCROLL_MAX_DURATION + ANIMATION_END_DELAY;
 const BOTTOM_FOCUS_MARGIN = 0.5 * REM;
@@ -227,6 +232,7 @@ const MessageList = ({
   type,
   isChatLoaded,
   isForum,
+  withTopicSeparators,
   isChannelChat,
   isGroupChat,
   isChannelWithAvatars,
@@ -250,11 +256,12 @@ const MessageList = ({
   messageIds,
   messagesById,
   ephemeralById,
+  anchoredById,
   firstUnreadId,
   isComments,
   isViewportNewest,
-  isRestricted,
-  restrictionReasons,
+  restrictionReasons: rawRestrictionReasons,
+  ignoreRestrictionReasons,
   isEmptyThread,
   focusingId,
   isSelectModeActive,
@@ -287,6 +294,11 @@ const MessageList = ({
     loadViewportMessages, setScrollOffset, loadSponsoredMessages, loadMessageReactions, copyMessagesByIds,
     loadMessageViews, loadPeerStoriesByIds, loadFactChecks, requestChatTranslation,
   } = getActions();
+
+  const restrictionReasons = useMemo(() => getApplicableRestrictionReasons(
+    rawRestrictionReasons, ignoreRestrictionReasons,
+  ), [ignoreRestrictionReasons, rawRestrictionReasons]);
+  const isRestricted = restrictionReasons.length > 0;
 
   const containerRef = useRef<HTMLDivElement>();
 
@@ -340,12 +352,13 @@ const MessageList = ({
       };
     }
 
-    const normalMessages = messageIds.map((id) => messagesById[id]).filter(Boolean);
+    const normalMessages = messageIds.map((id) => anchoredById?.[id] || messagesById[id]).filter(Boolean);
     const normalDates = normalMessages.map(({ date }) => date);
     const oldestDate = normalDates.length ? Math.min(...normalDates) : undefined;
     const newestDate = normalDates.length ? Math.max(...normalDates) : undefined;
     const currentThreadId = Number(threadId);
     const ephemeralMessages = Object.values(ephemeralById || {}).filter((message) => {
+      if (message.anchorMsgId) return false;
       const isInThread = currentThreadId === MAIN_THREAD_ID
         ? message.ephemeralTopMsgId === undefined
         : message.ephemeralTopMsgId === currentThreadId;
@@ -360,7 +373,7 @@ const MessageList = ({
       renderMessageIds: renderMessages.map(({ id }) => id),
       renderMessagesById: buildCollectionByKey(renderMessages, 'id'),
     };
-  }, [ephemeralById, isViewportNewest, messageIds, messagesById, threadId, type]);
+  }, [anchoredById, ephemeralById, isViewportNewest, messageIds, messagesById, threadId, type]);
   const { renderMessageIds, renderMessagesById } = renderData;
   const previousRenderMessageIds = usePrevious(renderMessageIds);
   const addedMessageInfo = useMemo(() => (isViewportNewest ? getAddedMessageInfo(
@@ -522,9 +535,8 @@ const MessageList = ({
       }
 
       if (shouldAppendJoinMessage) {
-        const lastMessageId = shouldAppendJoinMessageAfterCurrent ? message.id : (prevMessage?.id || (message.id - 1));
         listedMessages.push({
-          id: generateChannelJoinMessageId(lastMessageId),
+          id: CHANNEL_JOIN_MESSAGE_ID,
           chatId: message.chatId,
           date: channelJoinInfo!.joinedDate,
           isOutgoing: false,
@@ -553,11 +565,12 @@ const MessageList = ({
         isChatWithSelf,
         withUsers,
         effectiveLiveTailStartOriginalId,
+        withTopicSeparators,
       )
       : undefined;
   }, [withUsers,
     renderMessageIds, renderMessagesById, type,
-    isForum,
+    isForum, withTopicSeparators,
     threadId, isChatWithSelf, channelJoinInfo, effectiveLiveTailStartOriginalId]);
 
   const currentLastMessageId = renderMessageIds?.[renderMessageIds.length - 1];
@@ -839,8 +852,9 @@ const MessageList = ({
       return;
     }
 
+    const renderMessageIdSet = new Set(renderMessageIds);
     const preservedItemElements = listItemElementsRef.current
-      .filter((element) => renderMessageIds.includes(Number(element.dataset.messageId)));
+      .filter((element) => renderMessageIdSet.has(Number(element.dataset.messageId)));
 
     // We avoid the very first item as it may be a partly-loaded album
     // and also because it may be removed when messages limit is reached
@@ -1386,6 +1400,7 @@ const MessageList = ({
         isQuickPreview={isQuickPreview}
         canPost={canPost}
         canManageBotForumTopics={canManageBotForumTopics}
+        withTopicSeparators={withTopicSeparators}
         shouldScrollToBottom={shouldScrollToBottom}
         onScrollDownToggle={onScrollDownToggle}
         onContentResize={handleContentResize}
@@ -1427,6 +1442,7 @@ export default memo(withGlobal<OwnProps>(
     const messageIds = selectCurrentMessageIds(global, chatId, threadId, type);
     const chatMessagesById = selectChatMessages(global, chatId);
     const ephemeralById = type === 'thread' ? selectChatEphemeralMessages(global, chatId) : undefined;
+    const anchoredById = type === 'thread' ? selectChatAnchoredMessages(global, chatId) : undefined;
     const messagesById = type === 'scheduled'
       ? selectChatScheduledMessages(global, chatId)
       : chatMessagesById;
@@ -1440,8 +1456,6 @@ export default memo(withGlobal<OwnProps>(
       return { currentUserId } as Complete<StateProps>;
     }
 
-    const isRestricted = selectIsChatRestricted(global, chatId);
-    const restrictionReasons = selectActiveRestrictionReasons(global, chat?.restrictionReasons);
     const lastMessage = type === 'thread' ? selectChatLastMessage(global, chatId, isSavedDialog ? 'saved' : 'all')
       : undefined;
     const focusingId = selectFocusedMessageId(global, chatId);
@@ -1487,8 +1501,8 @@ export default memo(withGlobal<OwnProps>(
       isActive,
       areAdsEnabled,
       isChatLoaded: true,
-      isRestricted,
-      restrictionReasons,
+      restrictionReasons: chat.restrictionReasons,
+      ignoreRestrictionReasons: global.appConfig.ignoreRestrictionReasons,
       isChannelChat: isChatChannel(chat),
       isChatMonoforum: isChatMonoforum(chat),
       isGroupChat: isChatGroup(chat),
@@ -1505,6 +1519,7 @@ export default memo(withGlobal<OwnProps>(
       messageIds,
       messagesById,
       ephemeralById,
+      anchoredById,
       firstUnreadId: selectFirstUnreadId(global, chatId, threadId),
       isViewportNewest: type !== 'thread' || selectIsViewportNewest(global, chatId, threadId),
       focusingId,
@@ -1515,6 +1530,7 @@ export default memo(withGlobal<OwnProps>(
       noMessageSendingAnimation: !selectPerformanceSettingsValue(global, 'messageSendingAnimations'),
       isServiceNotificationsChat: chatId === SERVICE_NOTIFICATIONS_USER_ID,
       isForum: chat.isForum,
+      withTopicSeparators: chat.isForum && !chat.isBotForum && threadId === MAIN_THREAD_ID,
       isEmptyThread,
       currentUserId,
       isChatProtected: selectIsChatProtected(global, chatId),
@@ -1564,8 +1580,4 @@ function getAddedMessageInfo(
       : undefined,
     previousLastCurrentMessageId,
   };
-}
-
-function generateChannelJoinMessageId(lastMessageId: number) {
-  return lastMessageId + 10e-7; // Smaller than smallest possible id with `getNextLocalMessageId`
 }

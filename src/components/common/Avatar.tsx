@@ -184,7 +184,7 @@ const Avatar = ({
     }
 
     if (isSavedMessages) {
-      return isSavedDialog ? 'my-notes' : 'avatar-saved-messages';
+      return isSavedDialog ? 'my-notes' : 'saved-messages-filled';
     }
 
     if (isDeleted) {

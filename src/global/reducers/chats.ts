@@ -11,6 +11,7 @@ import {
   areSortedArraysEqual, buildCollectionByKey, omit, omitUndefined, pick,
 } from '../../util/iteratees';
 import { selectChatFullInfo } from '../selectors';
+import { clearEphemeralMessages } from './messages';
 import { updateThreadInfoLastMessageId } from './threads';
 import { addUnreadCount, removeUnreadCount } from './unreadCounters';
 
@@ -388,7 +389,7 @@ export function leaveChat<T extends GlobalState>(global: T, leftChatId: string):
   global = updateChat(global, leftChatId, { isNotJoined: true });
   global = updateChatFullInfo(global, leftChatId, { joinInfo: undefined });
 
-  return global;
+  return clearEphemeralMessages(global, leftChatId);
 }
 
 export function removeChatFromChatLists<T extends GlobalState>(

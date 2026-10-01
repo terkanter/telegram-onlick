@@ -27,6 +27,8 @@ import lockPreviewPath from '../../assets/lock.png';
 import monkeyPath from '../../assets/monkey.svg';
 import spoilerMaskPath from '../../assets/spoilers/mask.svg';
 import telegramLogoPath from '../../assets/telegram-logo.svg';
+import pausePreviewPath from '../../assets/tgs-previews/Pause.svg';
+import playPreviewPath from '../../assets/tgs-previews/Play.svg';
 
 export type UiLoaderPage =
   'main'
@@ -92,6 +94,8 @@ const preloadTasks = {
     preloadAvatars(),
     preloadImage(spoilerMaskPath),
     preloadImage(starIconPath),
+    preloadImage(playPreviewPath),
+    preloadImage(pausePreviewPath),
     localizationReadyPromise,
   ]),
   authPhoneNumber: () => Promise.all([

@@ -3,7 +3,7 @@ import { getActions } from '../../../global';
 
 import type { ApiMessage, ApiMessageWebPage, ApiTypeStory, ApiWebPage, ApiWebPageFull } from '../../../api/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
-import { AudioOrigin, type ThemeKey, type WebPageMediaSize } from '../../../types';
+import type { ThemeKey, WebPageMediaSize } from '../../../types';
 
 import { RE_TME_LINK } from '../../../config';
 import { getPhotoFullDimensions } from '../../../global/helpers';
@@ -301,7 +301,8 @@ const WebPage = ({
           <Audio
             theme={theme}
             message={message!}
-            origin={AudioOrigin.Inline}
+            variant="inline"
+            noPlaylist
             noAvatars={noAvatars}
             isDownloading={isDownloading}
             onPlay={onAudioPlay}

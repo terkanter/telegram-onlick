@@ -49,7 +49,10 @@
   .sideButton {
     width: 100%;
     height: 100%;
-    animation: fade-in 0.2s ease-out;
+
+    &.appearing {
+      animation: fade-in 0.2s ease-out;
+    }
 
     :global(body.no-page-transitions) & {
       animation: none;

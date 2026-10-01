@@ -80,6 +80,7 @@ export { default as AiTonePreviewModal }
   from '../components/modals/aiTonePreview/AiTonePreviewModal';
 
 export { default as AttachmentModal } from '../components/middle/composer/AttachmentModal';
+export { default as MediaEditor } from '../components/ui/mediaEditor/MediaEditor';
 export { default as PollModal } from '../components/modals/poll/PollModal';
 export { default as ToDoListModal } from '../components/middle/composer/ToDoListModal';
 export { default as SymbolMenu } from '../components/middle/composer/SymbolMenu';
@@ -106,6 +107,7 @@ export { default as Management } from '../components/right/management/Management
 export { default as PaymentModal } from '../components/payment/PaymentModal';
 export { default as ReceiptModal } from '../components/payment/ReceiptModal';
 export { default as InviteViaLinkModal } from '../components/modals/inviteViaLink/InviteViaLinkModal';
+export { default as AudioPlaylistModal } from '../components/modals/audioPlaylist/AudioPlaylistModal';
 export { default as OneTimeMediaModal } from '../components/modals/oneTimeMedia/OneTimeMediaModal';
 export { default as BrowserCloseConfirmationModal } from '../components/main/BrowserCloseConfirmationModal';
 export { default as FrozenAccountModal } from '../components/modals/frozenAccount/FrozenAccountModal';

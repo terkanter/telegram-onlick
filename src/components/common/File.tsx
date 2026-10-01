@@ -1,4 +1,4 @@
-import type { ElementRef } from '../../lib/teact/teact';
+import type { ElementRef, TeactNode } from '../../lib/teact/teact';
 import {
   memo, useRef,
 } from '../../lib/teact/teact';
@@ -55,6 +55,7 @@ type OwnProps = {
   transferProgress?: number;
   actionIcon?: IconName;
   contextActions?: MenuItemContextAction[];
+  children?: TeactNode;
   onClick?: () => void;
   onDateClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
 };
@@ -79,6 +80,7 @@ const File = ({
   actionIcon,
   contextActions,
   observeIntersection,
+  children,
   onClick,
   onDateClick,
 }: OwnProps) => {
@@ -233,6 +235,7 @@ const File = ({
           ))}
         </Menu>
       )}
+      {children}
     </div>
   );
 };

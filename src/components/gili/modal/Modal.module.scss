@@ -3,9 +3,9 @@
     --modal-max-width: 35rem;
     --modal-max-height: min(92dvh, 50rem);
     --modal-header-height: 3.5rem;
-    --modal-content-block-padding: 0.5rem;
+    --modal-content-block-padding: 1rem;
     --modal-scroll-fade-size: 0rem;
-    --modal-border-radius: 1.75rem;
+    --modal-border-radius: 2rem;
     --modal-background-color: var(--color-background-secondary);
 
     user-select: none;
@@ -184,7 +184,7 @@
     align-items: center;
 
     min-height: var(--modal-header-height);
-    padding: 0.5rem 1rem;
+    padding: 0.75rem;
 
     background-color: var(--color-background-secondary);
   }

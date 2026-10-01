@@ -2,7 +2,7 @@ import type { ApiMessage, ApiMessagePoll, ApiWebPage } from '../../../../api/typ
 import type { IAlbum } from '../../../../types';
 
 import { EMOJI_SIZES, MESSAGE_CONTENT_CLASS_NAME } from '../../../../config';
-import { getMessageContent } from '../../../../global/helpers';
+import { getMessageContent, getRichMessageAudios } from '../../../../global/helpers';
 import getSingularPaidMedia from './getSingularPaidMedia';
 
 export function buildContentClassName(
@@ -51,8 +51,9 @@ export function buildContentClassName(
   const {
     photo = paidMediaPhoto, video = paidMediaVideo,
     audio, voice, document, contact, location, invoice, storyData,
-    giveaway, giveawayResults,
+    giveaway, giveawayResults, richMessage,
   } = content;
+  const hasRichMessageAudio = Boolean(richMessage && getRichMessageAudios(richMessage).ids.length);
   const text = album?.hasMultipleCaptions ? undefined : getMessageContent(album?.captionMessage || message).text;
   const hasFactCheck = Boolean(message.factCheck?.text);
 
@@ -121,7 +122,7 @@ export function buildContentClassName(
     }
   } else if (video) {
     classNames.push('video');
-  } else if (audio) {
+  } else if (audio || hasRichMessageAudio) {
     classNames.push('audio');
   } else if (voice) {
     classNames.push('voice');

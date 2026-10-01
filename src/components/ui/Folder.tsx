@@ -106,7 +106,7 @@ const Folder = ({
       </div>
       <span className={styles.inner}>
         <div className={styles.title}>
-          {isBlocked && <Icon name="lock-badge" className={styles.blocked} />}
+          {isBlocked && <Icon name="lock-filled" className={styles.blocked} />}
           {title}
         </div>
       </span>

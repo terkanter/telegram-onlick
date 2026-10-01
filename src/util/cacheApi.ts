@@ -1,10 +1,12 @@
 import {
+  CUSTOM_BG_CACHE_NAME,
   LANG_CACHE_NAME,
   MEDIA_CACHE_NAME,
   MEDIA_CACHE_NAME_AVATARS,
   MEDIA_PROGRESSIVE_CACHE_NAME,
 } from '../config';
 import { yieldToMain } from './browser/scheduler';
+import { loadPasscodeMeta, requestPasscodeStateLock } from './passcode/meta';
 import { ACCOUNT_SLOT } from './multiaccount';
 
 const cacheApi = self.caches;
@@ -17,9 +19,9 @@ const CLEANUP_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
 const CLEARABLE_CACHE_NAMES = [MEDIA_CACHE_NAME, MEDIA_CACHE_NAME_AVATARS, MEDIA_PROGRESSIVE_CACHE_NAME];
 const CACHE_KEY_BASE = `${self.location.origin}/`;
 
-cleanup(CLEARABLE_CACHE_NAMES);
+void cleanup(CLEARABLE_CACHE_NAMES).catch(() => undefined);
 setInterval(() => {
-  cleanup(CLEARABLE_CACHE_NAMES);
+  void cleanup(CLEARABLE_CACHE_NAMES).catch(() => undefined);
 }, CLEANUP_INTERVAL);
 
 let isSupported: boolean | undefined;
@@ -85,6 +87,10 @@ async function fetchFromCache(
   if (!cacheApi) {
     return undefined;
   }
+  if (isPasscodeProtectedCache(resolvedCacheName)) {
+    const hasPasscode = await loadPasscodeMeta().then(Boolean).catch(() => true);
+    if (hasPasscode) return undefined;
+  }
 
   try {
     const request = buildCacheRequest(key);
@@ -146,6 +152,22 @@ export async function save(cacheName: string, key: string, data: AnyLiteral | Bl
     return false;
   }
 
+  const resolvedCacheName = getCacheName(cacheName);
+  if (isPasscodeProtectedCache(resolvedCacheName)) {
+    return requestPasscodeStateLock(async () => {
+      if (await loadPasscodeMeta()) return false;
+      return saveToCache(resolvedCacheName, key, data);
+    });
+  }
+
+  return saveToCache(resolvedCacheName, key, data);
+}
+
+async function saveToCache(
+  resolvedCacheName: string,
+  key: string,
+  data: AnyLiteral | Blob | ArrayBuffer | string,
+) {
   try {
     const cacheData = typeof data === 'string' || data instanceof Blob || data instanceof ArrayBuffer
       ? data
@@ -153,7 +175,7 @@ export async function save(cacheName: string, key: string, data: AnyLiteral | Bl
     const request = buildCacheRequest(key);
     const response = new Response(cacheData);
     response.headers.set(LAST_ACCESS_HEADER, Date.now().toString());
-    const cache = await cacheApi.open(getCacheName(cacheName));
+    const cache = await cacheApi.open(resolvedCacheName);
     await cache.put(request, response);
 
     return true;
@@ -221,6 +243,7 @@ async function clearCache(resolvedCacheName: string) {
 
 export async function cleanup(cacheNames: string[]) {
   if (!cacheApi) return;
+  if (await loadPasscodeMeta()) return;
 
   try {
     for (const cacheName of cacheNames) {
@@ -249,6 +272,13 @@ export function purgeClearableCache() {
   CLEARABLE_CACHE_NAMES.forEach((cacheName) => clear(cacheName));
 }
 
+export async function purgePasscodeCaches() {
+  if (!cacheApi) return;
+
+  const cacheNames = await cacheApi.keys();
+  await Promise.all(cacheNames.filter(isPasscodeProtectedCache).map((cacheName) => cacheApi.delete(cacheName)));
+}
+
 async function getAccountScopedCacheNames(cacheName: string) {
   if (!cacheApi) return [];
 
@@ -265,6 +295,13 @@ function buildCacheRequest(key: string) {
   // To avoid the error "Request scheme 'webdocument' is unsupported"
   const normalizedKey = key.replace(/:/g, '_');
   return new Request(new URL(normalizedKey, CACHE_KEY_BASE));
+}
+
+function isPasscodeProtectedCache(cacheName: string) {
+  return [
+    ...CLEARABLE_CACHE_NAMES,
+    CUSTOM_BG_CACHE_NAME,
+  ].some((name) => cacheName === name || cacheName.startsWith(`${name}_`));
 }
 
 async function updateAccessTime(cache: Cache, request: Request, response: Response) {

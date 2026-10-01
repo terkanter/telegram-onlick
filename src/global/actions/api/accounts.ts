@@ -1,4 +1,5 @@
 import type { ApiAudio } from '../../../api/types';
+import type { RequiredGlobalActions } from '../../index';
 import type { GlobalState } from '../../types';
 
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
@@ -7,7 +8,13 @@ import { oldTranslate } from '../../../util/oldLangProvider';
 import { callApi } from '../../../api/gramjs';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { updateUserFullInfo, updateUserSavedMusic } from '../../reducers';
-import { selectChat, selectUserFullInfo, selectUserSavedMusic } from '../../selectors';
+import { appendShufflePlaylist, removeTrackFromShuffle } from '../../reducers/audioPlayer';
+import {
+  selectChat, selectTabState, selectUserFullInfo, selectUserSavedMusic,
+} from '../../selectors';
+import {
+  selectIsPlaylistFullyLoaded, selectPlaybackSource, selectPlaylistKeys,
+} from '../../selectors/audioPlayer';
 
 addActionHandler('loadSavedMusicIds', async (global): Promise<void> => {
   if (global.users.savedMusicById || global.users.isSavedMusicLoading) return;
@@ -24,6 +31,12 @@ addActionHandler('loadSavedMusicIds', async (global): Promise<void> => {
   global = getGlobal();
   global = updateSavedMusicState(global, savedMusicById, false);
   setGlobal(global);
+});
+
+addActionHandler('reportMusicListen', async (global, actions, payload): Promise<void> => {
+  const { audio, listenedDuration, isPageUnload } = payload;
+
+  await callApi('reportMusicListen', { audio, listenedDuration, isPageUnload });
 });
 
 addActionHandler('toggleMusicInProfile', async (global, actions, payload): Promise<void> => {
@@ -54,12 +67,86 @@ addActionHandler('toggleMusicInProfile', async (global, actions, payload): Promi
   }
 
   global = updateSavedMusicState(global, updatedSavedMusicById, false);
-  global = updateOwnProfileMusic(global, audio, shouldRemove);
+  global = updateOwnProfileMusic(global, actions, audio, shouldRemove);
+
+  const tabIdsToClosePlayer: number[] = [];
+  Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
+    const source = selectPlaybackSource(global, otherTabId);
+    if (source?.type !== 'savedMusic' || source.peerId !== global.currentUserId) return;
+
+    if (shouldRemove) {
+      global = removeTrackFromShuffle(global, audio.id, otherTabId);
+      const { activeItem } = selectTabState(global, otherTabId).audioPlayer;
+      if (activeItem?.type === 'savedMusic' && activeItem.audioId === audio.id) {
+        tabIdsToClosePlayer.push(otherTabId);
+      }
+      return;
+    }
+
+    if (selectPlaylistKeys(global, otherTabId)?.includes(audio.id)) {
+      global = appendShufflePlaylist(global, [audio.id], selectIsPlaylistFullyLoaded(global, otherTabId), otherTabId);
+    }
+  });
+
   setGlobal(global);
+  tabIdsToClosePlayer.forEach((otherTabId) => actions.closeAudioPlayer({ tabId: otherTabId }));
   actions.showNotification({
     message: { key: shouldRemove ? 'AudioSaveToMyProfileUnsaved' : 'AudioSaveToMyProfileSaved' },
     tabId,
   });
+});
+
+let savedMusicReorderQueue: Promise<unknown> = Promise.resolve();
+let savedMusicReorderGeneration = 0;
+
+addActionHandler('reorderSavedMusic', async (global, actions, payload): Promise<void> => {
+  const { audioId, afterAudioId, tabId = getCurrentTabId() } = payload;
+
+  const { currentUserId } = global;
+  if (!currentUserId) return;
+
+  const savedMusic = selectUserSavedMusic(global, currentUserId);
+  const audio = savedMusic?.byId[audioId];
+  if (!savedMusic || !audio || audioId === afterAudioId) return;
+
+  const ids = savedMusic.ids.filter((id) => id !== audioId);
+  const afterIndex = afterAudioId ? ids.indexOf(afterAudioId) : -1;
+  ids.splice(afterIndex + 1, 0, audioId);
+
+  global = applySavedMusicOrder(global, currentUserId, ids);
+  setGlobal(global);
+
+  const generation = savedMusicReorderGeneration;
+  const request = savedMusicReorderQueue.then(() => (
+    generation === savedMusicReorderGeneration
+      ? callApi('saveMusic', {
+        audio,
+        afterAudio: afterAudioId ? savedMusic.byId[afterAudioId] : undefined,
+      })
+      : undefined
+  ));
+  savedMusicReorderQueue = request.catch(() => undefined);
+
+  const result = await request;
+  if (result) return;
+  if (generation !== savedMusicReorderGeneration) return;
+
+  savedMusicReorderGeneration += 1;
+
+  global = getGlobal();
+  const latestSavedMusic = selectUserSavedMusic(global, currentUserId);
+  if (latestSavedMusic) {
+    global = updateUserSavedMusic(global, currentUserId, {
+      ...latestSavedMusic,
+      ids: [],
+      isFullyLoaded: false,
+    });
+  }
+  setGlobal(global);
+
+  actions.loadSavedMusic({ userId: currentUserId, tabId });
+  actions.loadFullUser({ userId: currentUserId });
+  actions.showNotification({ message: { key: 'GeneralError' }, tabId });
 });
 
 addActionHandler('reportPeer', async (global, actions, payload): Promise<void> => {
@@ -337,7 +424,23 @@ addActionHandler('setAccountTTL', async (global, actions, payload): Promise<void
 });
 
 // Keeps the current user's own profile playlist in step with the toggle, so it does not need a refetch
-function updateOwnProfileMusic<T extends GlobalState>(global: T, audio: ApiAudio, shouldRemove?: boolean): T {
+function applySavedMusicOrder<T extends GlobalState>(global: T, userId: string, ids: string[]): T {
+  const savedMusic = selectUserSavedMusic(global, userId);
+  if (!savedMusic) return global;
+
+  global = updateUserSavedMusic(global, userId, { ...savedMusic, ids });
+
+  const firstAudio = savedMusic.byId[ids[0]];
+  if (firstAudio && selectUserFullInfo(global, userId)) {
+    global = updateUserFullInfo(global, userId, { savedMusic: firstAudio });
+  }
+
+  return global;
+}
+
+function updateOwnProfileMusic<T extends GlobalState>(
+  global: T, actions: RequiredGlobalActions, audio: ApiAudio, shouldRemove?: boolean,
+): T {
   const { currentUserId } = global;
   if (!currentUserId || !selectUserFullInfo(global, currentUserId)) return global;
 
@@ -365,12 +468,18 @@ function updateOwnProfileMusic<T extends GlobalState>(global: T, audio: ApiAudio
     return updateUserFullInfo(global, currentUserId, { savedMusic: audio });
   }
 
-  const remainingIds = selectUserSavedMusic(global, currentUserId)?.ids;
-  if (!remainingIds) return global;
+  const remainingMusic = selectUserSavedMusic(global, currentUserId);
+  if (!remainingMusic || (!remainingMusic.ids.length && !remainingMusic.isFullyLoaded)) {
+    if (selectUserFullInfo(global, currentUserId)?.savedMusic?.id === audio.id) {
+      actions.loadFullUser({ userId: currentUserId });
+      return updateUserFullInfo(global, currentUserId, { savedMusic: undefined });
+    }
+    return global;
+  }
 
   return updateUserFullInfo(global, currentUserId, {
-    savedMusic: remainingIds.length
-      ? selectUserSavedMusic(global, currentUserId)!.byId[remainingIds[0]]
+    savedMusic: remainingMusic.ids.length
+      ? remainingMusic.byId[remainingMusic.ids[0]]
       : undefined,
   });
 }

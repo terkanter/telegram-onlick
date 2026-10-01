@@ -229,7 +229,7 @@ const StickerButton = <T extends number | ApiSticker | ApiBotInlineMediaResult |
 
     if (onUnfaveClick) {
       items.push(
-        <MenuItem icon="favorite" onClick={handleContextUnfave}>
+        <MenuItem icon="star-regular" onClick={handleContextUnfave}>
           {lang('Stickers.RemoveFromFavorites')}
         </MenuItem>,
       );
@@ -237,7 +237,7 @@ const StickerButton = <T extends number | ApiSticker | ApiBotInlineMediaResult |
 
     if (onFaveClick) {
       items.push(
-        <MenuItem icon="favorite" onClick={handleContextFave}>
+        <MenuItem icon="star-regular" onClick={handleContextFave}>
           {lang('Stickers.AddToFavorites')}
         </MenuItem>,
       );
@@ -314,7 +314,7 @@ const StickerButton = <T extends number | ApiSticker | ApiBotInlineMediaResult |
         <div
           className="sticker-locked"
         >
-          <Icon name="lock-badge" />
+          <Icon name="lock-filled" />
         </div>
       )}
       {!noIcons && !noShowPremium && isPremiumSticker && !isLocked && (

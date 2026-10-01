@@ -132,6 +132,7 @@
 }
 
 .sharedMedia {
+  isolation: isolate;
   position: relative;
 
   display: flex;
@@ -245,9 +246,14 @@
     }
   }
 
+  &.pollsList {
+    padding: 1rem;
+
+    @include mixins.adapt-padding-to-scrollbar(1rem);
+  }
+
   &.audioList,
-  &.voiceList,
-  &.playlistList {
+  &.voiceList {
     padding: 1.25rem;
 
     :global(.Audio) {

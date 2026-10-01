@@ -1,4 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
 import {
   memo, useCallback, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
@@ -22,7 +21,6 @@ import {
   selectCanTranslateChat,
   selectChat,
   selectChatFullInfo,
-  selectChatHistoryTtl,
   selectIsChatRestricted,
   selectIsChatWithSelf,
   selectIsCurrentUserFrozen,
@@ -35,7 +33,6 @@ import {
   selectUserFullInfo,
 } from '../../global/selectors';
 import { ARE_CALLS_SUPPORTED, IS_APP } from '../../util/browser/windowEnvironment';
-import { formatCountdown } from '../../util/dates/oldDateFormat';
 import { isUserId } from '../../util/entities/ids';
 import focusNoScroll from '../../util/focusNoScroll';
 
@@ -81,7 +78,6 @@ interface StateProps {
   canCreateVoiceChat?: boolean;
   channelMonoforumId?: string;
   pendingJoinRequests?: number;
-  historyTtl?: number;
   noAnimation?: boolean;
   canTranslate?: boolean;
   isTranslating?: boolean;
@@ -93,7 +89,7 @@ interface StateProps {
   currentTone?: TranslationTone;
 }
 
-const HeaderActions: FC<OwnProps & StateProps> = ({
+const HeaderActions = ({
   chatId,
   threadId,
   noMenu,
@@ -112,7 +108,6 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
   canCreateVoiceChat,
   channelMonoforumId,
   pendingJoinRequests,
-  historyTtl,
   isRightColumnShown,
   isForForum,
   noAnimation,
@@ -125,7 +120,7 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
   isAccountFrozen,
   currentTone,
   onTopicSearch,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     openMiddleSearch,
     requestMasterAndRequestCall,
@@ -148,11 +143,6 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
   // In-chat message search is gated by the role too (see roles spec §1)
   const canSearch = canSearchProp && canSearchByRole;
 
-  const historyTtlText = historyTtl ? formatCountdown(lang, historyTtl) : undefined;
-  const autoDeleteInfoText = historyTtlText
-    ? lang('AutoDeleteSetInfo', { time: historyTtlText })
-    : undefined;
-
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<IAnchorPosition | undefined>(undefined);
 
@@ -168,12 +158,6 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
 
   const handleHeaderMenuHide = useLastCallback(() => {
     setMenuAnchor(undefined);
-  });
-
-  const handleAutoDeleteInfoClick = useLastCallback(() => {
-    if (!autoDeleteInfoText) return;
-
-    showNotification({ message: autoDeleteInfoText });
   });
 
   const handleTranslateClick = useLastCallback(() => {
@@ -287,8 +271,8 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
     'Mod+F': handleHotkeySearchClick,
   }), []));
 
-  const MoreMenuButton: FC<{ onTrigger: () => void; isOpen?: boolean }> = useMemo(() => {
-    return ({ onTrigger, isOpen }) => (
+  const MoreMenuButton = useMemo(() => {
+    return ({ onTrigger, isOpen }: { onTrigger: () => void; isOpen?: boolean }) => (
       <Button
         round
         ripple={isRightColumnShown}
@@ -322,21 +306,21 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
             submenu={(
               <>
                 <MenuItem
-                  icon={currentTone === 'neutral' ? 'message-succeeded' : undefined}
+                  icon={currentTone === 'neutral' ? 'check' : undefined}
                   customIcon={currentTone !== 'neutral' ? <Icon name="placeholder" /> : undefined}
                   onClick={() => handleSetTone('neutral')}
                 >
                   {lang('TranslationToneNeutral')}
                 </MenuItem>
                 <MenuItem
-                  icon={currentTone === 'formal' ? 'message-succeeded' : undefined}
+                  icon={currentTone === 'formal' ? 'check' : undefined}
                   customIcon={currentTone !== 'formal' ? <Icon name="placeholder" /> : undefined}
                   onClick={() => handleSetTone('formal')}
                 >
                   {lang('TranslationToneFormal')}
                 </MenuItem>
                 <MenuItem
-                  icon={currentTone === 'casual' ? 'message-succeeded' : undefined}
+                  icon={currentTone === 'casual' ? 'check' : undefined}
                   customIcon={currentTone !== 'casual' ? <Icon name="placeholder" /> : undefined}
                   onClick={() => handleSetTone('casual')}
                 >
@@ -368,17 +352,6 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
             })}
           </MenuItem>
         </DropdownMenu>
-      )}
-      {autoDeleteInfoText && (
-        <Button
-          round
-          ripple={isRightColumnShown}
-          color="translucent"
-          size="smaller"
-          onClick={handleAutoDeleteInfoClick}
-          ariaLabel={autoDeleteInfoText}
-          iconName="timer"
-        />
       )}
       {!isMobile && (
         <>
@@ -539,7 +512,6 @@ export default memo(withGlobal<OwnProps>(
       canEnterVoiceChat,
       canCreateVoiceChat,
       pendingJoinRequests,
-      historyTtl: isMainThread && !isSavedDialog ? selectChatHistoryTtl(global, chatId) : undefined,
       noAnimation,
       canTranslate,
       isTranslating,

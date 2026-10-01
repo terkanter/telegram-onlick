@@ -12,7 +12,7 @@ import {
   MUTE_INDEFINITE_TIMESTAMP,
   UNMUTE_TIMESTAMP,
 } from '../../../config';
-import { toCredentialCreationOptions } from '../../../util/browser/passkeys';
+import { signalUnknownPasskey, toCredentialCreationOptions } from '../../../util/browser/passkeys';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey } from '../../../util/iteratees';
 import { requestPermission, subscribe, unsubscribe } from '../../../util/notifications';
@@ -455,6 +455,7 @@ addActionHandler('loadPrivacySettings', async (global, actions, payload): Promis
     callApi('fetchPrivacySettings', 'birthday'),
     callApi('fetchPrivacySettings', 'gifts'),
     callApi('fetchPrivacySettings', 'noPaidMessages'),
+    callApi('fetchPrivacySettings', 'savedMusic'),
   ]);
 
   if (result.some((e) => e === undefined)) {
@@ -475,6 +476,7 @@ addActionHandler('loadPrivacySettings', async (global, actions, payload): Promis
     birthdaySettings,
     giftsSettings,
     noPaidMessagesSettings,
+    savedMusicSettings,
   ] = result as {
     rules: ApiPrivacySettings;
   }[];
@@ -499,6 +501,7 @@ addActionHandler('loadPrivacySettings', async (global, actions, payload): Promis
         birthday: birthdaySettings.rules,
         gifts: giftsSettings.rules,
         noPaidMessages: noPaidMessagesSettings.rules,
+        savedMusic: savedMusicSettings.rules,
       },
     },
   };
@@ -1062,7 +1065,8 @@ addActionHandler('deletePasskey', async (global, actions, payload): Promise<void
     setGlobal(global);
   }
 
-  await callApi('deletePasskey', { id });
+  const isDeleted = await callApi('deletePasskey', { id });
+  if (isDeleted) signalUnknownPasskey(id);
 
   actions.loadPasskeys();
 });

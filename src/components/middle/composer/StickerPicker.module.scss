@@ -133,12 +133,7 @@
   vertical-align: middle;
 
   &.activated {
-    color: var(--color-text-lighter);
     background-color: var(--color-interactive-element-hover);
-
-    :global(.theme-dark) & {
-      --color-text-lighter: var(--color-text);
-    }
   }
 }
 

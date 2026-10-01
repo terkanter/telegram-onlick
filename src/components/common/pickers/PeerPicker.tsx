@@ -298,7 +298,7 @@ const PeerPicker = <CategoryType extends string = CustomPeerType>({
     const isChecked = category ? selectedCategories?.includes(category.type) : selectedIds.includes(id);
 
     function getInputElement() {
-      if (isLocked) return <Icon name="lock-badge" />;
+      if (isLocked) return <Icon name="lock-filled" />;
       if (itemInputType === 'radio') {
         return <Radio checked={isChecked} disabled={isLocked} onlyInput />;
       }

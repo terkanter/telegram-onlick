@@ -21,6 +21,8 @@ import type {
 import { getTranslationFn } from '../../util/localization';
 import { getUtf8Length } from '../../util/textFormat';
 
+export { hasRichText } from '../../util/richText';
+
 const PREVIEW_OVERFLOW_LENGTH = 1;
 const BLOCK_TEXT_SEPARATOR = '\n';
 const INLINE_TEXT_SEPARATOR = '';
@@ -54,23 +56,6 @@ export function getRichMessageUsage(richMessage: ApiInputRichMessage | ApiRichMe
   appendCountedPageBlocksUsage(richMessage.blocks, 0, usage);
 
   return usage;
-}
-
-export function hasRichText(text: ApiRichText): boolean {
-  switch (text.type) {
-    case 'empty':
-      return false;
-    case 'plain':
-      return Boolean(text.text);
-    case 'concat':
-      return text.texts.some(hasRichText);
-    case 'image':
-    case 'math':
-    case 'customEmoji':
-      return true;
-    default:
-      return hasRichText(getNestedRichText(text));
-  }
 }
 
 export function getRichTextPlainText(text: ApiRichText): string {
@@ -117,6 +102,7 @@ export function getNestedRichText(text: ApiRichText): ApiRichText {
     case 'bankCard':
     case 'mentionName':
     case 'date':
+    case 'button':
       return text.text;
     default:
       return { type: 'empty' };
@@ -136,6 +122,9 @@ function appendPageBlockUsage(block: ApiPageBlock, depth: number, usage: RichMes
   usage.maxDepth = Math.max(usage.maxDepth, depth);
 
   switch (block.type) {
+    case 'buttonRow':
+      block.buttons.forEach((button) => appendRichTextUsage(button.text, depth + 1, usage));
+      break;
     case 'title':
     case 'subtitle':
     case 'header':
@@ -197,6 +186,7 @@ function appendPageBlockUsage(block: ApiPageBlock, depth: number, usage: RichMes
       appendPageCaptionUsage(block.caption, depth + 1, usage);
       break;
     case 'audio':
+    case 'document':
       usage.mediaCount++;
       appendPageCaptionUsage(block.caption, depth + 1, usage);
       break;
@@ -284,6 +274,10 @@ function appendPageBlocksPreviewText(blocks: ApiPageBlock[], parts: string[], ma
 
 function appendPageBlockPreviewText(block: ApiPageBlock, parts: string[], maxLength?: number) {
   switch (block.type) {
+    case 'buttonRow':
+      return appendBlockText(
+        parts, block.buttons.map((button) => getRichTextPlainText(button.text)).join(' '), maxLength,
+      );
     case 'title':
     case 'subtitle':
     case 'header':
@@ -319,6 +313,7 @@ function appendPageBlockPreviewText(block: ApiPageBlock, parts: string[], maxLen
       return appendPageTablePreviewText(block, parts, maxLength);
     case 'photo':
     case 'video':
+    case 'audio':
       return appendPageCaptionPreviewText(block.caption, parts, maxLength);
     case 'math':
       return appendBlockText(parts, getMathPreviewText(), maxLength);
@@ -331,11 +326,12 @@ function appendPageBlockPreviewText(block: ApiPageBlock, parts: string[], maxLen
       return appendPageMediaGroupPreviewText(block, parts, maxLength);
     case 'map':
       return appendPageMapPreviewText(block, parts, maxLength);
+    case 'document':
+      return appendBlockText(parts, getRichTextPlainText(block.caption.text) || block.document.fileName, maxLength);
     case 'unsupported':
     case 'divider':
     case 'anchor':
     case 'channel':
-    case 'audio':
     case 'relatedArticles':
       return maxLength;
   }
@@ -358,7 +354,11 @@ function appendPageListItemsPreviewText(items: ApiPageListItem[], parts: string[
   return remainingLength;
 }
 
-function appendPageOrderedListItemsPreviewText(items: ApiPageListOrderedItem[], parts: string[], maxLength?: number) {
+function appendPageOrderedListItemsPreviewText(
+  items: ApiPageListOrderedItem[],
+  parts: string[],
+  maxLength?: number,
+) {
   let remainingLength = maxLength;
 
   for (let i = 0; i < items.length; i++) {

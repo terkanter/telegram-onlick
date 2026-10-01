@@ -28,6 +28,10 @@
   width: 100%;
 }
 
+.compactTable .tableCell {
+  padding: 0.1875rem;
+}
+
 .stripedTable .tableRow:nth-child(odd) {
   background-color: var(--color-code-bg);
 }
@@ -214,12 +218,11 @@
   border: 0;
   border-radius: 0.375rem;
 
-  color: var(--color-text-secondary);
+  color: var(--color-text);
 
   background: transparent;
 
   &:hover {
-    color: var(--color-text);
     background-color: var(--color-primary-opacity);
   }
 }

@@ -181,6 +181,8 @@ export type ApiUpdateChatTypingDraft = {
   chatId: string;
   id: string;
   threadId?: ThreadId;
+  canStop?: true;
+  shouldKeepOnStop?: true;
 } & ({
   text: ApiFormattedText;
   richMessage?: undefined;
@@ -188,6 +190,13 @@ export type ApiUpdateChatTypingDraft = {
   richMessage: ApiRichMessage;
   text?: undefined;
 });
+
+export type ApiUpdateChatTypingDraftStopped = {
+  '@type': 'updateChatTypingDraftStopped';
+  chatId: string;
+  id: string;
+  threadId?: ThreadId;
+};
 
 export type ApiUpdateStartEmojiInteraction = {
   '@type': 'updateStartEmojiInteraction';
@@ -852,15 +861,20 @@ export type ApiUpdateViewForumAsMessages = {
 
 export type ApiUpdateMessageTranslations = {
   '@type': 'updateMessageTranslations';
+  requestId: string;
   chatId: string;
   messageIds: number[];
-  translations: ApiFormattedText[];
+  translations: {
+    text?: ApiFormattedText;
+    richMessage?: ApiRichMessage;
+  }[];
   toLanguageCode: string;
   tone?: TranslationTone;
 };
 
 export type ApiUpdateFailedMessageTranslations = {
   '@type': 'failedMessageTranslations';
+  requestId: string;
   chatId: string;
   messageIds: number[];
   toLanguageCode: string;
@@ -1031,7 +1045,8 @@ export type ApiUpdate = (
   ApiUpdateRecentStickers | ApiUpdateSavedGifs | ApiUpdateNewScheduledMessage | ApiUpdateMoveStickerSetToTop |
   ApiUpdateScheduledMessageSendSucceeded | ApiUpdateScheduledMessage | ApiUpdateStarPaymentStateCompleted |
   ApiUpdateDeleteScheduledMessages | ApiUpdateResetMessages | ApiUpdateMessageTranslations |
-  ApiUpdateFailedMessageTranslations | ApiUpdateWebPage | ApiUpdateChatTypingDraft | ApiUpdateDiscussion |
+  ApiUpdateFailedMessageTranslations | ApiUpdateWebPage | ApiUpdateChatTypingDraft | ApiUpdateChatTypingDraftStopped
+  | ApiUpdateDiscussion |
   ApiUpdateTwoFaError | ApiUpdateTwoFaStateWaitCode | ApiUpdateWebViewResultSent |
   ApiUpdateJoinChatWebViewDecision |
   ApiUpdateDefaultNotifySettings | ApiUpdatePeerNotifySettings | ApiUpdatePeerBlocked | ApiUpdatePrivacy |

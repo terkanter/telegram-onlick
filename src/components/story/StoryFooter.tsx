@@ -107,7 +107,7 @@ const StoryFooter = ({
 
         {isChannel ? (
           <span className={styles.views}>
-            <Icon name="channelviews" className={styles.viewIcon} />
+            <Icon name="eye" className={styles.viewIcon} />
             {viewsCount}
           </span>
         ) : (

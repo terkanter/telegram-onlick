@@ -96,7 +96,7 @@ const AddChatMembers: FC<OwnProps & StateProps> = ({
         return (
           !memberIds.includes(userId)
           && userId !== currentUserId
-          && (!user || !isUserBot(user) || (!isChannel && user.canBeInvitedToGroup))
+          && (!user || !isUserBot(user) || (!isChannel && user.canBotBeInvitedToGroup))
         );
       }),
     );

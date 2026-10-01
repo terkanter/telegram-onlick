@@ -178,7 +178,7 @@ const ItemPicker = ({
     const isChecked = selectedValues.includes(value);
 
     function getInputElement() {
-      if (isLocked) return <Icon name="lock-badge" />;
+      if (isLocked) return <Icon name="lock-filled" />;
       if (itemInputType === 'radio') {
         return <Radio checked={isChecked} disabled={isLocked} isLoading={isItemLoading} onlyInput />;
       }

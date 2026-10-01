@@ -1,4 +1,3 @@
-import type { FC } from '@teact';
 import {
   memo, useEffect, useLayoutEffect, useMemo, useRef,
 } from '@teact';
@@ -76,6 +75,7 @@ type OwnProps = {
   selectedReactionIds?: string[];
   isStatusPicker?: boolean;
   isReactionPicker?: boolean;
+  isTuckEnabled?: boolean;
   isTranslucent?: boolean;
   noAddButton?: boolean;
   onCustomEmojiSelect: (sticker: ApiSticker) => void;
@@ -124,7 +124,7 @@ const STICKER_SET_IDS_WITH_COVER = new Set([
   POPULAR_SYMBOL_SET_ID,
 ]);
 
-const CustomEmojiPicker: FC<OwnProps & StateProps> = ({
+const CustomEmojiPicker = ({
   className,
   pickerListClassName,
   pickerListStyle,
@@ -146,6 +146,7 @@ const CustomEmojiPicker: FC<OwnProps & StateProps> = ({
   canAnimate,
   isReactionPicker,
   isStatusPicker,
+  isTuckEnabled,
   isTranslucent,
   noAddButton,
   isSavedMessages,
@@ -162,7 +163,7 @@ const CustomEmojiPicker: FC<OwnProps & StateProps> = ({
   onReactionSelect,
   onReactionContext,
   onDismiss,
-}) => {
+}: OwnProps & StateProps) => {
   const containerRef = useRef<HTMLDivElement>();
   const headerRef = useRef<HTMLDivElement>();
 
@@ -467,7 +468,7 @@ const CustomEmojiPicker: FC<OwnProps & StateProps> = ({
         onClick={() => selectStickerSet(isRecent ? 0 : index)}
       >
         {withCover && isRecent ? (
-          <Icon name="recent" />
+          <Icon name="clock" />
         ) : withCover ? (
           <StickerSetCover
             stickerSet={stickerSet as ApiStickerSet}
@@ -523,6 +524,7 @@ const CustomEmojiPicker: FC<OwnProps & StateProps> = ({
           className={buildClassName(
             styles.inner,
             isStatusPicker && styles.statusPickerInner,
+            isTuckEnabled && styles.tuckPickerInner,
             isSearchActive && styles.searchActive,
           )}
         >

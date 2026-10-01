@@ -82,7 +82,7 @@ export function scheduleEphemeralExpiration(global: GlobalState) {
   let nextExpiration: number | undefined;
   Object.values(global.messages.byChatId).forEach(({ ephemeralById }) => {
     Object.values(ephemeralById).forEach((message) => {
-      if (message.sendingState) return;
+      if (message.sendingState || message.anchorMsgId) return;
 
       const expiration = message.date + EPHEMERAL_MESSAGE_TTL_SECONDS;
       if (nextExpiration === undefined || expiration < nextExpiration) {
@@ -104,6 +104,7 @@ function expireEphemeralMessages() {
   Object.entries(global.messages.byChatId).forEach(([chatId, { ephemeralById }]) => {
     const expiredIds = Object.values(ephemeralById)
       .filter((message) => !message.sendingState
+        && !message.anchorMsgId
         && message.date + EPHEMERAL_MESSAGE_TTL_SECONDS <= serverTime)
       .map(({ id }) => id);
     if (expiredIds.length) {

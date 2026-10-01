@@ -98,7 +98,7 @@ const ListTopPeerItem = memo(({
       <div className={styles.avatarWrapper}>
         <Avatar peer={peer} isSavedMessages={isSelf} size={48} />
         <div className={styles.checkmark}>
-          <Icon name="check-bold" />
+          <Icon name="check" />
         </div>
       </div>
       <div className={styles.name}>{renderText(name || NBSP)}</div>

@@ -100,6 +100,7 @@ const InstantViewTab = ({
       <article key={page.url} className={styles.article}>
         <div className={buildClassName(styles.content, hasCover && styles.contentWithCover)}>
           <RichContent
+            webPageId={webPageId}
             blocks={page.blocks}
             isRtl={page.isRtl}
             pageUrl={page.url}

@@ -1,5 +1,6 @@
 import type { TLMessage } from '../tl/core';
 
+import { throttle } from '../../../util/schedulers';
 import { RPCError, RPCMessageToError } from '../errors';
 import {
   BinaryReader, type Logger, MessagePacker,
@@ -47,6 +48,8 @@ const SERVER_SALT_REQUEST_RETRY_DELAY = 60000;
 const MILLISECONDS_PER_SECOND = 1000;
 const TRANSPORT_CODE_LENGTH = 4;
 const MESSAGE_ID_TOO_HIGH_ERROR_CODE = 17;
+const ACK_FLUSH_DELAY = 10000;
+const ACK_FLUSH_THRESHOLD = 16;
 
 type SentMessage = {
   msgId: bigint;
@@ -438,11 +441,30 @@ export default class MTProtoSender {
 
         if (!this.canRetryMainConnection()) return;
 
+        const connection = this._connection!;
         try {
-          await this._connection!.connect();
+          await connection.connect();
+          if (!this.canRetryMainConnection() || connection !== this._connection) {
+            connection.disconnect();
+            return;
+          }
+
           this.isReconnecting = true;
           if (this._fallbackConnection) this._disconnect(this._fallbackConnection);
-          await this.connect(this._connection!, true, this._fallbackConnection);
+          // Finish the HTTP loops before starting loops on the main connection
+          this._sendQueue.append(undefined);
+          this._sendQueueLongPoll.append(undefined);
+          await Promise.all([this._sendLoopHandle, this._recvLoopHandle, this._longPollLoopHandle]);
+          if (connection !== this._connection) {
+            connection.disconnect();
+            return;
+          }
+          if (this.userDisconnected) {
+            connection.disconnect();
+            this.isReconnecting = false;
+            return;
+          }
+          await this.connect(connection, true, this._fallbackConnection);
           this.isReconnecting = false;
 
           if (this._isFallback) {
@@ -764,10 +786,7 @@ export default class MTProtoSender {
 
       const res = this._sendQueueLongPoll.get();
 
-      if (this.isReconnecting || !this._isFallback) {
-        this._longPollLoopHandle = undefined;
-        return;
-      }
+      if (!this._userConnected || this.isReconnecting || !this._isFallback) break;
 
       if (!res) {
         continue;
@@ -783,15 +802,13 @@ export default class MTProtoSender {
       try {
         await this._fallbackConnection?.send(data);
       } catch (e: any) {
-        this._log.info('Connection closed while sending data');
-        // eslint-disable-next-line no-console
-        console.error(e);
-        this._longPollLoopHandle = undefined;
-        this.isSendingLongPoll = false;
-        if (!this.userDisconnected) {
+        if (!this.userDisconnected && !this.isReconnecting) {
+          this._log.info('Connection closed while sending data');
+          // eslint-disable-next-line no-console
+          console.error(e);
           this.handleConnectionError(e);
         }
-        return;
+        break;
       }
 
       this.isSendingLongPoll = false;
@@ -799,6 +816,7 @@ export default class MTProtoSender {
     }
 
     this._longPollLoopHandle = undefined;
+    this.isSendingLongPoll = false;
   }
 
   /**
@@ -837,6 +855,7 @@ export default class MTProtoSender {
       // This means that while it's not empty we can wait for
       // more messages to be added to the send queue.
       await this._sendQueue.wait();
+      if (!this._userConnected || this.isReconnecting) break;
 
       // If we've had new ACKs appended while waiting for messages to send, add them to queue
       appendAcks();
@@ -917,12 +936,12 @@ export default class MTProtoSender {
           }
         }
       } catch (e: any) {
-        this.logWithIndex.debug(`Connection closed while sending data ${e}`);
-        this._log.info('Connection closed while sending data');
-        // eslint-disable-next-line no-console
-        console.error(e);
         this._sendLoopHandle = undefined;
-        if (!this.userDisconnected) {
+        if (!this.userDisconnected && !this.isReconnecting) {
+          this.logWithIndex.debug(`Connection closed while sending data ${e}`);
+          this._log.info('Connection closed while sending data');
+          // eslint-disable-next-line no-console
+          console.error(e);
           this.handleConnectionError(e);
         }
         return;
@@ -959,9 +978,7 @@ export default class MTProtoSender {
       try {
         body = await this.getConnection()!.recv();
       } catch (e: any) {
-        // this._log.info('Connection closed while receiving data');
-        /** when the server disconnects us we want to reconnect */
-        if (!this.userDisconnected) {
+        if (!this.userDisconnected && !this.isReconnecting) {
           this._log.warn('Connection closed while receiving data');
           // eslint-disable-next-line no-console
           console.error(e);
@@ -970,6 +987,8 @@ export default class MTProtoSender {
         this._recvLoopHandle = undefined;
         return;
       }
+
+      if (!this._userConnected || this.isReconnecting) break;
 
       if (body.length === TRANSPORT_CODE_LENGTH && body.every((byte) => byte === 0)) {
         void this.checkLongPoll();
@@ -1096,7 +1115,7 @@ export default class MTProtoSender {
     this.logWithIndex.debug(`Process message ${message.obj.className}`);
 
     // https://core.telegram.org/mtproto/description#message-sequence-number-msg-seqno
-    if (message.isContentRelated) this._pendingAck.add(message.msgId);
+    if (message.isContentRelated) this.acknowledgeMessage(message.msgId);
 
     if (this.getConnection()!.shouldLongPoll) {
       this._sendQueue.setReady?.(true);
@@ -1111,6 +1130,23 @@ export default class MTProtoSender {
 
     await handler(message);
   }
+
+  private acknowledgeMessage(msgId: bigint) {
+    this._pendingAck.add(msgId);
+    if (this._pendingAck.size >= ACK_FLUSH_THRESHOLD) {
+      this._sendQueue.setReady?.(true);
+      return;
+    }
+
+    this.scheduleAckFlush();
+  }
+
+  // Flush ACKs even when no new requests wake the send loop
+  private scheduleAckFlush = throttle(() => {
+    if (!this._userConnected || this.isReconnecting || !this._pendingAck.size) return;
+
+    this._sendQueue.setReady?.(true);
+  }, ACK_FLUSH_DELAY, false);
 
   /**
    * Pops the states known to match the given ID from pending messages.
@@ -1497,7 +1533,7 @@ export default class MTProtoSender {
    */
   _handleDetailedInfo(message: TLMessage) {
     const { answerMsgId } = message.obj;
-    this._pendingAck.add(answerMsgId);
+    this.acknowledgeMessage(answerMsgId);
     this._log.debug(`Handling detailed info for message ${answerMsgId}`);
   }
 
@@ -1511,7 +1547,7 @@ export default class MTProtoSender {
    */
   _handleNewDetailedInfo(message: TLMessage) {
     const { answerMsgId } = message.obj;
-    this._pendingAck.add(answerMsgId);
+    this.acknowledgeMessage(answerMsgId);
     this._log.debug(`Handling new detailed info for message ${answerMsgId}`);
   }
 

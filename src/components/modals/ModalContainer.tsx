@@ -17,6 +17,7 @@ import AboutAdsModal from './aboutAds/AboutAdsModal.async';
 import AgeVerificationModal from './ageVerification/AgeVerificationModal.async';
 import AiTonePreviewModal from './aiTonePreview/AiTonePreviewModal.async';
 import AttachBotInstallModal from './attachBotInstall/AttachBotInstallModal.async';
+import AudioPlaylistModal from './audioPlaylist/AudioPlaylistModal.async';
 import AutoDeleteTimerModal from './autoDeleteTimer/AutoDeleteTimerModal.async';
 import BirthdaySetupModal from './birthday/BirthdaySetupModal.async';
 import BoostModal from './boost/BoostModal.async';
@@ -158,6 +159,7 @@ type ModalKey = keyof Pick<TabState,
   'qrCodeModal' |
   'quickPreview' |
   'storyStealthModal' |
+  'isAudioPlaylistModalOpen' |
   'isPasskeyModalOpen' |
   'birthdaySetupModal' |
   'leaveGroupModal' |
@@ -299,6 +301,7 @@ const LEGACY_MODALS: LegacyModalRegistry = {
   qrCodeModal: QrCodeModal,
   quickPreview: QuickPreviewModal,
   storyStealthModal: StealthModeModal,
+  isAudioPlaylistModalOpen: AudioPlaylistModal,
   isPasskeyModalOpen: PasskeyModal,
   birthdaySetupModal: BirthdaySetupModal,
   leaveGroupModal: LeaveGroupModal,

@@ -1,4 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
@@ -36,11 +35,11 @@ type OwnProps = {
 
 const USERNAME_HEIGHT_PX = 56;
 
-const ManageUsernames: FC<OwnProps> = ({
+const ManageUsernames = ({
   chatId,
   usernames,
   onEditUsername,
-}) => {
+}: OwnProps) => {
   const {
     showNotification,
     toggleUsername,
@@ -196,11 +195,11 @@ const ManageUsernames: FC<OwnProps> = ({
                     handleUsernameClick(usernameData);
                   }}
                 >
-                  <span className="title">
+                  <span className="title list-item-ellipsis">
                     @
                     {usernameData.username}
                   </span>
-                  <span className="subtitle">{oldLang(subtitle)}</span>
+                  <span className="subtitle list-item-ellipsis">{oldLang(subtitle)}</span>
                 </ListItem>
               </Draggable>
             );

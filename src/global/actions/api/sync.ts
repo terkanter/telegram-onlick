@@ -12,7 +12,8 @@ import { init as initFolderManager } from '../../../util/folderManager';
 import {
   buildCollectionByKey, omitUndefined, pick, pickTruthy, unique,
 } from '../../../util/iteratees';
-import { callApi } from '../../../api/gramjs';
+import { finishWebLogin } from '../../../util/webLogin';
+import { callApi, reconnectApi } from '../../../api/gramjs';
 import { getIsSavedDialog } from '../../helpers';
 import {
   addActionHandler, getActions, getGlobal, setGlobal,
@@ -45,9 +46,9 @@ import {
   selectThreadReadState,
 } from '../../selectors/threads';
 
-const RELEASE_STATUS_TIMEOUT = 15000; // 15 sec;
+const SYNC_RECOVERY_TIMEOUT_MS = 30000; // 30 sec
 
-let releaseStatusTimeout: number | undefined;
+let syncRecoveryTimeout: number | undefined;
 
 addActionHandler('sync', (global, actions): ActionReturnType => {
   if (DEBUG) {
@@ -55,21 +56,26 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
     console.log('>>> START SYNC');
   }
 
-  if (releaseStatusTimeout) {
-    clearTimeout(releaseStatusTimeout);
+  if (syncRecoveryTimeout) {
+    clearTimeout(syncRecoveryTimeout);
   }
 
   global = getGlobal();
   global = { ...global, isSyncing: true };
   setGlobal(global);
 
-  // Workaround for `isSyncing = true` sometimes getting stuck for some reason
-  releaseStatusTimeout = window.setTimeout(() => {
+  const statusTimeout = window.setTimeout(() => {
     global = getGlobal();
+    if (syncRecoveryTimeout !== statusTimeout) return;
+
+    syncRecoveryTimeout = undefined;
+    if (!global.isSyncing || global.passcode.isScreenLocked) return;
+
     global = { ...global, isSyncing: false };
     setGlobal(global);
-    releaseStatusTimeout = undefined;
-  }, RELEASE_STATUS_TIMEOUT);
+    void reconnectApi();
+  }, SYNC_RECOVERY_TIMEOUT_MS);
+  syncRecoveryTimeout = statusTimeout;
 
   const {
     loadAllChats, preloadTopChatMessages, loadCommunities,
@@ -80,7 +86,13 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
   loadAllChats({
     listType: 'active',
     whenFirstBatchDone: async () => {
+      if (syncRecoveryTimeout !== statusTimeout) return;
+
       await loadAndReplaceMessages(global, actions);
+      if (syncRecoveryTimeout !== statusTimeout) return;
+
+      clearTimeout(statusTimeout);
+      syncRecoveryTimeout = undefined;
 
       loadCommunities();
 
@@ -92,6 +104,7 @@ addActionHandler('sync', (global, actions): ActionReturnType => {
         isFetchingDifference: false,
       };
       setGlobal(global);
+      if (global.currentUserId) finishWebLogin(global.currentUserId);
 
       if (DEBUG) {
         // eslint-disable-next-line no-console
@@ -172,7 +185,9 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
           }).filter(Boolean) : [];
 
         const resultMessageIds = result.messages.map(({ id }) => id);
-        const messagesThreads = pick(global.messages.byChatId[currentChatId].threadsById, resultMessageIds);
+        // Can be missing when booting from a stripped cache with a chat already open
+        const currentChatThreadsById = global.messages.byChatId[currentChatId]?.threadsById;
+        const messagesThreads = currentChatThreadsById ? pick(currentChatThreadsById, resultMessageIds) : undefined;
 
         const isDiscussionStartLoaded = !result.messages.length
           || result.messages.some(({ id }) => id === resultDiscussion?.firstMessageId);
@@ -208,10 +223,12 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
         }
         global = updateListedIds(global, currentChatId, activeThreadId, listedIds);
 
-        Object.entries(messagesThreads).forEach(([id, thread]) => {
-          if (!thread?.threadInfo) return;
-          global = updateThreadInfo(global, thread.threadInfo);
-        });
+        if (messagesThreads) {
+          Object.values(messagesThreads).forEach((thread) => {
+            if (!thread?.threadInfo) return;
+            global = updateThreadInfo(global, thread.threadInfo);
+          });
+        }
 
         Object.values(global.byTabId).forEach(({ id: otherTabId }) => {
           const { chatId: otherChatId, threadId: otherThreadId } = selectCurrentMessageList(global, otherTabId) || {};
@@ -264,8 +281,8 @@ async function loadAndReplaceMessages<T extends GlobalState>(global: T, actions:
   setGlobal(global);
 
   Object.values(global.byTabId).forEach(({ id: tabId }) => {
-    const { chatId: audioChatId, messageId: audioMessageId } = selectTabState(global, tabId).audioPlayer;
-    if (audioChatId && audioMessageId && !selectChatMessage(global, audioChatId, audioMessageId)) {
+    const { activeItem } = selectTabState(global, tabId).audioPlayer;
+    if (activeItem?.type === 'message' && !selectChatMessage(global, activeItem.chatId, activeItem.messageId)) {
       actions.closeAudioPlayer({ tabId });
     }
   });
@@ -319,21 +336,24 @@ function preserveCurrentThreads<T extends GlobalState>(global: T) {
     }
 
     const { chatId, threadId = MAIN_THREAD_ID } = currentMessageList;
-    const currentThread = global.messages.byChatId[chatId]?.threadsById[threadId];
+    const messages = global.messages.byChatId[chatId];
+    const currentThread = messages?.threadsById[threadId];
     if (!currentThread) {
       return acc;
     }
 
     const pinnedMessagesById = pickTruthy(
-      global.messages.byChatId[chatId].byId, currentThread.localState?.pinnedIds || [],
+      messages.byId, currentThread.localState?.pinnedIds || [],
     );
 
     acc[chatId] = {
       byId: {
         ...acc[chatId]?.byId,
+        ...pickTruthy(messages.byId, Object.keys(messages.anchoredById).map(Number)),
         ...pinnedMessagesById,
       },
-      ephemeralById: global.messages.byChatId[chatId]?.ephemeralById || {},
+      ephemeralById: messages.ephemeralById,
+      anchoredById: messages.anchoredById,
       summaryById: {},
       threadsById: {
         ...acc[chatId]?.threadsById,
@@ -365,8 +385,12 @@ function preserveThreads<T extends GlobalState>(global: T) {
       if (threadId !== MAIN_THREAD_ID && !hasLocalComposerState) return;
 
       preservedByChatId[chatId] = {
-        byId: { ...preservedByChatId[chatId]?.byId },
+        byId: {
+          ...preservedByChatId[chatId]?.byId,
+          ...pickTruthy(messages.byId, Object.keys(messages.anchoredById).map(Number)),
+        },
         ephemeralById: messages.ephemeralById,
+        anchoredById: messages.anchoredById,
         summaryById: {},
         threadsById: {
           ...preservedByChatId[chatId]?.threadsById,

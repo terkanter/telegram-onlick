@@ -32,7 +32,7 @@ export interface ApiUser {
   hasVideoAvatar?: boolean;
   avatarPhotoId?: string;
   botPlaceholder?: string;
-  canBeInvitedToGroup?: boolean;
+  canBotBeInvitedToGroup?: boolean;
   fakeType?: ApiFakeType;
   isAttachBot?: boolean;
   emojiStatus?: ApiEmojiStatusType;
@@ -119,6 +119,8 @@ export interface ApiUserSavedMusic {
   ids: string[];
   count: number;
   isFullyLoaded: boolean;
+  isLoading?: boolean;
+  isLoaded?: boolean;
 }
 
 export interface ApiSavedGifts {

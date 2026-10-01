@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import {
   useEffect, useLayoutEffect,
   useRef, useSignal, useState,
@@ -14,7 +13,7 @@ import {
   getVideoMediaHash,
   hasMessageTtl,
 } from '../../../global/helpers';
-import { stopCurrentAudio } from '../../../util/audioPlayer';
+import { stopCurrentAudio } from '../../../util/audioPlayback/playbackController';
 import buildClassName from '../../../util/buildClassName';
 import { formatMediaDuration } from '../../../util/dates/oldDateFormat';
 import safePlay from '../../../util/safePlay';
@@ -65,7 +64,7 @@ const PROGRESS_THROTTLE = 16; // Min period needed for `playerEl.currentTime` to
 
 let stopPrevious: NoneToVoidFunction;
 
-const RoundVideo: FC<OwnProps> = ({
+const RoundVideo = ({
   message,
   className,
   canAutoLoad,
@@ -80,7 +79,7 @@ const RoundVideo: FC<OwnProps> = ({
   onHideTranscription,
   isTranscriptionHidden,
   isTranscribing,
-}) => {
+}: OwnProps) => {
   const ref = useRef<HTMLDivElement>();
   const playerRef = useRef<HTMLVideoElement>();
   const circleRef = useRef<SVGCircleElement>();

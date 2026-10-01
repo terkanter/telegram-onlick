@@ -5,6 +5,7 @@ import type {
   ApiMessage,
   ApiMessageEntityTextUrl,
   ApiPeer,
+  ApiRestrictionReason,
   ApiRichMessage,
   ApiStory,
   ApiTypeStory,
@@ -29,11 +30,13 @@ import {
   TME_LINK_PREFIX,
   VERIFICATION_CODES_USER_ID,
   VIDEO_STICKER_MIME_TYPE,
+  WEB_APP_PLATFORM,
 } from '../../config';
 import { areDeepEqual } from '../../util/areDeepEqual';
 import { getRawPeerId, isUserId } from '../../util/entities/ids';
 import { areSortedArraysIntersecting, unique } from '../../util/iteratees';
 import { isLocalMessageId } from '../../util/keys/messageKey';
+import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 import { getServerTime } from '../../util/serverTime';
 import { getGlobal } from '../index';
 import {
@@ -43,7 +46,7 @@ import {
   selectWebPageFromMessage,
 } from '../selectors';
 import { selectThreadIdFromMessage } from '../selectors/threads';
-import { getRichMessagePreviewText } from './richMessage';
+import { getRichMessagePreviewText, getRichMessageUsage } from './richMessage';
 import { getMainUsername } from './users';
 
 const RE_LINK = new RegExp(RE_LINK_TEMPLATE, 'i');
@@ -56,6 +59,19 @@ function getNextLocalMessageId(lastMessageId = 0) {
 export function getMessageHtmlId(messageId: number, index?: number) {
   const parts = ['message', messageId.toString().replace('.', '-'), index].filter(Boolean);
   return parts.join('-');
+}
+
+export function getApplicableRestrictionReasons(
+  restrictionReasons?: ApiRestrictionReason[], ignoreRestrictionReasons?: string[],
+): ApiRestrictionReason[] {
+  if (!restrictionReasons?.length) return MEMO_EMPTY_ARRAY;
+
+  return restrictionReasons.filter((reason) => {
+    const isForCurrentPlatform = reason.platform === 'all' || reason.platform === WEB_APP_PLATFORM;
+    if (!isForCurrentPlatform) return false;
+
+    return !ignoreRestrictionReasons?.includes(reason.reason);
+  });
 }
 
 export function getMessageOriginalId(message: ApiMessage) {
@@ -324,14 +340,18 @@ export function isGeoLiveExpired(message: ApiMessage) {
 }
 
 export function isMessageTranslatable(message: ApiMessage, allowOutgoing?: boolean) {
-  const { text, game } = message.content;
+  const { text, game, richMessage } = message.content;
 
   const isLocal = isMessageLocal(message);
   const isServiceNotification = isServiceNotificationMessage(message);
   const isAction = isActionMessage(message);
 
-  return Boolean(text?.text.length && !text.emojiOnlyCount && !game && (allowOutgoing || !message.isOutgoing)
-    && !isLocal && !isServiceNotification && !isAction && !message.isScheduled);
+  const hasTranslatableContent = Boolean(
+    (richMessage && getRichMessageUsage(richMessage).textLength) || (text?.text.length && !text.emojiOnlyCount),
+  );
+
+  return Boolean(hasTranslatableContent && !game && (allowOutgoing || !message.isOutgoing)
+    && !isLocal && !isServiceNotification && !isAction && !message.isScheduled && !message.isEphemeral);
 }
 
 export function getMessageSingleInlineButton(message: ApiMessage) {

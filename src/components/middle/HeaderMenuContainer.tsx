@@ -1,4 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
@@ -144,7 +143,7 @@ type StateProps = {
 
 const CLOSE_MENU_ANIMATION_DURATION = 200;
 
-const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
+const HeaderMenuContainer = ({
   chatId,
   threadId,
   isOpen,
@@ -199,7 +198,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
   onAsMessagesClick,
   onClose,
   onCloseAnimationEnd,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     updateChatMutedState,
     enterMessageSelectMode,
@@ -647,7 +646,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
           {withForumActions && canCreateTopic && (
             <>
               <MenuItem
-                icon="comments"
+                icon="message"
                 onClick={handleCreateTopicClick}
               >
                 {oldLang('lng_forum_create_topic')}
@@ -810,7 +809,7 @@ const HeaderMenuContainer: FC<OwnProps & StateProps> = ({
           )}
           {hasLinkedChat && (
             <MenuItem
-              icon={isChannel ? 'comments' : 'channel'}
+              icon={isChannel ? 'message' : 'channel'}
               onClick={handleLinkedChatClick}
             >
               {oldLang(isChannel ? 'ViewDiscussion' : 'lng_profile_view_channel')}

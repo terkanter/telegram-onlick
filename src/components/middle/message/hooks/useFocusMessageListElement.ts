@@ -70,9 +70,12 @@ export default function useFocusMessageListElement({
         const bottomReserve = getEffectiveMessageListBottomReserve(messagesContainer);
         const marginReserve = scrollPosition === 'end' ? bottomReserve : topReserve;
 
+        // Scroll to the quote itself so it stays visible in messages taller than the viewport
+        const firstQuote = isQuote ? elementRef.current!.querySelector<HTMLSpanElement>('.is-quote') : undefined;
+
         const result = animateScroll({
           container: messagesContainer,
-          element: elementRef.current!,
+          element: firstQuote || elementRef.current!,
           position: scrollPosition,
           margin: (isToBottom ? BOTTOM_FOCUS_MARGIN : FOCUS_MARGIN) + marginReserve,
           topReserve,
@@ -83,13 +86,10 @@ export default function useFocusMessageListElement({
           shouldReturnMutationFn: true,
         });
 
-        if (isQuote) {
-          const firstQuote = elementRef.current!.querySelector<HTMLSpanElement>('.is-quote');
-          if (firstQuote) {
-            requestMutation(() => {
-              addExtraClass(firstQuote, 'animate');
-            });
-          }
+        if (firstQuote) {
+          requestMutation(() => {
+            addExtraClass(firstQuote, 'animate');
+          });
         }
 
         return result;

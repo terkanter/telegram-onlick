@@ -193,7 +193,7 @@ const EditableCodeBlock = ({
       >
         <div className={buildClassName(styles.languageItems, 'custom-scroll')}>
           <MenuItem
-            customIcon={language ? <Icon name="placeholder" /> : <Icon name="message-succeeded" />}
+            customIcon={language ? <Icon name="placeholder" /> : <Icon name="check" />}
             withPreventDefaultOnMouseDown
             onClick={() => handleSetLanguage(undefined)}
           >
@@ -202,7 +202,7 @@ const EditableCodeBlock = ({
           {SUPPORTED_CODE_LANGUAGES.map((langCode) => (
             <MenuItem
               key={langCode}
-              customIcon={language === langCode ? <Icon name="message-succeeded" /> : <Icon name="placeholder" />}
+              customIcon={language === langCode ? <Icon name="check" /> : <Icon name="placeholder" />}
               withPreventDefaultOnMouseDown
               onClick={() => handleSetLanguage(langCode)}
             >

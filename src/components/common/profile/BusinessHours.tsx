@@ -35,13 +35,11 @@ const DAYS = Array.from({ length: 7 }, (_, i) => i);
 type OwnProps = {
   businessHours: ApiBusinessWorkHours;
   className?: string;
-  isInSettings?: boolean;
 };
 
 const BusinessHours = ({
   businessHours,
   className,
-  isInSettings,
 }: OwnProps) => {
   const [isExpanded, expand, collapse] = useFlag(false);
   const [isMyTime, showInMyTime, showInLocalTime] = useFlag(false);
@@ -125,8 +123,8 @@ const BusinessHours = ({
 
   return (
     <ListItem
-      icon={isInSettings ? 'clock-filled' : 'clock'}
-      iconBg={isInSettings ? 'orange' : undefined}
+      icon="clock-filled"
+      iconBg="pink"
       iconClassName={styles.icon}
       multiline
       className={buildClassName(styles.root, className)}

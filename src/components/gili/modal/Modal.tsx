@@ -13,6 +13,7 @@ import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import buildClassName from '../../../util/buildClassName';
 import captureKeyboardListeners from '../../../util/captureKeyboardListeners';
 import { waitForAnimationEnd } from '../../../util/cssAnimationEndListeners';
+import { disableDirectTextInput, enableDirectTextInput } from '../../../util/directInputManager';
 
 import useContext from '../../../hooks/data/useContext';
 import useFrozenProps from '../../../hooks/useFrozenProps';
@@ -323,6 +324,16 @@ const Modal = ({
     }
 
     return addBodyDialogClass();
+  }, [shouldRender]);
+
+  useEffect(() => {
+    if (!shouldRender) {
+      return undefined;
+    }
+
+    disableDirectTextInput();
+
+    return enableDirectTextInput;
   }, [shouldRender]);
 
   useEffect(() => {

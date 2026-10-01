@@ -4,7 +4,7 @@ Lottie renderer used for `.tgs` stickers and animated emoji, running inside medi
 
 `tlottie.wasm` and `tlottie-no-simd.wasm` are prebuilt binaries vendored from
 [dkaraush/tlottie](https://github.com/dkaraush/tlottie) (MIT License), commit
-[`3ce946c`](https://github.com/dkaraush/tlottie/commit/3ce946c9ede5ece8beead2edd9beab68718d990e),
+[`92df98d`](https://github.com/dkaraush/tlottie/commit/92df98dc209bc39b1e567ec74a8c86a0af5239de),
 and built with its `release-nostd` Cargo profile. The media worker downloads the baseline SIMD build when supported
 and otherwise uses the no-SIMD fallback.
 
@@ -15,7 +15,7 @@ requires Rust with the `wasm32-unknown-unknown` target.
 rustup target add wasm32-unknown-unknown
 
 # Build the no-SIMD fallback.
-RUSTFLAGS="" cargo build --profile release-nostd \
+RUSTFLAGS="-C target-feature=-simd128" cargo build --profile release-nostd \
   --target wasm32-unknown-unknown \
   --no-default-features \
   --features wasm,no-std \

@@ -6,7 +6,7 @@ import type {
   ApiMessageEntityCustomEmoji,
   ApiMessageForwardInfo,
   ApiMessageOutgoingStatus,
-  ApiPeer, ApiRestrictionReason, ApiSponsoredMessage,
+  ApiPeer, ApiSponsoredMessage,
   ApiStickerSetInfo,
   MediaContainer,
 } from '../../api/types';
@@ -26,13 +26,12 @@ import { ApiMessageEntityTypes, MAIN_THREAD_ID } from '../../api/types';
 import {
   GENERAL_TOPIC_ID,
   SERVICE_NOTIFICATIONS_USER_ID,
-  WEB_APP_PLATFORM,
 } from '../../config';
 import { IS_TRANSLATION_SUPPORTED } from '../../util/browser/windowEnvironment';
 import { isUserId } from '../../util/entities/ids';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import { getMessageKey, isLocalMessageId } from '../../util/keys/messageKey';
-import { parseTranslationCacheKey } from '../../util/keys/translationKey';
+import { getTranslationCacheKey, parseTranslationCacheKey } from '../../util/keys/translationKey';
 import { isIpRevealingMedia } from '../../util/media/ipRevealingMedia';
 import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 import { getServerTime } from '../../util/serverTime';
@@ -80,6 +79,7 @@ import {
   selectIsChatWithBot,
   selectIsChatWithSelf,
   selectRequestedChatTranslationLanguage,
+  selectRequestedChatTranslationTone,
 } from './chats';
 import { selectCurrentLimit } from './limits';
 import { selectMessageDownloadableMedia } from './media';
@@ -115,6 +115,22 @@ export function selectCurrentMessageList<T extends GlobalState>(
   return undefined;
 }
 
+export function selectCanOpenMessageList<T extends GlobalState>(
+  global: T,
+  chatId: string | undefined,
+  threadId: ThreadId | undefined,
+  type: MessageListType = 'thread',
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  if (!selectTabState(global, tabId).richMediaUploadBlockingCount) return true;
+
+  const currentMessageList = selectCurrentMessageList(global, tabId);
+  return Boolean(currentMessageList
+    && currentMessageList.chatId === chatId
+    && currentMessageList.threadId === threadId
+    && currentMessageList.type === type);
+}
+
 export function selectCurrentChat<T extends GlobalState>(
   global: T,
   ...[tabId = getCurrentTabId()]: TabArgs<T>
@@ -128,8 +144,24 @@ export function selectChatMessages<T extends GlobalState>(global: T, chatId: str
   return global.messages.byChatId[chatId]?.byId;
 }
 
+export function selectStoppableTypingDraftId<T extends GlobalState>(global: T, chatId: string, threadId: ThreadId) {
+  const drafts = selectThreadLocalStateParam(global, chatId, threadId, 'typingDraftIdByRandomId');
+  if (!drafts) return undefined;
+
+  for (const [randomId, messageId] of Object.entries(drafts)) {
+    const message = selectChatMessage(global, chatId, messageId);
+    if (message?.isTypingDraft && message.typingDraft?.canStop) return randomId;
+  }
+
+  return undefined;
+}
+
 export function selectChatEphemeralMessages<T extends GlobalState>(global: T, chatId: string) {
   return global.messages.byChatId[chatId]?.ephemeralById;
+}
+
+export function selectChatAnchoredMessages<T extends GlobalState>(global: T, chatId: string) {
+  return global.messages.byChatId[chatId]?.anchoredById;
 }
 
 export function selectChatScheduledMessages<T extends GlobalState>(global: T, chatId: string) {
@@ -265,7 +297,18 @@ export function selectChatMessage<T extends GlobalState>(global: T, chatId: stri
 
 export function selectEphemeralMessage<T extends GlobalState>(global: T, chatId: string, messageId: number) {
   const ephemeralById = selectChatEphemeralMessages(global, chatId);
-  return ephemeralById?.[messageId];
+  if (!ephemeralById) return undefined;
+  const ephemeralId = selectChatAnchoredMessages(global, chatId)?.[messageId]?.ephemeralId;
+  return ephemeralById[ephemeralId || messageId];
+}
+
+export function selectChatMessageOrEphemeral<T extends GlobalState>(
+  global: T, chatId: string, messageId: number,
+) {
+  const ephemeral = selectChatEphemeralMessages(global, chatId)?.[messageId];
+  const anchorId = ephemeral?.anchorMsgId || messageId;
+  return selectChatAnchoredMessages(global, chatId)?.[anchorId]
+    || selectChatMessage(global, chatId, anchorId) || ephemeral;
 }
 
 export function selectScheduledMessage<T extends GlobalState>(global: T, chatId: string, messageId: number) {
@@ -514,7 +557,7 @@ export function selectCanReplyToMessage<T extends GlobalState>(global: T, messag
 }
 
 export function selectCanForwardMessage<T extends GlobalState>(global: T, message: ApiMessage) {
-  if (message.isEphemeral) return false;
+  if (message.anchorMsgId) return false;
 
   const isLocal = isMessageLocal(message);
   const isServiceNotification = isServiceNotificationMessage(message);
@@ -1018,7 +1061,7 @@ export function selectNewestMessageWithBotKeyboardButtons<T extends GlobalState>
   let newestDate: number | undefined;
 
   viewportIds.forEach((id) => {
-    const message = chatMessages[id];
+    const message = selectChatMessageOrEphemeral(global, chatId, id);
     if (!message) return;
 
     if (oldestDate === undefined || message.date < oldestDate) oldestDate = message.date;
@@ -1034,6 +1077,7 @@ export function selectNewestMessageWithBotKeyboardButtons<T extends GlobalState>
   const isViewportNewest = selectIsViewportNewest(global, chatId, threadId, tabId);
   const topicId = Number(threadId);
   Object.values(ephemeralMessages || {}).forEach((message) => {
+    if (message.anchorMsgId) return;
     const isInThread = topicId === MAIN_THREAD_ID
       ? message.ephemeralTopMsgId === undefined
       : message.ephemeralTopMsgId === topicId;
@@ -1248,10 +1292,8 @@ export function selectCanForwardMessages<T extends GlobalState>(global: T, chatI
     return false;
   }
 
-  const messages = selectChatMessages(global, chatId);
-
   return messageIds
-    .map((id) => messages[id])
+    .map((id) => selectChatMessageOrEphemeral(global, chatId, id))
     .every((message) => message && selectCanForwardMessage(global, message));
 }
 
@@ -1395,9 +1437,9 @@ export function selectForwardsContainVoiceMessages<T extends GlobalState>(
 ) {
   const { messageIds, fromChatId } = selectTabState(global, tabId).forwardMessages;
   if (!messageIds) return false;
-  const chatMessages = selectChatMessages(global, fromChatId!);
   return messageIds.some((messageId) => {
-    const message = chatMessages[messageId];
+    const message = selectChatMessageOrEphemeral(global, fromChatId!, messageId);
+    if (!message) return false;
     return Boolean(message.content.voice) || Boolean(message.content.video?.isRound);
   });
 }
@@ -1426,6 +1468,21 @@ export function selectMessageTranslations<T extends GlobalState>(
   global: T, chatId: string, cacheKey: string,
 ) {
   return selectChatTranslations(global, chatId)?.byLangCode[cacheKey] || {};
+}
+
+export function selectMessageCopyContent<T extends GlobalState>(
+  global: T, message: ApiMessage, ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  if (message.isEphemeral) return message.content;
+
+  const chatLanguage = selectRequestedChatTranslationLanguage(global, message.chatId, tabId);
+  const messageLanguage = selectRequestedMessageTranslationLanguage(global, message.chatId, message.id, tabId);
+  const cacheKey = chatLanguage
+    ? getTranslationCacheKey(chatLanguage, selectRequestedChatTranslationTone(global, message.chatId, tabId))
+    : messageLanguage;
+
+  const translation = cacheKey ? selectMessageTranslations(global, message.chatId, cacheKey)[message.id] : undefined;
+  return translation?.text || translation?.richMessage ? translation : message.content;
 }
 
 export function selectRequestedMessageTranslationLanguage<T extends GlobalState>(
@@ -1479,12 +1536,13 @@ export function selectForwardsCanBeSentToChat<T extends GlobalState>(
   }
 
   const chatFullInfo = selectChatFullInfo(global, toChatId);
-  const chatMessages = selectChatMessages(global, fromChatId!);
-
   const isSavedMessages = toChatId ? selectIsChatWithSelf(global, toChatId) : undefined;
   const isChatWithBot = toChatId ? selectIsChatWithBot(global, toChatId) : undefined;
   const options = getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot, isSavedMessages);
-  return !messageIds!.some((messageId) => сheckMessageSendingDenied(chatMessages[messageId], options));
+  return !messageIds!.some((messageId) => {
+    const message = selectChatMessageOrEphemeral(global, fromChatId!, messageId);
+    return !message || сheckMessageSendingDenied(message, options);
+  });
 }
 function сheckMessageSendingDenied(message: ApiMessage, options: IAllowedAttachmentOptions) {
   const isVoice = message.content.voice;
@@ -1553,20 +1611,4 @@ export function selectReplyMessage<T extends GlobalState>(global: T, message: Ap
   }
 
   return selectChatMessage(global, replyInfo.replyToPeerId || message.chatId, replyInfo.replyToMsgId);
-}
-
-export function selectActiveRestrictionReasons<T extends GlobalState>(
-  global: T, restrictionReasons?: ApiRestrictionReason[],
-): ApiRestrictionReason[] {
-  if (!restrictionReasons) return [];
-
-  const { ignoreRestrictionReasons } = global.appConfig;
-
-  return restrictionReasons.filter((reason) => {
-    const isForCurrentPlatform = reason.platform === 'all' || reason.platform === WEB_APP_PLATFORM;
-    if (!isForCurrentPlatform) return false;
-
-    const shouldIgnore = ignoreRestrictionReasons?.includes(reason.reason);
-    return !shouldIgnore;
-  });
 }

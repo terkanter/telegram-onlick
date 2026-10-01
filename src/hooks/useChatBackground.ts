@@ -1,6 +1,7 @@
 import { useRef } from '../lib/teact/teact';
 
 import type { IThemeSettings, ThemeKey } from '../types';
+import type { WallpaperStorageSource } from '../util/wallpaperStorage';
 
 import buildClassName from '../util/buildClassName';
 import buildStyle from '../util/buildStyle';
@@ -15,6 +16,7 @@ type ChatBackgroundParams = {
   wallpaper: IThemeSettings;
   // Previews don't animate: draw the same gradient once on a 2D canvas instead of a live WebGL renderer.
   isStatic?: boolean;
+  source?: WallpaperStorageSource;
 };
 
 // Shared chat-background rendering: resolves the active wallpaper (custom image, color, gradient or
@@ -24,14 +26,20 @@ export default function useChatBackground({
   theme,
   wallpaper,
   isStatic,
+  source,
 }: ChatBackgroundParams) {
-  const model = buildWallpaperRenderModel(theme, wallpaper);
+  const selectedModel = buildWallpaperRenderModel(theme, wallpaper);
+  const customBackgroundValue = useCustomBackground(
+    theme, selectedModel.customBackground, selectedModel.isPattern, source,
+  );
+  const model = source === 'lockScreen' && selectedModel.customBackground && !customBackgroundValue
+    ? buildWallpaperRenderModel(theme, {})
+    : selectedModel;
   const hasGradient = !model.isImage && model.colors.length >= 2;
   const wasMaskedPatternRef = useRef(model.isMaskedPattern);
   const shouldSnapGradient = model.isMaskedPattern && !wasMaskedPatternRef.current;
   wasMaskedPatternRef.current = model.isMaskedPattern;
 
-  const customBackgroundValue = useCustomBackground(theme, model.customBackground, model.isPattern);
   // Entering masked mode snaps away bright transition frames; masked wallpapers still morph between each other
   const gradientCanvasRef = useGradientBackground(
     hasGradient ? model.colors : undefined, shouldSnapGradient, isStatic, model.backgroundRotation,

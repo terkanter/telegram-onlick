@@ -41,6 +41,7 @@ type OwnProps = {
   sender?: string;
   autoLoadFileMaxSizeMb?: number;
   isDownloading?: boolean;
+  noDownload?: boolean;
   shouldWarnAboutFiles?: boolean;
   id?: string;
   onCancelUpload?: NoneToVoidFunction;
@@ -71,6 +72,7 @@ const Document = ({
   isSelectable,
   shouldWarnAboutFiles,
   isDownloading,
+  noDownload,
   message,
   id,
   onCancelUpload,
@@ -147,6 +149,7 @@ const Document = ({
   }, [withMediaViewer, message]);
 
   const handleDownload = useLastCallback(() => {
+    if (noDownload) return;
     downloadMedia({ media: document, originMessage: message });
   });
 
@@ -196,29 +199,28 @@ const Document = ({
   });
 
   return (
-    <>
-      <File
-        ref={ref}
-        id={id}
-        name={fileName}
-        extension={extension}
-        size={size}
-        timestamp={datetime}
-        previewMedia={previewMedia}
-        observeIntersection={observeIntersection}
-        previewSize={fileSize}
-        isTransferring={isTransferring}
-        isUploading={isUploading}
-        transferProgress={transferProgress}
-        className={className}
-        sender={sender}
-        isSelectable={isSelectable}
-        isSelected={isSelected}
-        actionIcon={withMediaViewer ? (isVideo ? 'play' : 'eye') : 'download'}
-        contextActions={contextActions}
-        onClick={handleClick}
-        onDateClick={onDateClick ? handleDateClick : undefined}
-      />
+    <File
+      ref={ref}
+      id={id}
+      name={fileName}
+      extension={extension}
+      size={size}
+      timestamp={datetime}
+      previewMedia={previewMedia}
+      observeIntersection={observeIntersection}
+      previewSize={fileSize}
+      isTransferring={isTransferring}
+      isUploading={isUploading}
+      transferProgress={transferProgress}
+      className={className}
+      sender={sender}
+      isSelectable={isSelectable}
+      isSelected={isSelected}
+      actionIcon={withMediaViewer ? (isVideo ? 'play' : 'eye') : 'download'}
+      contextActions={contextActions}
+      onClick={!noDownload || withMediaViewer || (isUploading && onCancelUpload) ? handleClick : undefined}
+      onDateClick={onDateClick ? handleDateClick : undefined}
+    >
       <ConfirmDialog
         isOpen={isFileIpDialogOpen}
         onClose={closeFileIpDialog}
@@ -232,7 +234,7 @@ const Document = ({
           onCheck={setShouldNotWarnAboutFiles}
         />
       </ConfirmDialog>
-    </>
+    </File>
   );
 };
 

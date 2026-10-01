@@ -19,12 +19,12 @@ import { logGatewayError } from '../../../util/gatewayLog';
 import { getShippingError, shouldClosePaymentModal } from '../../../util/getReadableErrorText';
 import { getAccountsInfo, getAccountSlotUrl } from '../../../util/multiaccount';
 import { oldSetLanguage } from '../../../util/oldLangProvider';
-import { clearWebTokenAuth } from '../../../util/routing';
 import { setServerTimeOffset } from '../../../util/serverTime';
 import { updateSessionUserId } from '../../../util/sessions';
 import {
   getGatewayAnnouncedAccountId, handleGatewayClose, notifyGatewayReady,
 } from '../../../util/telegramGateway';
+import { finishWebLogin, rejectWebLogin } from '../../../util/webLogin';
 import { forceWebsync } from '../../../util/websync';
 import { callApi } from '../../../api/gramjs';
 import { applyGatewayCache, dropGatewayCache } from '../../cache';
@@ -273,7 +273,7 @@ function onUpdateUserAlreadyAuthorized<T extends GlobalState>(global: T, update:
 }
 
 function onUpdateWebAuthTokenFailed<T extends GlobalState>(global: T) {
-  clearWebTokenAuth();
+  rejectWebLogin();
 
   global = updateAuth(global, {
     hasWebAuthTokenFailed: true,
@@ -389,4 +389,6 @@ function onUpdateCurrentUser<T extends GlobalState>(global: T, update: ApiUpdate
     && getGatewayAnnouncedAccountId() !== currentUser.id) {
     notifyGatewayReady(currentUser.id);
   }
+
+  finishWebLogin(currentUser.id);
 }

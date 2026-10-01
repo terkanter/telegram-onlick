@@ -12,3 +12,4 @@ export * from './symbols';
 export * from './misc';
 export * from './richMessage';
 export * from './tabs';
+export * from './buttons';

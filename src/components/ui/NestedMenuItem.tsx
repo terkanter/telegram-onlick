@@ -1,6 +1,7 @@
 import {
   useEffect, useRef, useState, useUnmountCleanup,
 } from '@teact';
+import type { TeactNode } from '../../lib/teact/teact';
 
 import type { IAnchorPosition } from '../../types';
 import type { IconName } from '../../types/icons';
@@ -24,10 +25,10 @@ const CLOSE_TIMEOUT = 150;
 
 type OwnProps = {
   icon?: IconName;
-  customIcon?: React.ReactNode;
+  customIcon?: TeactNode;
   submenuIcon?: IconName;
   className?: string;
-  children: React.ReactNode;
+  children: TeactNode;
   submenu: React.ReactNode;
   submenuClassName?: string;
   disabled?: boolean;

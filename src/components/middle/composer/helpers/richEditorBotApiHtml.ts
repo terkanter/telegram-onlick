@@ -22,6 +22,14 @@ export const RichEditorBotApiHtml = Extension.create({
   addProseMirrorPlugins() {
     return [new Plugin({
       props: {
+        clipboardTextParser: (text, context, _isPlainText, view) => {
+          const { schema } = view.state;
+          const marks = context.marks();
+          const paragraphs = text.split(/\r\n?|\n/).map((line) => (
+            schema.nodes.paragraph.create(undefined, line ? schema.text(line, marks) : undefined)
+          ));
+          return Slice.maxOpen(Fragment.fromArray(paragraphs));
+        },
         clipboardSerializer: buildBotApiHtmlSerializer(this.editor.schema),
         clipboardTextSerializer: ({ content }) => serializeTiptapPlainText(content),
         transformCopied: (slice, view) => replaceEmojiNodes(

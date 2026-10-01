@@ -1,4 +1,3 @@
-import type { FC } from '../../../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../../lib/teact/teact';
@@ -83,7 +82,7 @@ export const ERROR_NO_CHATS = 'ChatList.Filter.Error.Empty';
 
 const DEFAULT_FOLDER_ICON = '🗂';
 
-const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
+const SettingsFoldersEdit = ({
   state,
   dispatch,
   onAddIncludedChats,
@@ -104,7 +103,7 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
   onSaveFolder,
   isCurrentUserPremium,
   isMobile,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     loadChatlistInvites,
     openLimitReachedModal,
@@ -529,7 +528,7 @@ const SettingsFoldersEdit: FC<OwnProps & StateProps> = ({
               {isCurrentUserPremium ? (
                 <Icon name="close" className="color-picker-item-none-icon" />
               ) : (
-                <Icon name="lock-badge" className="color-picker-item-none-icon" />
+                <Icon name="lock-filled" className="color-picker-item-none-icon" />
               )}
             </button>
           </div>

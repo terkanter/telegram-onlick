@@ -57,7 +57,7 @@ const SettingsPrivacyLastSeen = ({
       )}
       <Island>
         <ListItem
-          icon="premium-filled"
+          icon="star"
           iconBg="premium"
           onClick={handleOpenPremiumModal}
         >

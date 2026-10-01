@@ -303,7 +303,7 @@ const LeftMainHeader = ({
             ariaLabel={`${oldLang('ShortcutsController.Others.LockByPasscode')} (Ctrl+Shift+L)`}
             onClick={handleLockScreen}
             className={buildClassName(!isCurrentUserPremium && 'extra-spacing')}
-            iconName="lock"
+            iconName="unlock"
           />
         )}
         <ShowTransition

@@ -34,6 +34,7 @@ import {
   prepareMessageReplyInfo,
   resolveEphemeralCommand,
 } from '../../helpers';
+import { isButtonUnsupported } from '../../helpers/buttons';
 import {
   addActionHandler, getActions, getGlobal, setGlobal,
 } from '../../index';
@@ -58,6 +59,7 @@ import {
   selectChatFullInfo,
   selectChatLastMessageId,
   selectChatMessage,
+  selectChatMessageOrEphemeral,
   selectCurrentChat,
   selectCurrentMessageList,
   selectEphemeralMessage,
@@ -91,7 +93,7 @@ addActionHandler('clickSuggestedMessageButton', (global, actions, payload): Acti
     chatId, messageId, button, tabId = getCurrentTabId(),
   } = payload;
 
-  const { buttonType } = button;
+  const { buttonType } = button.action;
   const message = selectChatMessage(global, chatId, messageId);
 
   switch (buttonType) {
@@ -107,15 +109,39 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
   const {
     chatId, messageId, threadId, button, tabId = getCurrentTabId(),
   } = payload;
+  if (isButtonUnsupported(button.action)) return;
+  switch (button.action.type) {
+    case 'url': {
+      const { url } = button.action;
+      actions.openUrl({
+        url,
+        tabId,
+        linkContext: chatId && messageId !== undefined ? { type: 'message', chatId, messageId, threadId } : undefined,
+      });
+      return;
+    }
+
+    case 'copy': {
+      copyTextToClipboard(button.action.copyText);
+      actions.showNotification({ message: oldTranslate('ExactTextCopied', button.action.copyText), tabId });
+      return;
+    }
+
+    case 'userProfile': {
+      const { userId } = button.action;
+      actions.openChatWithInfo({ id: userId, tabId });
+      return;
+    }
+  }
+  if (!chatId || messageId === undefined) return;
   const chat = selectChat(global, chatId);
-  const message = selectChatMessage(global, chatId, messageId)
-    || selectEphemeralMessage(global, chatId, messageId);
+  const message = selectChatMessageOrEphemeral(global, chatId, messageId);
   if (!chat || !message) {
     return;
   }
   if (message.isEphemeral && isKeyboardButtonUnsupportedForEphemeral(button)) return;
 
-  switch (button.type) {
+  switch (button.action.type) {
     case 'command':
       actions.sendBotCommand({
         command: button.text,
@@ -124,24 +150,12 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       });
       break;
 
-    case 'url': {
-      const { url } = button;
-      actions.openUrl({ url, tabId, linkContext: { type: 'message', chatId, messageId, threadId } });
-      break;
-    }
-
-    case 'copy': {
-      copyTextToClipboard(button.copyText);
-      actions.showNotification({ message: oldTranslate('ExactTextCopied', button.copyText), tabId });
-      break;
-    }
-
     case 'callback': {
       void answerCallbackButton(global, {
         chat,
-        messageId,
+        messageId: message.ephemeralId || message.id,
         threadId,
-        data: button.data,
+        data: button.action.data,
         isEphemeral: message.isEphemeral,
       }, tabId);
       break;
@@ -152,7 +166,7 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
         chatId,
         threadId,
         messageListType: 'thread',
-        isQuiz: button.isQuiz,
+        isQuiz: button.action.isQuiz,
         tabId,
       });
       break;
@@ -179,15 +193,12 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
       break;
     }
 
-    case 'receipt': {
-      const { receiptMessageId } = button;
-      actions.getReceipt({
-        chatId: chat.id, messageId: receiptMessageId, tabId,
-      });
-      break;
-    }
-
     case 'buy': {
+      const receiptMessageId = message.content.invoice?.receiptMessageId;
+      if (receiptMessageId) {
+        actions.getReceipt({ chatId, messageId: receiptMessageId, tabId });
+        break;
+      }
       actions.openInvoice({
         type: 'message',
         chatId: chat.id,
@@ -209,21 +220,15 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
     }
 
     case 'switchBotInline': {
-      const { query, isSamePeer } = button;
+      const { query, isSamePeer } = button.action;
       actions.switchBotInline({
         query, isSamePeer, messageId, tabId,
       });
       break;
     }
 
-    case 'userProfile': {
-      const { userId } = button;
-      actions.openChatWithInfo({ id: userId, tabId });
-      break;
-    }
-
     case 'simpleWebView': {
-      const { url } = button;
+      const { url } = button.action;
       const sender = selectSender(global, message);
       if (!sender) {
         return;
@@ -237,7 +242,7 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
     }
 
     case 'webView': {
-      const { url } = button;
+      const { url } = button.action;
       const sender = selectSender(global, message);
       const botId = message.viaBotId || sender?.id;
       if (!botId) {
@@ -256,11 +261,11 @@ addActionHandler('clickBotInlineButton', (global, actions, payload): ActionRetur
     }
 
     case 'urlAuth': {
-      const { url } = button;
+      const { url } = button.action;
       actions.requestBotUrlAuth({
         chatId: chat.id,
         messageId,
-        buttonId: button.buttonId,
+        buttonId: button.action.buttonId,
         url,
         tabId,
       });
@@ -415,13 +420,12 @@ addActionHandler('switchBotInline', (global, actions, payload): ActionReturnType
   }
 
   if (!botId && messageId) {
-    const message = selectChatMessage(global, chat.id, messageId)
-      || selectEphemeralMessage(global, chat.id, messageId);
+    const message = selectChatMessageOrEphemeral(global, chat.id, messageId);
     if (!message) {
       return undefined;
     }
     const sender = selectSender(global, message);
-    botId = message.viaBotId || sender?.id;
+    botId = message.ephemeralBotId || message.viaBotId || sender?.id;
   }
 
   if (!botId) {

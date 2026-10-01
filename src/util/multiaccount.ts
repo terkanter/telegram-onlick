@@ -11,6 +11,15 @@ import {
   SESSION_ACCOUNT_PREFIX,
 } from '../config';
 import { IS_MULTIACCOUNT_SUPPORTED } from './browser/globalEnvironment';
+import { broadcastPasscodeSessionsChanged } from './passcode/channel';
+import {
+  getSessionValueKeys,
+  isSessionStoreLocked,
+  readSessionValue,
+  writeSessionValue,
+} from './passcode/sessionStore';
+import { getAccountSlot } from './accountSlot';
+import { getDekGeneration, refreshSessionsVault, requestPasscodeStateLock } from './passcode';
 
 const WORKER_NAME = typeof WorkerGlobalScope !== 'undefined' && globalThis.self instanceof WorkerGlobalScope
   ? globalThis.self.name : undefined;
@@ -31,35 +40,37 @@ const MULTITAB_SCOPE = GATEWAY_ACCOUNT ? `gw_${GATEWAY_ACCOUNT}` : String(ACCOUN
 export const DATA_BROADCAST_CHANNEL_NAME = `${DATA_BROADCAST_CHANNEL_PREFIX}_${MULTITAB_SCOPE}`;
 export const ESTABLISH_BROADCAST_CHANNEL_NAME = `${ESTABLISH_BROADCAST_CHANNEL_PREFIX}_${MULTITAB_SCOPE}`;
 export const MULTITAB_STORAGE_KEY = `${MULTITAB_LOCALSTORAGE_KEY_PREFIX}_${MULTITAB_SCOPE}`;
-export const GLOBAL_STATE_CACHE_KEY = ACCOUNT_SLOT
-  ? `${GLOBAL_STATE_CACHE_PREFIX}_${ACCOUNT_SLOT}` : GLOBAL_STATE_CACHE_PREFIX;
+export const GLOBAL_STATE_CACHE_KEY = getGlobalStateCacheKey(ACCOUNT_SLOT);
 
 function parseGatewayAccount(params: URLSearchParams) {
   const account = params.get(GATEWAY_ACCOUNT_QUERY);
   return account && GATEWAY_ACCOUNT_REGEX.test(account) ? account : undefined;
 }
 
-export function getAccountSlot(url: string) {
-  const params = new URL(url).searchParams;
-  const slot = params.get(ACCOUNT_QUERY);
-  const slotNumber = slot ? Number(slot) : 1;
-  if (!slotNumber || Number.isNaN(slotNumber) || slotNumber === 1) return undefined;
-  return slotNumber;
+export function getGlobalStateCacheKey(slot?: number) {
+  return slot && slot !== 1 ? `${GLOBAL_STATE_CACHE_PREFIX}_${slot}` : GLOBAL_STATE_CACHE_PREFIX;
 }
+
+export { getAccountSlot } from './accountSlot';
 
 export function getAccountsInfo() {
   if (!IS_MULTIACCOUNT_SUPPORTED) return {};
-  const allKeys = Object.keys(localStorage);
-  const allSlots = allKeys.filter((key) => key.startsWith(SESSION_ACCOUNT_PREFIX));
   const accountInfo: Record<number, AccountInfo> = {};
-  for (const key of allSlots) {
-    const i = Number(key.slice(SESSION_ACCOUNT_PREFIX.length));
-    const info = getAccountInfo(i);
+  for (const slot of getAccountSlots()) {
+    const info = getAccountInfo(slot);
     if (info) {
-      accountInfo[i] = info;
+      accountInfo[slot] = info;
     }
   }
   return accountInfo;
+}
+
+export function getAccountSlots() {
+  return getSessionValueKeys()
+    .filter((key) => key.startsWith(SESSION_ACCOUNT_PREFIX))
+    .map((key) => Number(key.slice(SESSION_ACCOUNT_PREFIX.length)))
+    .filter((slot) => slot > 0 && Number.isInteger(slot))
+    .sort((first, second) => first - second);
 }
 
 export function getFirstLoggedInAccountSlot(accounts = getAccountsInfo()) {
@@ -89,7 +100,7 @@ function getAccountInfo(slot: number): AccountInfo | undefined {
 
 export function loadSlotSession(slot: number | undefined): SharedSessionData | undefined {
   try {
-    const data = JSON.parse(localStorage.getItem(`${SESSION_ACCOUNT_PREFIX}${slot || 1}`) || '{}') as SharedSessionData;
+    const data = JSON.parse(readSessionValue(`${SESSION_ACCOUNT_PREFIX}${slot || 1}`) || '{}') as SharedSessionData;
     if (!data.dcId) return undefined;
     return data;
   } catch (e) {
@@ -98,22 +109,35 @@ export function loadSlotSession(slot: number | undefined): SharedSessionData | u
 }
 
 export function storeAccountData(slot: number | undefined, data: Partial<SessionUserInfo>) {
-  const currentSlotData = loadSlotSession(slot);
+  return updateSessionStorage(() => {
+    const currentSlotData = loadSlotSession(slot);
 
-  if (!currentSlotData) return;
+    if (!currentSlotData) return;
 
-  const updatedSharedData: SharedSessionData = {
-    ...currentSlotData,
-    ...data,
-  };
+    const updatedSharedData: SharedSessionData = {
+      ...currentSlotData,
+      ...data,
+    };
 
-  if (!updatedSharedData.userId) return;
+    if (!updatedSharedData.userId) return;
 
-  writeSlotSession(slot, updatedSharedData);
+    writeSlotSession(slot, updatedSharedData);
+  });
 }
 
-export function writeSlotSession(slot: number | undefined, data: SharedSessionData) {
-  localStorage.setItem(`${SESSION_ACCOUNT_PREFIX}${slot || 1}`, JSON.stringify(data));
+function writeSlotSession(slot: number | undefined, data: SharedSessionData) {
+  writeSessionValue(`${SESSION_ACCOUNT_PREFIX}${slot || 1}`, JSON.stringify(data));
+}
+
+export function updateSessionStorage(update: NoneToVoidFunction) {
+  return requestPasscodeStateLock(async () => {
+    if (isSessionStoreLocked()) return;
+
+    update();
+    const generation = getDekGeneration();
+    const isUpdated = await refreshSessionsVault().catch(() => false);
+    if (generation && isUpdated) broadcastPasscodeSessionsChanged(generation);
+  });
 }
 
 export function getAccountSlotUrl(slot: number, forLogin?: boolean, isTest?: boolean) {

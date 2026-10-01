@@ -220,7 +220,7 @@ const Topic = ({
           {Boolean(notifySettings.mutedUntil) && <Icon name="muted" />}
           <div className="separator" />
           {isClosed && (
-            <Icon name="lock-badge" className={styles.closedIcon} />
+            <Icon name="lock-filled" className={styles.closedIcon} />
           )}
           {lastMessage && (
             <LastMessageMeta

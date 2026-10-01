@@ -29,11 +29,11 @@ import {
 import { hasRichText } from '../../global/helpers/richMessage';
 import {
   selectChatMessage,
+  selectChatMessageOrEphemeral,
   selectChatMessages,
   selectChatScheduledMessages,
   selectCurrentChatMediaSearch,
   selectCurrentSharedMediaSearch,
-  selectEphemeralMessage,
   selectIsChatWithSelf,
   selectListedIds,
   selectOutlyingListByMessageId,
@@ -43,7 +43,7 @@ import {
   selectScheduledMessage, selectSponsoredMessage,
   selectTabState,
 } from '../../global/selectors';
-import { stopCurrentAudio } from '../../util/audioPlayer';
+import { stopCurrentAudio } from '../../util/audioPlayback/playbackController';
 import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
@@ -711,7 +711,7 @@ export default memo(withGlobal(
     let message: ApiMessage | undefined;
     if (chatId && messageId) {
       if (origin === MediaViewerOrigin.Ephemeral) {
-        message = selectEphemeralMessage(global, chatId, messageId);
+        message = selectChatMessageOrEphemeral(global, chatId, messageId);
       } else if (origin && [MediaViewerOrigin.ScheduledAlbum, MediaViewerOrigin.ScheduledInline].includes(origin)) {
         message = selectScheduledMessage(global, chatId, messageId);
       } else {
@@ -748,7 +748,7 @@ export default memo(withGlobal(
 
     if (chatId && threadId && messageId) {
       if (withDynamicLoading && (isOriginInline || isOriginAlbum)) {
-        const currentSearch = selectCurrentChatMediaSearch(global);
+        const currentSearch = selectCurrentChatMediaSearch(global, 'media');
         isLoadingMoreMedia = Boolean(currentSearch?.isLoading);
         const { foundIds } = (currentSearch?.currentSegment) || {};
         collectedMessageIds = foundIds;

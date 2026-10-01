@@ -211,13 +211,11 @@ const ActionMessage = ({
   const giftOfferInlineButtons: KeyboardButtonGiftOffer[][] = useMemo(() => [
     [
       {
-        type: 'giftOffer',
-        buttonType: 'reject',
+        action: { type: 'giftOffer', buttonType: 'reject' },
         text: lang('GiftOfferReject'),
       },
       {
-        type: 'giftOffer',
-        buttonType: 'accept',
+        action: { type: 'giftOffer', buttonType: 'accept' },
         text: lang('GiftOfferAccept'),
       },
     ],
@@ -226,13 +224,11 @@ const ActionMessage = ({
   const noForwardsInlineButtons: KeyboardButtonNoForwardsRequest[][] = useMemo(() => [
     [
       {
-        type: 'noForwardsRequest',
-        buttonType: 'reject',
+        action: { type: 'noForwardsRequest', buttonType: 'reject' },
         text: lang('NoForwardsRequestReject'),
       },
       {
-        type: 'noForwardsRequest',
-        buttonType: 'accept',
+        action: { type: 'noForwardsRequest', buttonType: 'accept' },
         text: lang('NoForwardsRequestAccept'),
       },
     ],
@@ -241,8 +237,8 @@ const ActionMessage = ({
   const [isRejectOfferDialogOpen, openRejectOfferDialog, closeRejectOfferDialog] = useFlag(false);
 
   const handleInlineButtonClick = useLastCallback((button: ApiKeyboardButton) => {
-    if (button.type === 'giftOffer') {
-      if (button.buttonType === 'accept') {
+    if (button.action.type === 'giftOffer') {
+      if (button.action.buttonType === 'accept') {
         if (action.type === 'starGiftPurchaseOffer') {
           openGiftOfferAcceptModal({
             peerId: chatId,
@@ -251,12 +247,12 @@ const ActionMessage = ({
             price: action.price,
           });
         }
-      } else if (button.buttonType === 'reject') {
+      } else if (button.action.buttonType === 'reject') {
         openRejectOfferDialog();
       }
-    } else if (button.type === 'noForwardsRequest') {
+    } else if (button.action.type === 'noForwardsRequest') {
       if (action.type === 'noForwardsRequest') {
-        const isAccept = button.buttonType === 'accept';
+        const isAccept = button.action.buttonType === 'accept';
         toggleNoForwards({
           userId: chatId,
           isEnabled: isAccept ? action.newValue : action.prevValue,

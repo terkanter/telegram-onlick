@@ -151,13 +151,16 @@ export async function fetchSavedMusicIds() {
   return result.ids.map(String);
 }
 
-export function saveMusic({ audio, shouldRemove }: { audio: ApiAudio; shouldRemove?: boolean }) {
+export function saveMusic({ audio, shouldRemove, afterAudio }: {
+  audio: ApiAudio; shouldRemove?: boolean; afterAudio?: ApiAudio;
+}) {
   const id = buildInputDocument(audio);
   if (!id) return undefined;
 
   return invokeRequest(new GramJs.account.SaveMusic({
     id,
     unsave: shouldRemove || undefined,
+    afterId: afterAudio ? buildInputDocument(afterAudio) : undefined,
   }), {
     shouldReturnTrue: true,
   });

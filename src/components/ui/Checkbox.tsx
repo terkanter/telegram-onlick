@@ -50,6 +50,7 @@ type OwnProps = {
   nestedOptionList?: IRadioOption[];
   leftElement?: TeactNode;
   values?: string[];
+  teactExperimentControlled?: boolean;
   onChange?: (e: ChangeEvent<HTMLInputElement>, nestedOptionList?: IRadioOption[]) => void;
   onCheck?: (isChecked: boolean) => void;
   onClickLabel?: (e: React.MouseEvent, value?: string) => void;
@@ -80,6 +81,7 @@ const Checkbox: FC<OwnProps> = ({
   nestedOptionList,
   leftElement,
   values,
+  teactExperimentControlled,
   onChange,
   onCheck,
   onClickLabel,
@@ -153,6 +155,7 @@ const Checkbox: FC<OwnProps> = ({
           name={name}
           value={value}
           checked={checked}
+          teactExperimentControlled={teactExperimentControlled}
           disabled={disabled}
           tabIndex={tabIndex}
           onChange={handleChange}

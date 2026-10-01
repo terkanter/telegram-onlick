@@ -70,6 +70,7 @@ import {
   addSimilarBots,
   addUsers,
   addUserStatuses,
+  batchMessageStoreUpdates,
   deleteChatMessages,
   deletePeerPhoto,
   deleteTopic,
@@ -112,6 +113,7 @@ import {
   updateThreadReadState,
 } from '../../reducers/threads';
 import {
+  selectCanOpenMessageList,
   selectChat,
   selectChatByUsername,
   selectChatFolder,
@@ -237,6 +239,8 @@ addActionHandler('openChat', (global, actions, payload): ActionReturnType => {
     return;
   }
 
+  if (!selectCanOpenMessageList(global, id, MAIN_THREAD_ID, type, tabId)) return;
+
   actions.processOpenChatOrThread({
     chatId: id,
     type,
@@ -316,6 +320,8 @@ addActionHandler('openThread', async (global, actions, payload): Promise<void> =
     tabId = getCurrentTabId(),
   } = payload;
   let { chatId } = payload;
+  if (!selectCanOpenMessageList(global, chatId, payload.threadId, type, tabId)) return;
+
   let threadId: ThreadId | undefined;
   let loadingChatId: string;
   let loadingThreadId: ThreadId;
@@ -582,11 +588,10 @@ addActionHandler('loadAllChats', async (global, actions, payload): Promise<void>
     global = getGlobal();
 
     if (result?.messages) {
-      if (isFirstBatch) {
-        global = replaceMessages(global, result.messages);
-      } else {
-        global = addMessages(global, result.messages);
-      }
+      const { messages } = result;
+      global = batchMessageStoreUpdates(global, (g) => (
+        isFirstBatch ? replaceMessages(g, messages) : addMessages(g, messages)
+      ));
     }
 
     setGlobal(global);
@@ -1547,6 +1552,7 @@ addActionHandler('markChatMessagesRead', async (global, actions, payload): Promi
 
     if (!result?.topics?.length) return;
 
+    global = getGlobal();
     const topicIdsToMarkRead: number[] = [];
     result.topics.forEach((topicWithState) => {
       global = updateTopicWithState(global, id, topicWithState);
@@ -3716,78 +3722,82 @@ async function loadChats(
 
   global = getGlobal();
 
-  const newChats = buildCollectionByKey(result.chats, 'id');
+  global = batchMessageStoreUpdates(global, (chunkGlobal) => {
+    const newChats = buildCollectionByKey(result.chats, 'id');
 
-  global = updateUsers(global, buildCollectionByKey(result.users, 'id'));
-  global = updateChats(global, newChats);
-  if (isFirstBatch) {
-    global = replaceChatListIds(global, listType, chatIds);
-  } else {
-    global = addChatListIds(global, listType, chatIds);
-  }
-
-  if (shouldReplaceStaleState) {
-    global = replaceUserStatuses(global, result.userStatusesById);
-    global = replaceNotifyExceptions(global, result.notifyExceptionById);
-  } else {
-    global = addUserStatuses(global, result.userStatusesById);
-    global = addNotifyExceptions(global, result.notifyExceptionById);
-  }
-
-  global = updateChatListSecondaryInfo(global, listType, result);
-  global = updateChatsLastMessageId(global, result.lastMessageByChatId, listType);
-
-  if (!shouldIgnorePagination) {
-    global = replaceChatListLoadingParameters(
-      global, listType, result.nextOffsetId, result.nextOffsetPeerId, result.nextOffsetDate,
-    );
-  }
-
-  if (isFullDraftSync) {
-    result.threadInfos.forEach((threadInfo) => {
-      global = updateThreadInfo(global, threadInfo);
-    });
-    if (result.threadReadStatesById) {
-      global = updateMainThreadReadStates(global, result.threadReadStatesById);
+    chunkGlobal = updateUsers(chunkGlobal, buildCollectionByKey(result.users, 'id'));
+    chunkGlobal = updateChats(chunkGlobal, newChats);
+    if (isFirstBatch) {
+      chunkGlobal = replaceChatListIds(chunkGlobal, listType, chatIds);
+    } else {
+      chunkGlobal = addChatListIds(chunkGlobal, listType, chatIds);
     }
-  } else if (result.threadReadStatesById) {
-    global = addMissingMainThreads(global, result.threadInfos, result.threadReadStatesById);
-  }
 
-  if (listType === 'active' || listType === 'archived') {
-    const idsToUpdateDraft = isFullDraftSync ? result.chatIds : Object.keys(result.draftsById);
+    if (shouldReplaceStaleState) {
+      chunkGlobal = replaceUserStatuses(chunkGlobal, result.userStatusesById);
+      chunkGlobal = replaceNotifyExceptions(chunkGlobal, result.notifyExceptionById);
+    } else {
+      chunkGlobal = addUserStatuses(chunkGlobal, result.userStatusesById);
+      chunkGlobal = addNotifyExceptions(chunkGlobal, result.notifyExceptionById);
+    }
 
-    idsToUpdateDraft.forEach((chatId) => {
-      const draft = result.draftsById[chatId];
-      const thread = selectThread(global, chatId, MAIN_THREAD_ID);
-      if (!isFullDraftSync && !draft && !thread) return;
+    chunkGlobal = updateChatListSecondaryInfo(chunkGlobal, listType, result);
+    chunkGlobal = updateChatsLastMessageId(chunkGlobal, result.lastMessageByChatId, listType);
 
-      const initialDraft = selectDraft(globalBeforeLoad, chatId, MAIN_THREAD_ID);
-      const currentDraft = selectDraft(global, chatId, MAIN_THREAD_ID);
-      const shouldKeepLocalDraft = currentDraft?.isLocal;
-      if (shouldKeepLocalDraft || shouldKeepCurrentDraft(currentDraft, initialDraft, draft)) return;
-
-      global = replaceThreadLocalStateParam(
-        global, chatId, MAIN_THREAD_ID, 'draft', draft,
+    if (!shouldIgnorePagination) {
+      chunkGlobal = replaceChatListLoadingParameters(
+        chunkGlobal, listType, result.nextOffsetId, result.nextOffsetPeerId, result.nextOffsetDate,
       );
-    });
-  }
+    }
 
-  if (
-    (result.isFullyLoaded || chatIds.length === 0 || chatIds.length === result.totalChatCount)
-    && !global.chats.isFullyLoaded[listType]
-  ) {
-    global = {
-      ...global,
-      chats: {
-        ...global.chats,
-        isFullyLoaded: {
-          ...global.chats.isFullyLoaded,
-          [listType]: true,
+    if (isFullDraftSync) {
+      result.threadInfos.forEach((threadInfo) => {
+        chunkGlobal = updateThreadInfo(chunkGlobal, threadInfo);
+      });
+      if (result.threadReadStatesById) {
+        chunkGlobal = updateMainThreadReadStates(chunkGlobal, result.threadReadStatesById);
+      }
+    } else if (result.threadReadStatesById) {
+      chunkGlobal = addMissingMainThreads(chunkGlobal, result.threadInfos, result.threadReadStatesById);
+    }
+
+    if (listType === 'active' || listType === 'archived') {
+      const idsToUpdateDraft = isFullDraftSync ? result.chatIds : Object.keys(result.draftsById);
+
+      idsToUpdateDraft.forEach((chatId) => {
+        const draft = result.draftsById[chatId];
+        const thread = selectThread(chunkGlobal, chatId, MAIN_THREAD_ID);
+        if (!isFullDraftSync && !draft && !thread) return;
+
+        const initialDraft = selectDraft(globalBeforeLoad, chatId, MAIN_THREAD_ID);
+        const currentDraft = selectDraft(chunkGlobal, chatId, MAIN_THREAD_ID);
+        const shouldKeepLocalDraft = currentDraft?.isLocal;
+        if (shouldKeepLocalDraft || shouldKeepCurrentDraft(currentDraft, initialDraft, draft)) return;
+
+        chunkGlobal = replaceThreadLocalStateParam(
+          chunkGlobal, chatId, MAIN_THREAD_ID, 'draft', draft,
+        );
+      });
+    }
+
+    if (
+      (result.isFullyLoaded || chatIds.length === 0 || chatIds.length === result.totalChatCount)
+      && !chunkGlobal.chats.isFullyLoaded[listType]
+    ) {
+      chunkGlobal = {
+        ...chunkGlobal,
+        chats: {
+          ...chunkGlobal.chats,
+          isFullyLoaded: {
+            ...chunkGlobal.chats.isFullyLoaded,
+            [listType]: true,
+          },
         },
-      },
-    };
-  }
+      };
+    }
+
+    return chunkGlobal;
+  });
 
   setGlobal(global);
 

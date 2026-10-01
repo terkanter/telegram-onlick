@@ -2,6 +2,7 @@ import type { TeactNode } from '../lib/teact/teact';
 
 import type {
   ApiAttachment,
+  ApiAudio,
   ApiBotInlineMediaResult,
   ApiBotInlineResult,
   ApiBotInlineSwitchPm,
@@ -30,6 +31,7 @@ import type {
   ApiPhoto,
   ApiReaction,
   ApiReactionWithPaid,
+  ApiRichMessage,
   ApiStarGiftAttributeIdBackdrop,
   ApiStarGiftAttributeIdPattern,
   ApiStarGiftRegular,
@@ -43,6 +45,7 @@ import type {
   ApiTopic,
   ApiTypingStatus,
   ApiVideo,
+  ApiVoice,
   MediaContent,
   StarGiftAttributeIdModel,
 } from '../api/types';
@@ -118,7 +121,7 @@ export type AnimationLevel = 0 | 1 | 2;
 export type FoldersPosition = 'top' | 'left';
 export type PerformanceTypeKey = (
   'pageTransitions' | 'messageSendingAnimations' | 'mediaViewerAnimations'
-  | 'messageComposerAnimations' | 'contextMenuAnimations' | 'contextMenuBlur' | 'messageBlur'
+  | 'messageComposerAnimations' | 'contextMenuAnimations' | 'contextMenuBlur'
   | 'rightColumnAnimations' | 'animatedEmoji' | 'loopAnimatedStickers' | 'reactionEffects' | 'stickerEffects'
   | 'autoplayGifs' | 'autoplayVideos' | 'storyRibbonAnimations' | 'snapEffect' | 'textStreaming'
 );
@@ -220,6 +223,7 @@ export enum SettingsScreens {
   PrivacyBio,
   PrivacyBirthday,
   PrivacyGifts,
+  PrivacySavedMusic,
   PrivacyPhoneCall,
   PrivacyPhoneP2P,
   PrivacyForwarding,
@@ -238,6 +242,8 @@ export enum SettingsScreens {
   PrivacyBirthdayDeniedContacts,
   PrivacyGiftsAllowedContacts,
   PrivacyGiftsDeniedContacts,
+  PrivacySavedMusicAllowedContacts,
+  PrivacySavedMusicDeniedContacts,
   PrivacyPhoneCallAllowedContacts,
   PrivacyPhoneCallDeniedContacts,
   PrivacyPhoneP2PAllowedContacts,
@@ -284,6 +290,8 @@ export enum SettingsScreens {
   PasscodeChangePasscodeCurrent,
   PasscodeChangePasscodeNew,
   PasscodeChangePasscodeConfirm,
+  PasscodePasskeyAddConfirm,
+  PasscodePasskeyRemoveConfirm,
   PasscodeTurnOff,
   PasscodeCongratulations,
   Experimental,
@@ -379,12 +387,45 @@ export enum StoryViewerOrigin {
   SearchResult,
 }
 
-export enum AudioOrigin {
-  Inline,
-  SharedMedia,
-  Search,
-  OneTimeModal,
-}
+export type AudioVariant = 'inline' | 'sharedMedia' | 'search' | 'attachment' | 'oneTimeModal';
+
+export type PlaybackMediaType = 'audio' | 'voice';
+
+export type PlaybackSource =
+  | { type: 'chat'; chatId: string; threadId: ThreadId; mediaType: PlaybackMediaType }
+  | { type: 'globalSearch'; mediaType: PlaybackMediaType }
+  | { type: 'savedMusic'; peerId: string }
+  | { type: 'richMessage'; chatId: string; threadId: ThreadId; messageId: number }
+  | { type: 'single' };
+
+export type PlaybackContextType = 'message' | 'savedMusic' | 'instantView';
+
+export type PlaybackMedia = ApiAudio | ApiVoice | ApiVideo;
+
+export type PlaybackItemRef =
+  // `documentId` targets an audio block inside a rich message
+  | { type: 'message'; chatId: string; threadId: ThreadId; messageId: number; documentId?: string }
+  | { type: 'savedMusic'; peerId: string; audioId: string }
+  | { type: 'instantView'; webPageId: string; documentId: string };
+
+export type PlaybackCapabilities = {
+  canSeek: boolean;
+  mediaSession: 'own' | 'keep' | 'clear';
+  withAutoAdvance: boolean;
+};
+
+export type RepeatMode = 'none' | 'one' | 'all';
+export type OrderMode = 'default' | 'reverse' | 'shuffle';
+
+export type PlaylistKey = number | string;
+
+export type ShuffleState = {
+  playlist: PlaylistKey[];
+  nonPlayedKeys: PlaylistKey[];
+  playedKeys: PlaylistKey[];
+  indexInPlayed: number;
+  areAllLoaded: boolean;
+};
 
 export enum ChatCreationProgress {
   Idle,
@@ -440,14 +481,14 @@ export type ProfileTabType =
   | 'audio'
   | 'voice'
   | 'gif'
-  | 'playlist'
   | 'stories'
   | 'storiesArchive'
   | 'similarChannels'
   | 'similarBots'
   | 'dialogs'
-  | 'gifts';
-export type SharedMediaType = 'media' | 'documents' | 'links' | 'audio' | 'voice' | 'gif';
+  | 'gifts'
+  | 'polls';
+export type SharedMediaType = 'media' | 'documents' | 'links' | 'audio' | 'voice' | 'gif' | 'polls';
 export type MiddleSearchType = 'chat' | 'myChats' | 'channels';
 export type MiddleSearchParams = {
   requestedQuery?: string;
@@ -481,6 +522,10 @@ export interface ChatMediaSearchParams {
   currentSegment: ChatMediaSearchSegment;
   segments: ChatMediaSearchSegment[];
   isLoading: boolean;
+  pendingRequest?: {
+    currentMediaMessageId: number;
+    direction?: LoadMoreDirection;
+  };
 }
 
 export enum ProfileState {
@@ -716,7 +761,9 @@ export interface TopicsInfo {
 
 export type TranslatedMessage = {
   isPending?: boolean;
+  requestId?: string;
   text?: ApiFormattedText;
+  richMessage?: ApiRichMessage;
   summary?: TextSummary;
 };
 
@@ -811,6 +858,7 @@ export type SendMessageParams = {
   sticker?: ApiSticker;
   story?: ApiStory | ApiStorySkipped;
   gif?: ApiVideo;
+  audio?: ApiAudio;
   poll?: ApiNewPoll;
   todo?: ApiNewMediaTodo;
   dice?: string;

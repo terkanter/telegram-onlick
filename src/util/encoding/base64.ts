@@ -22,3 +22,10 @@ export function base64UrlToString(base64Url: string): string {
   const buffer = base64UrlToBuffer(base64Url);
   return bufferToUtf8(buffer);
 }
+
+export function bufferToBase64Url(buffer: Uint8Array): string {
+  const base64 = typeof buffer.toBase64 === 'function'
+    ? buffer.toBase64()
+    : btoa(String.fromCharCode(...buffer));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}

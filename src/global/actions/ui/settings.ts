@@ -145,7 +145,7 @@ addActionHandler('setThemeSettings', (global, actions, payload): ActionReturnTyp
   const previousBackground = selectSharedSettings(global).themes[theme]?.background;
 
   global = updateThemeSettings(global, theme, settings);
-  updateCustomBackgroundCache(global, previousBackground);
+  if ('background' in settings) updateCustomBackgroundCache(global, previousBackground);
 
   return global;
 });
@@ -155,6 +155,7 @@ function updateCustomBackgroundCache(global: GlobalState, previousBackground: st
     getSelectedBackgrounds(global),
     previousBackground,
     getCurrentSelectedBackgrounds,
+    selectSharedSettings(global).shouldKeepLockScreenBackground,
   );
 }
 

@@ -15,6 +15,8 @@ const TWO_YEARS = MONTH * 24;
 
 const DURATION_DELTA = 5;
 
+const NORMALIZED_ANIMATED_EMOJI_BY_STICKERS = new WeakMap<ApiSticker[], Map<string, ApiSticker>>();
+
 // https://github.com/DrKLO/Telegram/blob/c319639e9a4dff2f22da6762dcebd12d49f5afa1/TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/msg/GiveawayMessageCell.java#L59
 const DURATION_EMOTICON: Record<number, string> = {
   [MONTH]: `${1}\u{FE0F}\u20E3`, // 1 month
@@ -123,8 +125,26 @@ function cleanEmoji(emoji: string) {
   return emoji.replace('\ufe0f', '');
 }
 
-function cleanAnimatedEmoji(emoji: string) {
+function normalizeAnimatedEmoji(emoji: string) {
   return cleanEmoji(hasMixedEmojiSkinTones(emoji) ? emoji : removeEmojiSkinTone(emoji));
+}
+
+function getAnimatedEmojiByNormalizedEmoji(stickers: ApiSticker[]) {
+  const cachedByEmoji = NORMALIZED_ANIMATED_EMOJI_BY_STICKERS.get(stickers);
+  if (cachedByEmoji) return cachedByEmoji;
+
+  const byEmoji = new Map<string, ApiSticker>();
+  stickers.forEach((sticker) => {
+    if (!sticker.emoji) return;
+
+    const normalizedEmoji = normalizeAnimatedEmoji(sticker.emoji);
+    if (!byEmoji.has(normalizedEmoji)) {
+      byEmoji.set(normalizedEmoji, sticker);
+    }
+  });
+  NORMALIZED_ANIMATED_EMOJI_BY_STICKERS.set(stickers, byEmoji);
+
+  return byEmoji;
 }
 
 export function selectAnimatedEmoji<T extends GlobalState>(global: T, emoji: string) {
@@ -133,11 +153,8 @@ export function selectAnimatedEmoji<T extends GlobalState>(global: T, emoji: str
     return undefined;
   }
 
-  const cleanedEmoji = cleanAnimatedEmoji(emoji);
-
-  return animatedEmojis.stickers.find((sticker) => (
-    sticker.emoji && cleanAnimatedEmoji(sticker.emoji) === cleanedEmoji
-  ));
+  const normalizedEmoji = normalizeAnimatedEmoji(emoji);
+  return getAnimatedEmojiByNormalizedEmoji(animatedEmojis.stickers).get(normalizedEmoji);
 }
 
 export function selectRestrictedEmoji<T extends GlobalState>(global: T, emoji: string) {
@@ -161,15 +178,12 @@ export function selectAnimatedEmojiEffect<T extends GlobalState>(global: T, emoj
     return undefined;
   }
 
-  const cleanedEmoji = cleanAnimatedEmoji(emoji);
-
-  return animatedEmojiEffects.stickers.find((sticker) => (
-    sticker.emoji && cleanAnimatedEmoji(sticker.emoji) === cleanedEmoji
-  ));
+  const normalizedEmoji = normalizeAnimatedEmoji(emoji);
+  return getAnimatedEmojiByNormalizedEmoji(animatedEmojiEffects.stickers).get(normalizedEmoji);
 }
 
 export function selectAnimatedEmojiSound<T extends GlobalState>(global: T, emoji: string) {
-  return global?.appConfig.emojiSounds[cleanAnimatedEmoji(emoji)];
+  return global?.appConfig.emojiSounds[normalizeAnimatedEmoji(emoji)];
 }
 
 export function selectIsAlwaysHighPriorityEmoji<T extends GlobalState>(

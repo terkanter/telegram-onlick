@@ -140,7 +140,7 @@ function MediaStory({
           {lang('StoryUnsupported')}
         </span>
       )}
-      {isPinned && <Icon className={buildClassName(styles.overlayIcon, styles.pinnedIcon)} name="pin-badge" />}
+      {isPinned && <Icon className={buildClassName(styles.overlayIcon, styles.pinnedIcon)} name="pin-filled" />}
       {isFullyLoaded && Boolean(story.views?.viewsCount) && (
         <span className={buildClassName(styles.overlayIcon, styles.viewsCount)}>
           <Icon name="eye" />

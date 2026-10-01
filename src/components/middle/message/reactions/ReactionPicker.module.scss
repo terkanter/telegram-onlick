@@ -1,3 +1,5 @@
+@use "../../../../styles/mixins";
+
 .menu {
   z-index: var(--z-reaction-picker) !important;
 
@@ -55,6 +57,8 @@
 
 .storyMenu {
   --color-background-compact-menu: rgba(0, 0, 0, 0.3);
+  --color-text: #fff;
+  --color-text-rgb: 255, 255, 255;
   --color-text-secondary: #fff;
   --color-text-secondary-rgb: 255, 255, 255;
   --color-default-shadow: rgba(0, 0, 0, 0.3);
@@ -90,4 +94,10 @@
 
 .hidden {
   display: none !important;
+}
+
+.extendedPicker {
+  height: calc(100% + 2rem);
+
+  @include mixins.gradient-border-bottom(calc(2rem + 0.5rem), calc(2rem + 0.0625rem));
 }

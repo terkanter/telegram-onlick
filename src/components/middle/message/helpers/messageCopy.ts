@@ -1,10 +1,7 @@
 import type { JSONContent as TiptapJsonContent } from '@tiptap/core';
 import { getGlobal, getPromiseActions } from '../../../../global';
 
-import type {
-  ApiFormattedText,
-  ApiMessage,
-} from '../../../../api/types';
+import type { ApiMessage } from '../../../../api/types';
 import type { GlobalState } from '../../../../global/types';
 import type { MessageList } from '../../../../types';
 import type { ClipboardTextContent, MessageCopyRequest } from '../../../../types/messageCopy';
@@ -15,16 +12,11 @@ import { renderMessageSummaryHtml } from '../../../../global/helpers/renderMessa
 import {
   selectAllowedMessageActionsSlow,
   selectChat,
-  selectChatMessages,
+  selectChatMessageOrEphemeral,
   selectChatScheduledMessages,
-  selectEphemeralMessage,
-  selectMessageTranslations,
-  selectRequestedChatTranslationLanguage,
-  selectRequestedChatTranslationTone,
-  selectRequestedMessageTranslationLanguage,
+  selectMessageCopyContent,
   selectSender,
 } from '../../../../global/selectors';
-import { getTranslationCacheKey } from '../../../../util/keys/translationKey';
 import { getTranslationFn } from '../../../../util/localization';
 import {
   parseMessageCopyHtml,
@@ -48,7 +40,8 @@ export async function buildMessageCopyContent(
   if (!messages.length) throw new Error('NO_MESSAGES_TO_COPY');
 
   const partialMessageIds = request.type === 'messages'
-    ? messages.filter(({ content }) => content.richMessage?.isPart).map(({ id }) => id)
+    ? messages.filter((message) => selectMessageCopyContent(global, message, tabId).richMessage?.isPart)
+      .map(({ id }) => id)
     : [];
   if (partialMessageIds.length) {
     const isScheduled = messageList.type === 'scheduled' || undefined;
@@ -59,7 +52,8 @@ export async function buildMessageCopyContent(
     global = getGlobal();
     messages = getMessagesForCopy(global, messageList, messageIds);
     if (partialMessageIds.some((messageId) => {
-      const richMessage = messages.find(({ id }) => id === messageId)?.content.richMessage;
+      const message = messages.find(({ id }) => id === messageId);
+      const richMessage = message && selectMessageCopyContent(global, message, tabId).richMessage;
       return !richMessage || richMessage.isPart;
     })) {
       throw new Error('RICH_MESSAGE_LOAD_FAILED');
@@ -88,7 +82,7 @@ function buildMessagesDoc(
   const lang = getTranslationFn();
   const content: TiptapJsonContent[] = [];
   messages.forEach((message, index) => {
-    const translatedText = selectMessageCopyText(global, message, tabId);
+    const { text: translatedText, richMessage } = selectMessageCopyContent(global, message, tabId);
     const sender = isChatChannel(chat) ? chat : selectSender(global, message);
     const senderTitle = sender ? getPeerTitle(lang, sender) : message.forwardInfo?.hiddenUserName;
     if (request.withSenderHeaders && senderTitle) {
@@ -98,8 +92,8 @@ function buildMessagesDoc(
       });
     }
 
-    if (message.content.richMessage) {
-      content.push(...(buildTiptapJsonFromRichMessage(message.content.richMessage, { isForCopy: true }).content || []));
+    if (richMessage) {
+      content.push(...(buildTiptapJsonFromRichMessage(richMessage, { isForCopy: true }).content || []));
     } else if (!request.withSenderHeaders) {
       content.push(...(buildTiptapJsonFromRichMessage(
         buildRichMessageFromFormatted(translatedText || message.content.text),
@@ -120,26 +114,11 @@ function buildMessagesDoc(
 
 function getMessagesForCopy(global: GlobalState, messageList: MessageList, messageIds: number[]) {
   const { chatId, threadId, type } = messageList;
-  const messages = type === 'scheduled'
-    ? selectChatScheduledMessages(global, chatId)
-    : selectChatMessages(global, chatId);
-  if (!messages) return [];
+  const scheduledMessages = type === 'scheduled' ? selectChatScheduledMessages(global, chatId) : undefined;
 
   return messageIds
-    .map((id) => messages[id] || selectEphemeralMessage(global, chatId, id))
+    .map((id) => type === 'scheduled' ? scheduledMessages?.[id] : selectChatMessageOrEphemeral(global, chatId, id))
     .filter((message): message is ApiMessage => message !== undefined
       && Boolean(selectAllowedMessageActionsSlow(global, message, threadId).canCopy))
     .sort((left, right) => left.id - right.id);
-}
-
-function selectMessageCopyText(global: GlobalState, message: ApiMessage, tabId: number): ApiFormattedText | undefined {
-  const chatLanguage = selectRequestedChatTranslationLanguage(global, message.chatId, tabId);
-  const messageLanguage = selectRequestedMessageTranslationLanguage(global, message.chatId, message.id, tabId);
-  const cacheKey = chatLanguage
-    ? getTranslationCacheKey(chatLanguage, selectRequestedChatTranslationTone(global, message.chatId, tabId))
-    : messageLanguage;
-
-  return cacheKey
-    ? selectMessageTranslations(global, message.chatId, cacheKey)[message.id]?.text || message.content.text
-    : message.content.text;
 }

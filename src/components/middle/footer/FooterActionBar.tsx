@@ -1,9 +1,10 @@
-import { memo } from '../../../lib/teact/teact';
+import { memo, useRef } from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
 
 import type { IconName } from '../../../types/icons';
 
 import { MUTE_INDEFINITE_TIMESTAMP, UNMUTE_TIMESTAMP } from '../../../config';
+import buildClassName from '../../../util/buildClassName';
 
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -160,13 +161,19 @@ const FooterActionBar = ({
     return undefined;
   })();
 
+  const withChannelSideActions = !canUnpinAll && !canOpenSavedChat;
+  const withDirect = Boolean(withChannelSideActions && isChannel && linkedMonoforumId);
+  const withGift = Boolean(withChannelSideActions && isChannel && areGiftsAvailable);
+
+  const hadDirectOnMountRef = useRef(withDirect);
+  const hadGiftOnMountRef = useRef(withGift);
+
   if (!mainButton) {
     return undefined;
   }
 
-  const withChannelSideActions = !canUnpinAll && !canOpenSavedChat;
-  const withDirect = Boolean(withChannelSideActions && isChannel && linkedMonoforumId);
-  const withGift = Boolean(withChannelSideActions && isChannel && areGiftsAvailable);
+  const directClassName = buildClassName(styles.sideButton, !hadDirectOnMountRef.current && styles.appearing);
+  const giftClassName = buildClassName(styles.sideButton, !hadGiftOnMountRef.current && styles.appearing);
 
   return (
     <div className={styles.root} data-footer-action-bar dir={lang.isRtl ? 'rtl' : undefined}>
@@ -176,7 +183,7 @@ const FooterActionBar = ({
             <Button
               round
               color="translucent"
-              className={styles.sideButton}
+              className={directClassName}
               ariaLabel={lang('ChannelSendMessage')}
               iconName="direct"
               onClick={handleOpenDirect}
@@ -201,9 +208,9 @@ const FooterActionBar = ({
             <Button
               round
               color="translucent"
-              className={styles.sideButton}
+              className={giftClassName}
               ariaLabel={lang('ProfileSendAGift')}
-              iconName="closed-gift"
+              iconName="gift"
               onClick={handleOpenGift}
             />
           </div>

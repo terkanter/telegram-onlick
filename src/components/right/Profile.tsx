@@ -3,7 +3,6 @@ import { memo, useEffect, useMemo, useRef, useState } from '@teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type {
-  ApiAudio,
   ApiBotPreviewMedia,
   ApiChat,
   ApiChatFullInfo,
@@ -24,10 +23,10 @@ import type { AnimationLevel, ProfileState, ProfileTabType,
   SharedMediaType, ThemeKey, ThreadId } from '../../types';
 import type { RegularLangKey } from '../../types/language';
 import { MAIN_THREAD_ID } from '../../api/types';
-import { AudioOrigin, LoadMoreDirection, MediaViewerOrigin, NewChatMembersProgress } from '../../types';
+import { LoadMoreDirection, MediaViewerOrigin, NewChatMembersProgress } from '../../types';
 
 import {
-  MEMBERS_SLICE, PROFILE_SENSITIVE_AREA, SHARED_MEDIA_SLICE, SLIDE_TRANSITION_DURATION,
+  MEMBERS_SLICE, PROFILE_POLLS_SLICE, PROFILE_SENSITIVE_AREA, SHARED_MEDIA_SLICE, SLIDE_TRANSITION_DURATION,
 } from '../../config';
 import {
   getHasAdminRight,
@@ -63,7 +62,6 @@ import {
   selectUser,
   selectUserCommonChats,
   selectUserFullInfo,
-  selectUserSavedMusic,
 } from '../../global/selectors';
 import { selectPremiumLimit } from '../../global/selectors/limits';
 import { selectMessageDownloadableMedia } from '../../global/selectors/media';
@@ -116,7 +114,7 @@ import PreviewMedia from '../common/PreviewMedia';
 import PrivateChatInfo from '../common/PrivateChatInfo';
 import ChatExtra from '../common/profile/ChatExtra';
 import ProfileInfo from '../common/profile/ProfileInfo.tsx';
-import ProfileMusic from '../common/ProfileMusic';
+import ProfilePoll from '../common/ProfilePoll';
 import WebLink from '../common/WebLink';
 import Island from '../gili/layout/Island';
 import Surface from '../gili/layout/Surface';
@@ -161,9 +159,6 @@ type StateProps = {
   hasMembersTab?: boolean;
   hasPreviewMediaTab?: boolean;
   hasGiftsTab?: boolean;
-  hasPlaylistTab?: boolean;
-  playlistById?: Record<string, ApiAudio>;
-  playlistIds?: string[];
   gifts?: ApiSavedStarGift[];
   storyAlbums?: ApiStoryAlbum[];
   giftCollections?: ApiStarGiftCollection[];
@@ -225,6 +220,9 @@ const TABS: LocalTabProps[] = [
 const CONTENT_PANEL_SHOW_DELAY = 300;
 const HIDDEN_RENDER_DELAY = 1000;
 const INTERSECTION_THROTTLE = 500;
+const NESTED_CONTENT_SELECTOR = (
+  `.Transition > .Transition_slide-active > .Transition > .Transition_slide-active > .${styles.content}`
+);
 
 const VALID_CHANNEL_MAIN_TAB_TYPES = new Set<StringAutocomplete<ApiProfileTab>>([
   'stories', 'gifts', 'media', 'documents', 'audio', 'voice', 'links', 'gif',
@@ -233,13 +231,17 @@ const VALID_USER_MAIN_TAB_TYPES = new Set<StringAutocomplete<ApiProfileTab>>([
   'stories', 'gifts',
 ]);
 const SHARED_MEDIA_TYPES = new Set<StringAutocomplete<SharedMediaType>>([
-  'media', 'documents', 'links', 'audio', 'voice', 'gif',
+  'media', 'documents', 'links', 'audio', 'voice', 'gif', 'polls',
 ]);
 const NON_ISLAND_TABS = new Set<ProfileTabType>([
-  'media', 'gif', 'stories', 'storiesArchive', 'previewMedia', 'gifts',
+  'media', 'gif', 'stories', 'storiesArchive', 'previewMedia', 'gifts', 'polls',
 ]);
 const MESSAGE_BASED_TABS = new Set<ProfileTabType>([
-  'media', 'gif', 'documents', 'links', 'audio', 'voice',
+  'media', 'gif', 'documents', 'links', 'audio', 'voice', 'polls',
+]);
+const VIRTUALIZED_TABS = new Set<ProfileTabType>([
+  'media', 'gif', 'documents', 'links', 'audio',
+  'voice', 'polls', 'members', 'commonChats', 'stories', 'storiesArchive',
 ]);
 
 const CONTENT_LIST_CLASS: Record<string, string> = {
@@ -248,7 +250,7 @@ const CONTENT_LIST_CLASS: Record<string, string> = {
   links: styles.linksList,
   audio: styles.audioList,
   voice: styles.voiceList,
-  playlist: styles.playlistList,
+  polls: styles.pollsList,
   gif: styles.gifList,
   stories: styles.storiesList,
   storiesArchive: styles.storiesArchiveList,
@@ -288,9 +290,6 @@ const Profile = ({
   hasMembersTab,
   hasPreviewMediaTab,
   hasGiftsTab,
-  hasPlaylistTab,
-  playlistById,
-  playlistIds,
   gifts,
   storyAlbums,
   giftCollections,
@@ -329,8 +328,6 @@ const Profile = ({
     setSharedMediaSearchType,
     loadMoreMembers,
     loadCommonChats,
-    loadSavedMusic,
-    loadSavedMusicIds,
     openChat,
     searchSharedMediaMessages,
     openMediaViewer,
@@ -395,10 +392,6 @@ const Profile = ({
       arr.push({ type: 'gifts', key: 'ProfileTabGifts' });
     }
 
-    if (hasPlaylistTab) {
-      arr.push({ type: 'playlist', key: 'ProfileTabPlaylist' });
-    }
-
     if (hasStoriesTab && isOwnProfile) {
       arr.push({ type: 'storiesArchive', key: 'ProfileTabStoriesArchive' });
     }
@@ -418,6 +411,10 @@ const Profile = ({
     // Voice messages filter currently does not work in forum topics. Return it when it's fixed on the server side.
     if (!isTopicInfo && !isOwnProfile) {
       arr.push({ type: 'voice', key: 'ProfileTabVoice' });
+    }
+
+    if (!isOwnProfile) {
+      arr.push({ type: 'polls', key: 'ProfileTabPolls' });
     }
 
     if (hasCommonChatsTab && !isOwnProfile) {
@@ -464,7 +461,7 @@ const Profile = ({
       } satisfies TabWithPropertiesAndType;
     });
   }, [
-    isGeneralSavedMessages, hasStoriesTab, hasGiftsTab, hasPlaylistTab, hasMembersTab, hasPreviewMediaTab,
+    isGeneralSavedMessages, hasStoriesTab, hasGiftsTab, hasMembersTab, hasPreviewMediaTab,
     isTopicInfo,
     hasCommonChatsTab, isChannel, isBot, similarChannels?.length, similarBots?.length, lang, isOwnProfile,
     mainTab, chatId, canUpdateMainTab, validMainTabTypes,
@@ -481,13 +478,14 @@ const Profile = ({
   useEffect(() => {
     if (isClosed) return;
     if (profileTab) {
-      // Force reset scroll marker
-      changeProfileTab({ profileTab, shouldScrollTo: undefined });
+      if (forceScrollProfileTab) {
+        changeProfileTab({ profileTab, shouldScrollTo: undefined });
+      }
       return;
-    };
+    }
 
     setActiveTab(tabs[0].type); // Set default tab
-  }, [isClosed, profileTab, tabs]);
+  }, [isClosed, profileTab, tabs, forceScrollProfileTab]);
 
   useEffectWithPrevDeps(([prevPeerFullInfo]) => {
     if (prevPeerFullInfo || !peerFullInfo?.mainTab) return;
@@ -587,11 +585,6 @@ const Profile = ({
   const handleLoadGifts = useLastCallback(() => {
     loadPeerSavedGifts({ peerId: chatId });
   });
-  const handleLoadSavedMusic = useLastCallback(() => {
-    if (!isSynced) return;
-    loadSavedMusic({ userId: chatId });
-  });
-
   const handleLoadMoreMembers = useLastCallback(() => {
     if (!isSynced) return;
     loadMoreMembers({ chatId });
@@ -620,13 +613,17 @@ const Profile = ({
     }
   }, [gifts, startViewTransition, isGiftTransitionEnabled]);
 
+  const [scrollToTopKey, setScrollToTopKey] = useState(0);
+  const handleScrollToTop = useLastCallback(() => {
+    setScrollToTopKey(scrollToTopKey + 1);
+  });
+
   const [resultType, viewportIds, getMore, noProfileInfo] = useProfileViewportIds({
     loadMoreMembers: handleLoadMoreMembers,
     searchMessages: searchSharedMediaMessages,
     loadStories: handleLoadPeerStories,
     loadStoriesArchive: handleLoadStoriesArchive,
     loadMoreGifts: handleLoadGifts,
-    loadSavedMusic: handleLoadSavedMusic,
     loadCommonChats: handleLoadCommonChats,
     tabType,
     mediaSearchType,
@@ -640,27 +637,21 @@ const Profile = ({
     threadId,
     storyIds,
     giftIds,
-    playlistIds,
     pinnedStoryIds,
     archiveStoryIds,
     similarChannels,
     similarBots,
+    scrollToTopKey,
   });
 
   const shouldWrapInIsland = !NON_ISLAND_TABS.has(resultType);
+  const isVirtualized = VIRTUALIZED_TABS.has(resultType);
 
   useEffect(() => {
     if (getMore && !viewportIds && isSynced) {
       getMore({ direction: LoadMoreDirection.Backwards });
     }
   }, [getMore, viewportIds, resultType, isSynced]);
-
-  useEffect(() => {
-    // Needed to tell whether each track is already on the current user's own profile
-    if (resultType === 'playlist') {
-      loadSavedMusicIds();
-    }
-  }, [resultType]);
 
   const shouldRenderProfileInfo = !noProfileInfo && !isSavedMessages;
 
@@ -717,10 +708,12 @@ const Profile = ({
     containerRef,
     tabType: resultType,
     profileState,
+    hasProfileInfo: !isSavedMessages,
     forceScrollProfileTab,
     allowAutoScrollToTabs,
     onProfileStateChange,
     handleStopAutoScrollToTabs,
+    onScrollToTop: handleScrollToTop,
   });
 
   useTransitionFixes(containerRef);
@@ -752,8 +745,12 @@ const Profile = ({
     });
   });
 
-  const handlePlayAudio = useLastCallback((messageId: number) => {
-    openAudioPlayer({ chatId: profileId, messageId });
+  const handlePlayAudio = useLastCallback((messageId: number, messageChatId: string) => {
+    openAudioPlayer({
+      item: {
+        type: 'message', chatId: messageChatId, threadId: threadId ?? MAIN_THREAD_ID, messageId,
+      },
+    });
   });
 
   const handleMemberClick = useLastCallback((id: string) => {
@@ -889,25 +886,35 @@ const Profile = ({
   }
 
   const shouldWrapInInfiniteScroll = shouldWrapInIsland && resultType !== 'dialogs';
+  const shouldUseTransitionForContent = resultType === 'stories' || resultType === 'gifts';
+
+  function wrapInInfiniteScroll(content: TeactNode) {
+    const listClass = CONTENT_LIST_CLASS[resultType];
+    const itemSelector = shouldUseTransitionForContent
+      ? `.${listClass} > .Transition_slide-active .${listClass} > .scroll-item`
+      : `.${listClass} > .scroll-item`;
+
+    return (
+      <InfiniteScroll
+        items={canRenderContent ? viewportIds : undefined}
+        itemSelector={itemSelector}
+        preloadBackwards={canRenderContent ? getPreloadSlice(resultType) : 0}
+        sensitiveArea={PROFILE_SENSITIVE_AREA}
+        scrollContainerClosest=".Profile"
+        noScrollRestore={!isVirtualized}
+        noScrollRestoreOnTop
+        noFastList
+        onLoadMore={getMore}
+      >
+        {content}
+      </InfiniteScroll>
+    );
+  }
 
   function wrapInIsland(content: TeactNode, className?: string) {
     if (!shouldWrapInIsland) return content;
 
-    const inner = shouldWrapInInfiniteScroll ? (
-      <InfiniteScroll
-        items={canRenderContent ? viewportIds : undefined}
-        itemSelector={`.${CONTENT_LIST_CLASS[resultType]} > .scroll-item`}
-        preloadBackwards={canRenderContent
-          ? (resultType === 'members' ? MEMBERS_SLICE : SHARED_MEDIA_SLICE) : 0}
-        onLoadMore={getMore}
-        scrollContainerClosest=".Profile"
-        sensitiveArea={PROFILE_SENSITIVE_AREA}
-        noScrollRestore
-        noFastList
-      >
-        {content}
-      </InfiniteScroll>
-    ) : content;
+    const inner = shouldWrapInInfiniteScroll ? wrapInInfiniteScroll(content) : content;
 
     return (
       <div className={styles.sharedMediaIslandContainer}>
@@ -946,18 +953,7 @@ const Profile = ({
     return (
       <div className={styles.sharedMediaIslandContainer}>
         {renderCategories()}
-        <InfiniteScroll
-          itemSelector={`.${CONTENT_LIST_CLASS[resultType]} > .scroll-item`}
-          items={canRenderContent ? viewportIds : undefined}
-          sensitiveArea={PROFILE_SENSITIVE_AREA}
-          preloadBackwards={canRenderContent ? SHARED_MEDIA_SLICE : 0}
-          scrollContainerClosest=".Profile"
-          noScrollRestore
-          onLoadMore={getMore}
-          noFastList
-        >
-          {renderSpinnerOrContent(noContent, noSpinner)}
-        </InfiniteScroll>
+        {wrapInInfiniteScroll(renderSpinnerOrContent(noContent, noSpinner))}
       </div>
     );
   }
@@ -1036,6 +1032,9 @@ const Profile = ({
         case 'voice':
           text = oldLang('lng_media_audio_empty');
           break;
+        case 'polls':
+          text = lang('ProfilePollsEmpty');
+          break;
         case 'stories':
           text = oldLang('StoryList.SavedEmptyState.Title');
           break;
@@ -1045,9 +1044,6 @@ const Profile = ({
         case 'gif':
           text = oldLang('lng_media_gif_empty');
           break;
-        case 'playlist':
-          text = lang('ProfilePlaylistEmpty');
-          break;
         default:
           text = oldLang('SharedMedia.EmptyTitle');
       }
@@ -1055,20 +1051,6 @@ const Profile = ({
       return (
         <div className={buildClassName(styles.content, styles.emptyList)}>
           <NothingFound text={text} />
-        </div>
-      );
-    }
-
-    if (resultType === 'playlist') {
-      return (
-        <div className={buildClassName(styles.content, CONTENT_LIST_CLASS[resultType])}>
-          {(viewportIds as string[]).filter((id) => Boolean(playlistById?.[id])).map((id) => (
-            <ProfileMusic
-              key={id}
-              audio={playlistById![id]}
-              className="scroll-item"
-            />
-          ))}
         </div>
       );
     }
@@ -1089,6 +1071,7 @@ const Profile = ({
           noTransition && styles.noTransition,
         )}
         dir={lang.isRtl && (resultType === 'media' || resultType === 'gif') ? 'rtl' : undefined}
+        teactFastList
       >
         {resultType === 'media' || resultType === 'gif' ? (
           (viewportIds as number[]).filter((id) => Boolean(messagesById[id])).map((id, i, ids) => (
@@ -1148,7 +1131,8 @@ const Profile = ({
               key={id}
               theme={theme}
               message={messagesById[id]}
-              origin={AudioOrigin.SharedMedia}
+              variant="sharedMedia"
+              threadId={threadId}
               date={messagesById[id].date}
               className="scroll-item"
               onPlay={handlePlayAudio}
@@ -1170,7 +1154,8 @@ const Profile = ({
                 theme={theme}
                 message={message}
                 senderTitle={getSenderName(oldLang, message, chatsById, usersById)}
-                origin={AudioOrigin.SharedMedia}
+                variant="sharedMedia"
+                threadId={threadId}
                 date={message.date}
                 className="scroll-item"
                 onPlay={handlePlayAudio}
@@ -1181,6 +1166,17 @@ const Profile = ({
               />
             );
           })
+        ) : resultType === 'polls' ? (
+          (viewportIds as number[]).filter((id) => Boolean(messagesById[id])).map((id) => (
+            <ProfilePoll
+              key={id}
+              message={messagesById[id]}
+              theme={theme}
+              observeIntersection={observeIntersectionForMedia}
+              contextActions={getMessageContextActions(messagesById[id])}
+              onDateClick={handleMessageFocus}
+            />
+          ))
         ) : resultType === 'members' ? (
           (viewportIds as string[]).map((id, i) => (
             <ListItem
@@ -1247,7 +1243,7 @@ const Profile = ({
                 <Button
                   className={styles.showMoreChannels}
                   onClick={() => openPremiumModal()}
-                  iconName="unlock-badge"
+                  iconName="unlock-filled"
                   iconAlignment="end"
                 >
                   {oldLang('UnlockSimilar')}
@@ -1279,7 +1275,7 @@ const Profile = ({
             ))}
             {!isCurrentUserPremium && (
               <>
-                <Button className={styles.showMoreBots} onClick={() => openPremiumModal()} iconName="unlock-badge">
+                <Button className={styles.showMoreBots} onClick={() => openPremiumModal()} iconName="unlock-filled">
                   {lang('UnlockMoreSimilarBots')}
                 </Button>
                 <div className={styles.moreSimilar}>
@@ -1312,7 +1308,6 @@ const Profile = ({
     return wrapInIsland(contentEl);
   }
 
-  const shouldUseTransitionForContent = resultType === 'stories' || resultType === 'gifts';
   const contentTransitionKey = (() => {
     if (resultType === 'stories') {
       return selectedStoryAlbumId === 'all' ? 0 : selectedStoryAlbumId;
@@ -1441,9 +1436,7 @@ const Profile = ({
               activeKey={activeKey}
               renderCount={tabs.length}
               className="shared-media-transition"
-              contentSelector={shouldUseTransitionForContent
-                ? `.Transition > .Transition_slide-active > .Transition > .Transition_slide-active > .${styles.content}`
-                : undefined}
+              contentSelector={shouldUseTransitionForContent ? NESTED_CONTENT_SELECTOR : undefined}
             >
               {renderContent()}
             </Transition>
@@ -1464,6 +1457,17 @@ const Profile = ({
     </Surface>
   );
 };
+
+function getPreloadSlice(resultType: ProfileTabType) {
+  switch (resultType) {
+    case 'members':
+      return MEMBERS_SLICE;
+    case 'polls':
+      return PROFILE_POLLS_SLICE;
+    default:
+      return SHARED_MEDIA_SLICE;
+  }
+}
 
 export default memo(withGlobal<OwnProps>(
   (global, {
@@ -1531,9 +1535,6 @@ export default memo(withGlobal<OwnProps>(
 
     const hasGiftsTab = Boolean(peerFullInfo?.starGiftCount) && !isSavedMessages;
 
-    // `savedMusic` holds the track shown on the profile, so its presence means the peer has a playlist
-    const hasPlaylistTab = Boolean(userFullInfo?.savedMusic) && !isSavedMessages;
-    const savedMusic = hasPlaylistTab ? selectUserSavedMusic(global, chatId) : undefined;
     const activeCollectionId = selectActiveGiftsCollectionId(global, chatId);
     const peerGifts = savedGifts.collectionsByPeerId[chatId]?.[activeCollectionId];
 
@@ -1574,9 +1575,6 @@ export default memo(withGlobal<OwnProps>(
       chatsById,
       storyIds,
       hasGiftsTab,
-      hasPlaylistTab,
-      playlistById: savedMusic?.byId,
-      playlistIds: savedMusic?.ids,
       gifts: peerGifts?.gifts,
       storyAlbums,
       giftCollections,

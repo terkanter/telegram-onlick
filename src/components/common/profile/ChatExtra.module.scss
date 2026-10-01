@@ -98,11 +98,6 @@
   @include mixins.with-vt-type('profileNote');
 }
 
-.noteListItemIcon {
-  align-self: flex-start;
-  padding-top: 1rem;
-}
-
 .noteHint {
   margin-left: auto;
 }

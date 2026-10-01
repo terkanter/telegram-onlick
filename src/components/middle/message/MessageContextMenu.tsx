@@ -30,7 +30,6 @@ import { getPeerTitle } from '../../../global/helpers/peers';
 import buildClassName from '../../../util/buildClassName';
 import { isUserId } from '../../../util/entities/ids';
 import { disableScrolling } from '../../../util/scrollLock';
-import { getServerTime } from '../../../util/serverTime';
 import { REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
 import { getMessageCopyOptions } from './helpers/copyOptions';
@@ -47,12 +46,11 @@ import useOldLang from '../../../hooks/useOldLang';
 import AvatarList from '../../common/AvatarList';
 import Icon from '../../common/icons/Icon';
 import Menu from '../../ui/Menu';
-import MenuItem from '../../ui/MenuItem';
+import MenuItem, { MenuItemSubtitle, MenuItemTitle } from '../../ui/MenuItem';
 import MenuSeparator from '../../ui/MenuSeparator';
 import NestedMenuItem from '../../ui/NestedMenuItem';
 import Skeleton from '../../ui/placeholder/Skeleton';
-import Transition from '../../ui/Transition';
-import AutoDeleteTimeMenuItem from './AutoDeleteTimeMenuItem';
+import DeleteMenuItem from './DeleteMenuItem';
 import LastEditTimeMenuItem from './LastEditTimeMenuItem';
 import ReactionSelector from './reactions/ReactionSelector';
 import ReadTimeMenuItem from './ReadTimeMenuItem';
@@ -299,10 +297,8 @@ const MessageContextMenu = ({
   );
   const hasPollRestrictionMessage = Boolean(pollSubscriberRestrictionMessage) || Boolean(pollCountryRestrictionMessage);
   const autoDeleteAt = message.ttlPeriod ? message.date + message.ttlPeriod : undefined;
-  const hasAutoDeleteTimer = Boolean(autoDeleteAt && autoDeleteAt > getServerTime());
   const shouldRenderInfoSection = Boolean(
-    canLoadReadDate || shouldRenderShowWhen || isEdited || noForwardsNotice || hasPollRestrictionMessage
-    || hasAutoDeleteTimer,
+    canLoadReadDate || shouldRenderShowWhen || isEdited || noForwardsNotice || hasPollRestrictionMessage,
   );
 
   const [isReady, markIsReady, unmarkIsReady] = useFlag();
@@ -491,10 +487,10 @@ const MessageContextMenu = ({
           </MenuItem>
         )}
         {canFaveSticker && (
-          <MenuItem icon="favorite" onClick={onFaveSticker}>{oldLang('AddToFavorites')}</MenuItem>
+          <MenuItem icon="star-regular" onClick={onFaveSticker}>{oldLang('AddToFavorites')}</MenuItem>
         )}
         {canUnfaveSticker && (
-          <MenuItem icon="favorite" onClick={onUnfaveSticker}>{oldLang('Stickers.RemoveFromFavorites')}</MenuItem>
+          <MenuItem icon="star-regular" onClick={onUnfaveSticker}>{oldLang('Stickers.RemoveFromFavorites')}</MenuItem>
         )}
         {canTranslate && (
           <MenuItem icon="language" onClick={() => onTranslate?.()}>{oldLang('TranslateMessage')}</MenuItem>
@@ -511,21 +507,21 @@ const MessageContextMenu = ({
             submenu={(
               <>
                 <MenuItem
-                  icon={currentTranslationTone === 'neutral' ? 'message-succeeded' : undefined}
+                  icon={currentTranslationTone === 'neutral' ? 'check' : undefined}
                   customIcon={currentTranslationTone !== 'neutral' ? <Icon name="placeholder" /> : undefined}
                   onClick={() => onTranslateWithTone?.('neutral')}
                 >
                   {lang('TranslationToneNeutral')}
                 </MenuItem>
                 <MenuItem
-                  icon={currentTranslationTone === 'formal' ? 'message-succeeded' : undefined}
+                  icon={currentTranslationTone === 'formal' ? 'check' : undefined}
                   customIcon={currentTranslationTone !== 'formal' ? <Icon name="placeholder" /> : undefined}
                   onClick={() => onTranslateWithTone?.('formal')}
                 >
                   {lang('TranslationToneFormal')}
                 </MenuItem>
                 <MenuItem
-                  icon={currentTranslationTone === 'casual' ? 'message-succeeded' : undefined}
+                  icon={currentTranslationTone === 'casual' ? 'check' : undefined}
                   customIcon={currentTranslationTone !== 'casual' ? <Icon name="placeholder" /> : undefined}
                   onClick={() => onTranslateWithTone?.('casual')}
                 >
@@ -580,26 +576,19 @@ const MessageContextMenu = ({
         {canUnpin && <MenuItem icon="unpin" onClick={onUnpin}>{oldLang('DialogUnpin')}</MenuItem>}
         {canSaveGif && <MenuItem icon="gifs" onClick={onSaveGif}>{oldLang('lng_context_save_gif')}</MenuItem>}
         {canManageMusicInProfile && (
-          <Transition
-            activeKey={!isMusicProfileStatusLoaded ? 0 : (isMusicSaved ? 2 : 1)}
-            name="fade"
-            className="profile-music-menu-item-transition"
-            shouldCleanup
-          >
-            {!isMusicProfileStatusLoaded ? (
-              <MenuItem customIcon={<span className="profile-music-menu-icon-placeholder" />} disabled>
-                <Skeleton className="profile-music-menu-label-placeholder" animation="wave" />
-              </MenuItem>
-            ) : (
-              <MenuItem
-                icon={isMusicSaved ? 'remove-music' : 'add-music'}
-                disabled={isMusicProfileActionLoading}
-                onClick={onToggleMusicInProfile}
-              >
-                {lang(isMusicSaved ? 'AudioRemoveFromProfile' : 'AudioAddToProfile')}
-              </MenuItem>
-            )}
-          </Transition>
+          !isMusicProfileStatusLoaded ? (
+            <MenuItem customIcon={<span className="profile-music-menu-icon-placeholder" />} disabled>
+              <Skeleton className="profile-music-menu-label-placeholder" animation="wave" />
+            </MenuItem>
+          ) : (
+            <MenuItem
+              icon={isMusicSaved ? 'remove-music' : 'add-music'}
+              disabled={isMusicProfileActionLoading}
+              onClick={onToggleMusicInProfile}
+            >
+              {lang(isMusicSaved ? 'AudioRemoveFromProfile' : 'AudioAddToProfile')}
+            </MenuItem>
+          )
         )}
         {canRevote && <MenuItem icon="revote" onClick={onCancelVote}>{oldLang('lng_polls_retract')}</MenuItem>}
         {canClosePoll && <MenuItem icon="stop" onClick={onClosePoll}>{oldLang('lng_polls_stop')}</MenuItem>}
@@ -612,12 +601,17 @@ const MessageContextMenu = ({
           && <MenuItem icon="forward" onClick={onForward}>{oldLang('Forward')}</MenuItem>}
         {canSelect && <MenuItem icon="select" onClick={onSelect}>{oldLang('Common.Select')}</MenuItem>}
         {canReport && <MenuItem icon="flag" onClick={onReport}>{oldLang('lng_context_report_msg')}</MenuItem>}
-        {canDelete && <MenuItem destructive icon="delete" onClick={onDelete}>{oldLang('Delete')}</MenuItem>}
+        {canDelete && (message.anchorMsgId ? (
+          <MenuItem destructive icon="reload" onClick={onDelete}>
+            <MenuItemTitle>{lang('EphemeralRevert')}</MenuItemTitle>
+            <MenuItemSubtitle>{lang('EphemeralRevertDescription')}</MenuItemSubtitle>
+          </MenuItem>
+        ) : <DeleteMenuItem autoDeleteAt={autoDeleteAt} onDelete={onDelete} />)}
         {message.isEphemeral && (
           <>
             <MenuSeparator size="thick" />
-            <MenuItem disabled withWrap>
-              {lang('EphemeralContextMenuNotice')}
+            <MenuItem className="smaller" disabled withWrap>
+              {lang(message.anchorMsgId ? 'EphemeralAnchoredNotice' : 'EphemeralContextMenuNotice')}
             </MenuItem>
           </>
         )}
@@ -689,9 +683,6 @@ const MessageContextMenu = ({
         )}
         {shouldRenderInfoSection && (
           <MenuSeparator size={hasCustomEmoji ? 'thin' : 'thick'} />
-        )}
-        {hasAutoDeleteTimer && (
-          <AutoDeleteTimeMenuItem endsAt={autoDeleteAt!} />
         )}
         {(canLoadReadDate || shouldRenderShowWhen) && (
           <ReadTimeMenuItem

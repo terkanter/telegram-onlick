@@ -2,6 +2,7 @@ import { Api as GramJs } from '../../../lib/gramjs';
 
 import type {
   ApiAttachment,
+  ApiAudio,
   ApiBaseThreadInfo,
   ApiChat,
   ApiCommentsInfo,
@@ -45,18 +46,14 @@ import {
   LOCAL_MESSAGES_LIMIT,
   SERVICE_NOTIFICATIONS_USER_ID,
   SPONSORED_MESSAGE_CACHE_MS,
-  SUPPORTED_AUDIO_CONTENT_TYPES,
-  SUPPORTED_PHOTO_CONTENT_TYPES,
-  SUPPORTED_VIDEO_CONTENT_TYPES,
 } from '../../../config';
 import { getEmojiOnlyCountForMessage } from '../../../global/helpers/getEmojiOnlyCountForMessage';
+import buildUploadingMedia from '../../../util/buildUploadingMedia';
 import { addTimestampEntities } from '../../../util/dates/timestamp';
-import { generateWaveform } from '../../../util/generateWaveform';
 import { omitUndefined } from '../../../util/iteratees';
 import { getEphemeralMessageId } from '../../../util/keys/messageKey';
 import { toJSNumber } from '../../../util/numbers';
 import { getServerTime } from '../../../util/serverTime';
-import { interpolateArray } from '../../../util/waveform';
 import {
   buildApiCurrencyAmount,
 } from '../apiBuilders/payments';
@@ -90,8 +87,6 @@ import { buildApiRestrictionReasons } from './misc';
 import { buildApiPeerColor, buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
 import { buildMessageReactions } from './reactions';
 
-const LOCAL_MEDIA_UPLOADING_TEMP_ID = 'temp';
-const INPUT_WAVEFORM_LENGTH = 63;
 const MIN_SCHEDULED_PERIOD = 10;
 
 let localMessageCounter = 0;
@@ -159,29 +154,34 @@ export function buildApiMessage(mtpMessage: GramJs.TypeMessage): ApiMessage | un
 }
 
 export function buildApiEphemeralMessage(mtpMessage: GramJs.EphemeralMessage): ApiMessage {
-  const chatId = getApiChatIdFromMtpPeer(mtpMessage.peerId);
   const fromId = getApiChatIdFromMtpPeer(mtpMessage.fromId);
   const receiverId = buildApiPeerId(mtpMessage.receiverId, 'user');
+  const peerId = mtpMessage.peerId || (mtpMessage.out ? buildPeer(receiverId) : mtpMessage.fromId);
+  const chatId = getApiChatIdFromMtpPeer(peerId);
   const message = buildApiMessageWithChatId(chatId, {
     id: getEphemeralMessageId(mtpMessage.id),
     date: mtpMessage.date,
-    peerId: mtpMessage.peerId,
+    peerId,
     fromId: mtpMessage.fromId,
     out: mtpMessage.out,
     message: mtpMessage.message,
     entities: mtpMessage.entities,
     media: mtpMessage.media,
+    richMessage: mtpMessage.richMessage,
     replyMarkup: mtpMessage.replyMarkup,
     replyTo: mtpMessage.replyTo,
+    invertMedia: mtpMessage.invertMedia,
+    noforwards: mtpMessage.noforwards,
   });
 
   return {
     ...message,
     content: message.content.pollId ? {} : message.content,
     ephemeralBotId: mtpMessage.out ? receiverId : fromId,
+    ephemeralReceiverId: receiverId,
+    anchorMsgId: mtpMessage.anchorMsgId,
     ephemeralTopMsgId: mtpMessage.topMsgId,
     isEphemeral: true,
-    isForwardingAllowed: false,
   };
 }
 
@@ -257,10 +257,7 @@ export function buildApiMessageWithChatId(
   const isEdited = Boolean(mtpMessage.editDate) && !mtpMessage.editHide;
   const {
     inlineButtons, keyboardButtons, keyboardPlaceholder, isKeyboardSingleUse, isKeyboardSelective,
-  } = buildReplyButtons(
-    mtpMessage.replyMarkup,
-    mtpMessage.media instanceof GramJs.MessageMediaInvoice ? mtpMessage.media.receiptMsgId : undefined,
-  ) || {};
+  } = buildReplyButtons(mtpMessage.replyMarkup) || {};
   const { mediaUnread: isMediaUnread, postAuthor } = mtpMessage;
   const groupedId = mtpMessage.groupedId !== undefined ? String(mtpMessage.groupedId) : undefined;
   const isInAlbum = Boolean(groupedId) && !(content.document || content.audio || content.sticker);
@@ -384,7 +381,10 @@ function buildApiSuggestedPost(suggestedPost: GramJs.SuggestedPost): ApiSuggeste
   };
 }
 
-function buildApiMessageForwardInfo(fwdFrom: GramJs.MessageFwdHeader, isChatWithSelf = false): ApiMessageForwardInfo {
+function buildApiMessageForwardInfo(
+  fwdFrom: GramJs.MessageFwdHeader,
+  isChatWithSelf = false,
+): ApiMessageForwardInfo {
   const savedFromPeerId = fwdFrom.savedFromPeer && getApiChatIdFromMtpPeer(fwdFrom.savedFromPeer);
   const fromId = fwdFrom.fromId && getApiChatIdFromMtpPeer(fwdFrom.fromId);
 
@@ -511,6 +511,7 @@ export function buildLocalMessage({
   attachment,
   sticker,
   gif,
+  audio,
   poll,
   todo,
   contact,
@@ -535,6 +536,7 @@ export function buildLocalMessage({
   attachment?: ApiAttachment;
   sticker?: ApiSticker;
   gif?: ApiVideo;
+  audio?: ApiAudio;
   poll?: ApiNewPoll;
   todo?: ApiNewMediaTodo;
   contact?: ApiContact;
@@ -577,6 +579,7 @@ export function buildLocalMessage({
       ...media,
       sticker,
       video: gif || media?.video,
+      audio: audio || media?.audio,
       contact,
       storyData: story && { mediaType: 'storyData', ...story },
       pollId: localPoll?.summary.id,
@@ -749,108 +752,6 @@ function buildReplyInfo(inputInfo: ApiInputReplyInfo, isForum?: boolean): ApiRep
     quoteOffset: inputInfo.quoteOffset,
     isForumTopic: isForum && inputInfo.replyToTopId ? true : undefined,
     ...(Boolean(inputInfo.quoteText) && { isQuote: true }),
-  };
-}
-
-export function buildUploadingMedia(
-  attachment: ApiAttachment,
-): MediaContent {
-  if (attachment.gif) {
-    return { video: attachment.gif };
-  }
-
-  const {
-    filename: fileName,
-    blobUrl,
-    previewBlobUrl,
-    mimeType,
-    size,
-    audio,
-    shouldSendAsFile,
-    shouldSendAsSpoiler,
-    ttlSeconds,
-    isRoundVideo,
-  } = attachment;
-
-  if (!shouldSendAsFile) {
-    if (attachment.quick) {
-      // TODO Handle GIF as video, but support playback in <video>
-      if (SUPPORTED_PHOTO_CONTENT_TYPES.has(mimeType)) {
-        const { width, height } = attachment.quick;
-        return {
-          photo: {
-            mediaType: 'photo',
-            id: LOCAL_MEDIA_UPLOADING_TEMP_ID,
-            sizes: [],
-            thumbnail: { width, height, dataUri: previewBlobUrl || blobUrl },
-            blobUrl,
-            date: Math.round(Date.now() / 1000),
-            isSpoiler: shouldSendAsSpoiler,
-          },
-        };
-      }
-      if (isRoundVideo || SUPPORTED_VIDEO_CONTENT_TYPES.has(mimeType)) {
-        const { width, height, duration } = attachment.quick;
-        return {
-          video: {
-            mediaType: 'video',
-            id: LOCAL_MEDIA_UPLOADING_TEMP_ID,
-            mimeType,
-            duration: duration || 0,
-            fileName,
-            width,
-            height,
-            blobUrl,
-            ...(previewBlobUrl && { thumbnail: { width, height, dataUri: previewBlobUrl } }),
-            size,
-            isSpoiler: shouldSendAsSpoiler,
-            isRound: isRoundVideo,
-            waveform: isRoundVideo ? generateWaveform(duration || 0) : undefined,
-          },
-          ttlSeconds,
-        };
-      }
-    }
-    if (attachment.voice) {
-      const { duration, waveform } = attachment.voice;
-      const inputWaveform = waveform.length === INPUT_WAVEFORM_LENGTH
-        ? waveform
-        : interpolateArray(waveform, INPUT_WAVEFORM_LENGTH).data;
-      return {
-        voice: {
-          mediaType: 'voice',
-          id: LOCAL_MEDIA_UPLOADING_TEMP_ID,
-          duration,
-          waveform: inputWaveform,
-          size,
-        },
-        ttlSeconds,
-      };
-    }
-    if (SUPPORTED_AUDIO_CONTENT_TYPES.has(mimeType)) {
-      const { duration, performer, title } = audio || {};
-      return {
-        audio: {
-          mediaType: 'audio',
-          id: LOCAL_MEDIA_UPLOADING_TEMP_ID,
-          mimeType,
-          fileName,
-          size,
-          duration: duration || 0,
-          title,
-          performer,
-        },
-      };
-    }
-  }
-  return {
-    document: {
-      mediaType: 'document',
-      mimeType,
-      fileName,
-      size,
-      ...(previewBlobUrl && { previewBlobUrl }),
-    },
   };
 }
 

@@ -350,6 +350,16 @@ const ManageGroupAdminRights = ({
               onChange={handlePermissionChange}
             />
           </div>
+          <div className="ListItem">
+            <Checkbox
+              name="manageWelcomeMessages"
+              checked={getHasAdminRight(selectedAdminRights, 'manageWelcomeMessages')}
+              label={lang('EditAdminManageWelcomeMessages')}
+              blocking
+              disabled={getControlIsDisabled('manageWelcomeMessages')}
+              onChange={handlePermissionChange}
+            />
+          </div>
           {isChannel && (
             <div className="ListItem">
               <Checkbox

@@ -15,6 +15,7 @@ import {
   MATH_BLOCK_NODE_NAME,
   MATH_INLINE_NODE_NAME,
 } from '../../../util/tiptap/constants';
+import { BUTTON_ROW_NODE_NAME, EMPTY_BUTTON_ROW } from '../../../util/tiptap/extensions/richButton';
 import {
   checkCanInsertRichEditorList,
   getCurrentRichEditorList,
@@ -41,6 +42,7 @@ import RichEditorLinkModal from './RichEditorLinkModal';
 type OwnProps = {
   editor?: Editor;
   isEnabled?: boolean;
+  onOpenAiEditor?: NoneToVoidFunction;
 };
 
 type RichEditorToolbarAvailability = {
@@ -50,6 +52,7 @@ type RichEditorToolbarAvailability = {
   canTogglePullquote: boolean;
   canSetDetails: boolean;
   canSetHorizontalRule: boolean;
+  canInsertButtonRow: boolean;
   canInsertBulletList: boolean;
   canInsertOrderedList: boolean;
   currentList?: RichEditorListState;
@@ -111,6 +114,7 @@ const EMPTY_TOOLBAR_AVAILABILITY: RichEditorToolbarAvailability = {
   canTogglePullquote: false,
   canSetDetails: false,
   canSetHorizontalRule: false,
+  canInsertButtonRow: false,
   canInsertBulletList: false,
   canInsertOrderedList: false,
   currentList: undefined,
@@ -120,13 +124,13 @@ const EMPTY_TOOLBAR_AVAILABILITY: RichEditorToolbarAvailability = {
   canInsertEquation: false,
 };
 
-const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
+const RichEditorToolbar = ({ editor, isEnabled, onOpenAiEditor }: OwnProps) => {
   const [availability, setAvailability] = useState(EMPTY_TOOLBAR_AVAILABILITY);
   const [isLinkModalOpen, openLinkModal, closeLinkModal] = useFlag();
   const lang = useLang();
 
   useEffect(() => {
-    if (!editor || !isEnabled) {
+    if (!editor || editor.isDestroyed || !isEnabled) {
       setAvailability(EMPTY_TOOLBAR_AVAILABILITY);
       return undefined;
     }
@@ -213,6 +217,11 @@ const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
     }
 
     editor.chain().focus().setHorizontalRule().run();
+  });
+
+  const handleInsertButtonRow = useLastCallback(() => {
+    if (!editor || !availability.canInsertButtonRow) return;
+    editor.chain().focus().insertContent(EMPTY_BUTTON_ROW).run();
   });
 
   const handleInsertList = useLastCallback((type: RichListType, isChecklist?: boolean) => {
@@ -326,7 +335,8 @@ const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
     || availability.canSetBlockquote
     || availability.canTogglePullquote
     || availability.canSetDetails
-    || availability.canSetHorizontalRule;
+    || availability.canSetHorizontalRule
+    || availability.canInsertButtonRow;
   const currentList = availability.currentList;
   const canOpenListMenu = availability.canInsertBulletList
     || availability.canInsertOrderedList
@@ -335,6 +345,13 @@ const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
   return (
     <div className="rich-editor-toolbar-viewport" aria-hidden={!isEnabled} inert={!isEnabled}>
       <div className="rich-editor-toolbar">
+        <Button
+          color="translucent"
+          iconName="ai"
+          ariaLabel={lang('AiMessageEditor')}
+          disabled={!onOpenAiEditor}
+          onClick={onOpenAiEditor}
+        />
         <DropdownMenu
           className="rich-editor-toolbar-menu"
           positionX="left"
@@ -410,6 +427,14 @@ const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
           >
             {lang('RichEditorDivider')}
           </MenuItem>
+          <MenuItem
+            icon="button"
+            hasIconPremiumBadge
+            disabled={!availability.canInsertButtonRow}
+            onClick={handleInsertButtonRow}
+          >
+            {lang('RichButtonRow')}
+          </MenuItem>
         </DropdownMenu>
         <DropdownMenu
           className="rich-editor-toolbar-menu"
@@ -481,7 +506,7 @@ const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
                   {lang('RichEditorListNumberingType')}
                 </NestedMenuItem>
                 <MenuItem
-                  icon={currentList?.isReversed ? 'check' : 'sort'}
+                  icon={currentList?.isReversed ? 'check' : 'hamburger'}
                   disabled={currentList?.type !== 'orderedList'}
                   onClick={handleToggleCurrentOrderedListReversed}
                 >
@@ -536,6 +561,10 @@ const RichEditorToolbar = ({ editor, isEnabled }: OwnProps) => {
 export default memo(RichEditorToolbar);
 
 function buildToolbarAvailability(editor: Editor): RichEditorToolbarAvailability {
+  if (editor.isDestroyed) {
+    return EMPTY_TOOLBAR_AVAILABILITY;
+  }
+
   const commandChecks = editor.can();
   const canUseBlockOptions = checkCanUseBlockOptions(editor);
   const canToggleHeadingByLevel: Record<RichHeadingLevel, boolean> = {
@@ -567,6 +596,8 @@ function buildToolbarAvailability(editor: Editor): RichEditorToolbarAvailability
     canTogglePullquote: canUseBlockOptions && commandChecks.togglePullquote(),
     canSetDetails: canSetDetails && commandChecks.setDetails(),
     canSetHorizontalRule: canInsertDivider && commandChecks.setHorizontalRule(),
+    canInsertButtonRow: canUseBlockOptions && checkCanInsertBlockAtSelection(editor, BUTTON_ROW_NODE_NAME)
+      && commandChecks.insertContent(EMPTY_BUTTON_ROW),
     canInsertBulletList,
     canInsertOrderedList: canUseBlockOptions && checkCanInsertRichEditorList(editor, 'orderedList'),
     currentList: getCurrentRichEditorList(editor),

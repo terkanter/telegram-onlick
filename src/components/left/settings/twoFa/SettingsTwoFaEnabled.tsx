@@ -56,7 +56,7 @@ const SettingsTwoFaEnabled: FC<OwnProps> = ({
           {lang('ChangePassword')}
         </ListItem>
         <ListItem
-          icon="password-off"
+          icon="lock-crossed"
 
           onClick={() => openSettingsScreen({ screen: SettingsScreens.TwoFaTurnOff })}
         >

@@ -109,9 +109,7 @@ const DropdownMenu: FC<OwnProps> = ({
 
   const getTriggerElement = useLastCallback(() => triggerRef.current);
   const getRootElement = useLastCallback(() => document.body);
-  const getMenuElement = useLastCallback(
-    () => menuRef.current?.querySelector('.bubble') as HTMLElement | undefined,
-  );
+  const getMenuElement = useLastCallback(() => menuRef.current);
   const getLayout = useLastCallback(() => ({ withPortal: true }));
 
   return (

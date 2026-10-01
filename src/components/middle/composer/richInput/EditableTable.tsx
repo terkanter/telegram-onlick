@@ -88,6 +88,7 @@ type TableLayout = {
   tableHeight: number;
   isBordered: boolean;
   isStriped: boolean;
+  isCompact: boolean;
   isRtl: boolean;
   columns: AxisSegment[];
   rows: AxisSegment[];
@@ -129,6 +130,7 @@ const EMPTY_LAYOUT: TableLayout = {
   tableHeight: 0,
   isBordered: true,
   isStriped: false,
+  isCompact: false,
   isRtl: false,
   columns: [],
   rows: [],
@@ -892,14 +894,21 @@ const EditableTable = ({
         {isTableSelection && (
           <>
             <MenuItem
-              icon={layout.isStriped ? 'check' : 'table'}
+              icon={layout.isStriped ? 'check' : 'table-striped'}
               withPreventDefaultOnMouseDown
               onClick={() => handleToggleTableAttr('isStriped')}
             >
               {lang('RichEditorTableStriped')}
             </MenuItem>
             <MenuItem
-              icon={!layout.isBordered ? 'check' : 'table'}
+              icon={layout.isCompact ? 'check' : 'table-compact'}
+              withPreventDefaultOnMouseDown
+              onClick={() => handleToggleTableAttr('isCompact')}
+            >
+              {lang('RichEditorTableCompact')}
+            </MenuItem>
+            <MenuItem
+              icon={!layout.isBordered ? 'check' : 'table-borderless'}
               withPreventDefaultOnMouseDown
               onClick={() => handleToggleTableAttr('isBordered')}
             >
@@ -1062,6 +1071,7 @@ function measureTableLayout(
     tableHeight: tableRect.height,
     isBordered: tableNode.attrs.isBordered !== false,
     isStriped: Boolean(tableNode.attrs.isStriped),
+    isCompact: Boolean(tableNode.attrs.isCompact),
     isRtl: getComputedStyle(tableElement).direction === 'rtl',
     columns: measureColumns(colgroupElement, tableRect, rootRect, map.width),
     rows: measureRows(tableElement, rootRect),

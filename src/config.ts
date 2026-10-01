@@ -74,6 +74,7 @@ export const GLOBAL_STATE_CACHE_ARCHIVED_CHAT_LIST_LIMIT = 10;
 export const GLOBAL_STATE_CACHE_CUSTOM_EMOJI_LIMIT = 150;
 
 export const IS_SCREEN_LOCKED_CACHE_KEY = 'tt-is-screen-locked';
+export const SHOULD_DELETE_LEGACY_PASSCODE_DATA = false;
 
 export const MEDIA_CACHE_DISABLED = false;
 export const MEDIA_CACHE_NAME = 'tt-media';
@@ -109,10 +110,14 @@ export const CHAT_LIST_SLICE = isBigScreen ? 30 : 25;
 export const CHAT_LIST_LOAD_SLICE = 100;
 export const SHARED_MEDIA_SLICE = 42;
 export const CHAT_MEDIA_SLICE = 42;
+export const MEDIA_PRELOAD_OFFSET = 9;
+export const PLAYLIST_OLDEST_ANCHOR_ID = 1;
+export const PLAYLIST_NEWEST_ANCHOR_ID = 2 ** 31 - 1;
 export const MESSAGE_SEARCH_SLICE = 42;
 export const GLOBAL_SEARCH_SLICE = 20;
 export const GLOBAL_TOPIC_SEARCH_SLICE = 5;
 export const MEMBERS_SLICE = 30;
+export const PROFILE_POLLS_SLICE = 20;
 export const SAVED_MUSIC_SLICE = 30;
 export const MEMBERS_LOAD_SLICE = 200;
 export const PROFILE_SENSITIVE_AREA = 500;
@@ -153,6 +158,10 @@ export const DEFAULT_MAXIMUM_CHARGE_FOR_MESSAGES = 10000;
 export const DEFAULT_VOLUME = 1;
 export const DEFAULT_PLAYBACK_RATE = 1;
 export const PLAYBACK_RATE_FOR_AUDIO_MIN_DURATION = 20 * 60; // 20 min
+export const PREVIOUS_RESTART_THRESHOLD = 5;
+export const SHUFFLE_PLAYLIST_LIMIT = 10000;
+export const SHUFFLE_PRELOAD_THRESHOLD = 40;
+export const REMEMBER_SHUFFLED_ORDER_ITEMS = 16;
 
 export const ANIMATION_LEVEL_CUSTOM = -1;
 export const ANIMATION_LEVEL_MIN = 0;

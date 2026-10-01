@@ -63,6 +63,7 @@ import Avatar from '../Avatar.tsx';
 import FullNameTitle from '../FullNameTitle.tsx';
 import Icon from '../icons/Icon.tsx';
 import TopicIcon from '../TopicIcon.tsx';
+import ProfileMusicStrip from './ProfileMusicStrip';
 import ProfilePhoto from './ProfilePhoto';
 import ProfilePinnedGifts from './ProfilePinnedGifts.tsx';
 import RadialPatternBackground from './RadialPatternBackground.tsx';
@@ -111,7 +112,6 @@ const MAX_PHOTO_DASH_COUNT = 30;
 const STATUS_UPDATE_INTERVAL = 1000 * 60; // 1 min
 
 const PATTERN_Y_SHIFT = 8 * REM;
-const PATTERN_PLAIN_Y_SHIFT = 5.25 * REM;
 
 const ProfileInfo = ({
   isExpanded,
@@ -151,6 +151,8 @@ const ProfileInfo = ({
     openProfileRatingModal,
     loadPeerSavedGifts,
   } = getActions();
+
+  const savedMusic = userFullInfo?.savedMusic;
 
   const oldLang = useOldLang();
   const lang = useLang();
@@ -492,6 +494,8 @@ const ProfileInfo = ({
         styles.root,
         !isExpanded && styles.minimized,
         isPlain && styles.plain,
+        hasPatternBackground && styles.withBackground,
+        savedMusic && styles.hasMusic,
       )}
       style={buildStyle(
         profileColorSet && `--rating-outline-color: ${isExpanded ? 'transparent' : profileColorSet?.bgColors[0]}`,
@@ -507,7 +511,7 @@ const ProfileInfo = ({
           patternSize={16}
           withLinearGradient={!collectibleEmojiStatus}
           className={styles.radialPatternBackground}
-          yPosition={isPlain ? PATTERN_PLAIN_Y_SHIFT : PATTERN_Y_SHIFT}
+          yPosition={PATTERN_Y_SHIFT}
         />
       )}
       {Boolean(pinnedGifts?.length) && (
@@ -614,6 +618,14 @@ const ProfileInfo = ({
         )}
         {renderStatus()}
       </div>
+      {savedMusic && (
+        <ProfileMusicStrip
+          audio={savedMusic}
+          peerId={peerId}
+          className={isExpanded ? styles.musicOverlay : undefined}
+          style={createVtnStyle('music', true)}
+        />
+      )}
     </div>
   );
 };

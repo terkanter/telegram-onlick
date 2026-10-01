@@ -107,7 +107,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     userAgent, platform, sessionData, isWebmSupported, maxBufferSize, webAuthToken, dcId,
     mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
     shouldDebugExportedSenders, langCode, isTestServerRequested, accountIds,
-    hasPasskeySupport, gatewayUrl, gatewayToken, isGatewayVerbose,
+    hasPasskeySupport, webAuthUserId, gatewayUrl, gatewayToken, isGatewayVerbose,
   } = initialArgs;
 
   setGatewayVerbose(Boolean(isGatewayVerbose));
@@ -170,6 +170,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
         initialMethod: platform === 'iOS' || platform === 'Android' ? 'phoneNumber' : 'qrCode',
         shouldThrowIfUnauthorized: Object.values(sessionData?.keys || {}).length > 0,
         webAuthToken,
+        webAuthUserId,
         webAuthTokenFailed: onWebAuthTokenFailed,
         mockScenario,
         accountIds,
@@ -864,4 +865,10 @@ export function requestChannelDifference(channelId: string) {
 
 export function setOpenedChannelIds(channelIds: string[]) {
   setOpenedChannelIdsInUpdates(channelIds);
+}
+
+export function cancelWebTokenAuthorization({ token }: { token: string }): Promise<boolean | undefined> {
+  return invokeRequest(new GramJs.auth.CancelWebTokenAuthorization({ webAuthToken: token }), {
+    shouldIgnoreErrors: true,
+  });
 }

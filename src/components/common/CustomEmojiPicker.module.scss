@@ -22,7 +22,8 @@
   transition: transform var(--select-transition);
 }
 
-.statusPickerInner {
+.statusPickerInner,
+.tuckPickerInner {
   height: 100%;
 
   &.searchActive {

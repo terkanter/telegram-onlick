@@ -13,6 +13,7 @@ import {
   selectCanAnimateInterface,
   selectChat,
   selectChatMessage,
+  selectChatMessageOrEphemeral,
   selectEditingMessage,
   selectEphemeralMessage,
   selectForwardedSender,
@@ -136,7 +137,8 @@ const ComposerEmbeddedMessage = (props: OwnProps & StateProps) => {
 
   const forwardSenders = useMemo(() => {
     if (!isForwarding) return undefined;
-    const forwardedMessages = forwardMessageIds?.map((id) => selectChatMessage(getGlobal(), fromChatId!, id))
+    const forwardedMessages = forwardMessageIds
+      ?.map((id) => selectChatMessageOrEphemeral(getGlobal(), fromChatId!, id))
       .filter(Boolean);
     const senders = forwardedMessages?.map((m) => selectSenderFromForwardedMessage(m)).filter(Boolean);
     return senders ? unique(senders) : undefined;
@@ -401,7 +403,7 @@ const ComposerEmbeddedMessage = (props: OwnProps & StateProps) => {
             {isForwardingRendering && (
               <>
                 <MenuItem
-                  icon={!noAuthors ? 'message-succeeded' : undefined}
+                  icon={!noAuthors ? 'check' : undefined}
                   customIcon={noAuthors ? <Icon name="placeholder" /> : undefined}
 
                   onClick={() => setForwardNoAuthors({
@@ -411,7 +413,7 @@ const ComposerEmbeddedMessage = (props: OwnProps & StateProps) => {
                   {oldLang(frozenForwardedMessagesCount > 1 ? 'ShowSenderNames' : 'ShowSendersName')}
                 </MenuItem>
                 <MenuItem
-                  icon={noAuthors ? 'message-succeeded' : undefined}
+                  icon={noAuthors ? 'check' : undefined}
                   customIcon={!noAuthors ? <Icon name="placeholder" /> : undefined}
 
                   onClick={() => setForwardNoAuthors({
@@ -424,7 +426,7 @@ const ComposerEmbeddedMessage = (props: OwnProps & StateProps) => {
                   <>
                     <MenuSeparator />
                     <MenuItem
-                      icon={!noCaptions ? 'message-succeeded' : undefined}
+                      icon={!noCaptions ? 'check' : undefined}
                       customIcon={noCaptions ? <Icon name="placeholder" /> : undefined}
 
                       onClick={() => setForwardNoCaptions({
@@ -435,7 +437,7 @@ const ComposerEmbeddedMessage = (props: OwnProps & StateProps) => {
                         ? 'Conversation.ForwardOptions.ShowCaption' : 'ShowCaption')}
                     </MenuItem>
                     <MenuItem
-                      icon={noCaptions ? 'message-succeeded' : undefined}
+                      icon={noCaptions ? 'check' : undefined}
                       customIcon={!noCaptions ? <Icon name="placeholder" /> : undefined}
 
                       onClick={() => setForwardNoCaptions({
@@ -506,7 +508,9 @@ export default memo(withGlobal<OwnProps>(
       : selectEditingId(global, chatId, threadId);
     const shouldAnimate = selectCanAnimateInterface(global) && !shouldPreventComposerAnimation;
     const isForwarding = toChatId === chatId;
-    const forwardedMessages = forwardMessageIds?.map((id) => selectChatMessage(global, fromChatId!, id)!);
+    const forwardedMessages = forwardMessageIds
+      ?.map((id) => selectChatMessageOrEphemeral(global, fromChatId!, id))
+      .filter(Boolean);
 
     const draft = selectDraft(global, chatId, threadId);
     const replyInfo = draft?.replyInfo;

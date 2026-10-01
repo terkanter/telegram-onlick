@@ -135,7 +135,8 @@ const SettingsGeneral = ({
           onChange={handleMessageTextSizeChange}
         />
         <ListItem
-          icon="photo"
+          icon="appearance-filled"
+          iconBg="orange"
           narrow
           onClick={() => openSettingsScreen({ screen: SettingsScreens.GeneralChatBackground })}
         >

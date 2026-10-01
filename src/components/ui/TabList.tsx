@@ -161,7 +161,7 @@ const TabList = ({
         {tab.icon && <Icon name={tab.icon} className={styles.tabIcon} />}
         {typeof tab.title === 'string' ? renderText(tab.title) : tab.title}
         {renderExtra?.(tab, index)}
-        {tab.isBlocked && <Icon name="lock-badge" className={styles.lockIcon} />}
+        {tab.isBlocked && <Icon name="lock-filled" className={styles.lockIcon} />}
       </div>
     );
   };

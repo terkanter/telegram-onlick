@@ -154,7 +154,7 @@ const FoldersSidebar = ({
         className={buildClassName(isOpen ? 'active' : '', styles.menuButton)}
         onClick={onTrigger}
         ariaLabel={lang('AriaLabelOpenMenu')}
-        iconName="menu"
+        iconName="hamburger"
         iconClassName={styles.icon}
       />
     );

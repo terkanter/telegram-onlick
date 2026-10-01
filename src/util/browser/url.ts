@@ -7,6 +7,7 @@ const PROTOCOL_WHITELIST = new Set(['http:', 'https:', 'tg:', 'ton:', 'mailto:',
 const FALLBACK_PREFIX = 'https://';
 const PROTOCOL_PREFIX_PATTERN = /^[a-z][a-z\d+.-]*:/i;
 const VALID_URI_ESCAPE_SEQUENCE_PATTERN = /(%[\da-f]{2})/gi;
+const DOMAIN_SEPARATOR_PATTERN = /[.\u3002\uff0e\uff61]|%2e|%e3%80%82|%ef%bc%8e|%ef%bd%a1/i;
 const DEFAULT_IGNORABLE_PATTERN = /\p{Default_Ignorable_Code_Point}/u;
 const LETTER_OR_MARK_SOURCE = String.raw`[\p{L}\p{M}]`;
 const SCRIPT_NEUTRAL_SOURCE = String.raw`[\p{Script_Extensions=Common}\p{Script_Extensions=Inherited}]`;
@@ -113,7 +114,7 @@ export function isSuspiciousUrl(url: string): boolean {
     return true;
   }
 
-  if (parsedUrl.username || parsedUrl.password) {
+  if (hasSuspiciousUrlCredentials(parsedUrl)) {
     return true;
   }
 
@@ -124,11 +125,47 @@ export function isSuspiciousUrl(url: string): boolean {
     return true;
   }
 
-  if (DEFAULT_IGNORABLE_PATTERN.test(domain)) {
-    return true;
+  return domain.split('.').some(isSuspiciousDomainLabel);
+}
+
+export function hasSuspiciousUrlCredentials({ username, password }: URL) {
+  // Include encoded and Unicode domain separators that can disguise credentials as a hostname
+  return DOMAIN_SEPARATOR_PATTERN.test(username) || DOMAIN_SEPARATOR_PATTERN.test(password);
+}
+
+export function getSuspiciousDomainCharacters(label: string) {
+  const characters = Array.from(label);
+  const suspiciousCharacters = new Set(characters.filter((character) => DEFAULT_IGNORABLE_PATTERN.test(character)));
+  if (!isLabelMixedScript(label)) return suspiciousCharacters;
+
+  const { scripts, allowedCombinations } = scriptPatternCache!;
+  const patterns = scripts.map(({ incompatibleCharacter }) => incompatibleCharacter).concat(allowedCombinations);
+  let fewestIncompatibleCharacters = characters.length;
+  let closestPatterns: RegExp[] = [];
+
+  // Highlight characters outside the best-fitting writing system, including supported CJK combinations
+  for (const pattern of patterns) {
+    const count = characters.filter((character) => pattern.test(character)).length;
+    if (count < fewestIncompatibleCharacters) {
+      fewestIncompatibleCharacters = count;
+      closestPatterns = [pattern];
+    } else if (count === fewestIncompatibleCharacters) {
+      closestPatterns.push(pattern);
+    }
   }
 
-  return domain.split('.').some(isLabelMixedScript);
+  for (const character of characters) {
+    // A tie leaves all characters that disagree with any equally likely writing system highlighted
+    if (closestPatterns.some((pattern) => pattern.test(character))) {
+      suspiciousCharacters.add(character);
+    }
+  }
+
+  return suspiciousCharacters;
+}
+
+function isSuspiciousDomainLabel(label: string) {
+  return DEFAULT_IGNORABLE_PATTERN.test(label) || isLabelMixedScript(label);
 }
 
 function isLabelMixedScript(label: string) {

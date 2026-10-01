@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import { memo, useMemo } from '../../../lib/teact/teact';
 
 import buildClassName from '../../../util/buildClassName';
@@ -24,7 +23,7 @@ type OwnProps = {
 
 const DEFAULT_POINTS = [50, 100, 500, 1000, 2000, 5000, 10000];
 
-const PaidMessageSlider: FC<OwnProps> = ({
+const PaidMessageSlider = ({
   min = 0,
   max,
   value,
@@ -35,7 +34,7 @@ const PaidMessageSlider: FC<OwnProps> = ({
   defaultValue,
   onChange,
   canChangeChargeForMessages,
-}) => {
+}: OwnProps) => {
   const lang = useLang();
 
   const points = useMemo(() => {
@@ -72,7 +71,7 @@ const PaidMessageSlider: FC<OwnProps> = ({
       <div className="slider-top-row" dir={lang.isRtl ? 'rtl' : undefined}>
         <span className="value-min" dir="auto">{lang.number(min)}</span>
         <span className="settings-range-value">
-          {!canChangeChargeForMessages && (<Icon name="lock-badge" />)}
+          {!canChangeChargeForMessages && (<Icon name="lock-filled" />)}
           {formatStarsAsText(lang, getValue(points, getProgress(points, value)))}
         </span>
         <span className="value-max" dir="auto">{lang.number(max)}</span>
