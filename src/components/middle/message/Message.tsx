@@ -954,7 +954,7 @@ const Message = ({
     hasCommentCounter: hasThread && repliesThreadInfo.messagesCount !== undefined
       && repliesThreadInfo.messagesCount > 0,
     hasBottomCommentButton: withCommentButton && !isCustomShape,
-    hasActionButton: canForward || canFocus || (withCommentButton && isCustomShape),
+    hasActionButton: canForward || canFocus || canCreatePosting || (withCommentButton && isCustomShape),
     hasReactions,
     isGeoLiveActive: location?.mediaType === 'geoLive' && !isGeoLiveExpired(message),
     withVoiceTranscription,
@@ -2038,6 +2038,7 @@ const Message = ({
                     iconName="arrow-right"
                   />
                 )}
+                {canCreatePosting && <OnlikActionsButtons message={message} />}
               </div>
             </div>
           )}
@@ -2079,11 +2080,6 @@ const Message = ({
           />
         )}
       </div>
-      {canCreatePosting && (
-        <div className="onlick-buttons-container">
-          <OnlikActionsButtons message={message} />
-        </div>
-      )}
       {contextMenuAnchor && (
         <ContextMenuContainer
           isOpen={isContextMenuOpen}
