@@ -28,10 +28,10 @@ import {
 import { formatDateToString, formatTime } from '../../util/dates/oldDateFormat';
 import { getPeerIdDividend, isUserId } from '../../util/entities/ids';
 import { getServerTime } from '../../util/serverTime';
-import { selectIsChatRestricted } from '../selectors';
+import { selectIsChatRestricted, selectUser } from '../selectors';
 import { getGlobal } from '..';
 import { isSystemBot } from './bots';
-import { getMainUsername } from './users';
+import { getMainUsername, isDeletedUser } from './users';
 
 type AdminPermissionContainer = {
   adminRights?: ApiChatAdminRights;
@@ -176,7 +176,8 @@ export function getCanPostInChat(
   }
 
   if (isUserId(chat.id)) {
-    return true;
+    const user = selectUser(global, chat.id);
+    return !user || !isDeletedUser(user);
   }
 
   if (isChatChannel(chat)) {
