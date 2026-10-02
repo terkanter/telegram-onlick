@@ -46,7 +46,7 @@ import type {
 import type { Signal } from '../../../util/signals';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
-import { EMOJI_STATUS_LOOP_LIMIT, MESSAGE_APPEARANCE_DELAY } from '../../../config';
+import { EMOJI_STATUS_LOOP_LIMIT, IS_GATEWAY, MESSAGE_APPEARANCE_DELAY } from '../../../config';
 import {
   areReactionsEmpty,
   extractMessageText,
@@ -652,7 +652,7 @@ const Message = ({
     && !isStoryMention
   );
   const canFocus = Boolean(isPinnedList
-    || (forwardInfo
+    || (!IS_GATEWAY && forwardInfo
       && (forwardInfo.isChannelPost || isChatWithSelf || isRepliesChat || isAnonymousForwards)
       && forwardInfo.fromMessageId
     ));
@@ -2007,7 +2007,7 @@ const Message = ({
               </div>
               <div className={buildClassName(
                 'message-action-buttons',
-                isLoadingComments && 'message-action-buttons-shown',
+                (isLoadingComments || canCreatePosting) && 'message-action-buttons-shown',
               )}
               >
                 {withCommentButton && isCustomShape && (
