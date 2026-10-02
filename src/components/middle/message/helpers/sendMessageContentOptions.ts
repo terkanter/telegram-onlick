@@ -182,7 +182,7 @@ export function getMessageSendToParentWindowOptions(
 
     options.push({
       label: getCopyLabel(lang, hasSelection),
-      icon: 'quote',
+      icon: 'article',
       handler: (afterEffectInternal?: () => void) => {
         if (checkHasMultiMessageSelection() && onCopyMessages) {
           // Spanning several messages is the copy flow's job, not the posting form's
