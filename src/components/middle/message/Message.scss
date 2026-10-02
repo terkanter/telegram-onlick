@@ -741,7 +741,8 @@
 
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    // Buttons taller than a one-line message overflow evenly on both sides
+    justify-content: center;
 
     height: 100%;
   }

@@ -23,10 +23,12 @@ type IOnlikButtonProps = {
   option: ISendOption;
 };
 
-type SendStatus = 'success' | 'error';
+type SendStatus = 'sent' | 'posted' | 'error';
 
 // Keeps the fill visible while the progress is still unknown
 const MIN_PROGRESS = 0.15;
+// How long the button confirms the click while the platform has not reported the post
+const SENT_STATUS_DURATION = 20000;
 
 export function OnlickActionButton(props: IOnlikButtonProps) {
   const {
@@ -37,14 +39,20 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<SendStatus | undefined>();
   const unsubscribeRef = useRef<NoneToVoidFunction>();
+  const sentTimeoutRef = useRef<number>();
 
-  useEffect(() => () => unsubscribeRef.current?.(), []);
+  const resetPendingResult = useLastCallback(() => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = undefined;
+    window.clearTimeout(sentTimeoutRef.current);
+  });
+
+  useEffect(() => resetPendingResult, [resetPendingResult]);
 
   const handleClick = useLastCallback(() => {
     if (isLoading) return;
 
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = undefined;
+    resetPendingResult();
     markLoading();
     setProgress(0);
     setStatus(undefined);
@@ -56,21 +64,27 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
       }
       if (!requestId) return;
 
-      // Handing the content over is not a success yet: the check mark waits for the platform to publish the post
+      setStatus('sent');
+      sentTimeoutRef.current = window.setTimeout(() => {
+        setStatus((current) => (current === 'sent' ? undefined : current));
+      }, SENT_STATUS_DURATION);
+
+      // The platform may publish the post long after the temporary status has expired
       unsubscribeRef.current = subscribeToFormContentResult(requestId, (resultStatus) => {
-        if (resultStatus === 'cancelled') return;
-        setStatus(resultStatus === 'posted' ? 'success' : 'error');
+        window.clearTimeout(sentTimeoutRef.current);
+        setStatus(resultStatus === 'cancelled' ? undefined : resultStatus === 'posted' ? 'posted' : 'error');
       });
     }, setProgress);
   });
 
   const fillOffset = isLoading ? (1 - Math.max(progress, MIN_PROGRESS)) * 100 : 100;
+  const isPosted = status === 'posted';
 
   return (
     <Button
       key={option.label}
       className="message-action-button"
-      color="translucent-white"
+      color={isPosted ? 'primary' : 'translucent-white'}
       round
       ariaLabel={option.label}
       onClick={handleClick}
@@ -78,7 +92,7 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
       <span className={styles.fillClip}>
         <span className={styles.fill} style={`transform: translateY(${fillOffset}%)`} />
       </span>
-      <Icon name={status === 'success' ? 'check' : option.icon} className={styles.icon} />
+      <Icon name={status === 'sent' || isPosted ? 'check' : option.icon} className={styles.icon} />
       {status === 'error' && <span className={styles.errorBadge} />}
     </Button>
   );
