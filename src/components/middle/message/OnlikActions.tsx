@@ -5,10 +5,14 @@ import type { ISendOption } from './helpers/sendMessageContentOptions';
 
 import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
+import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
+import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
+
+import styles from './OnlikActions.module.scss';
 
 type OwnProps = {
   message: ApiMessage;
@@ -18,21 +22,33 @@ type IOnlikButtonProps = {
   option: ISendOption;
 };
 
+type SendStatus = 'success' | 'error';
+
+// Keeps the fill visible while the progress is still unknown
+const MIN_PROGRESS = 0.15;
+
 export function OnlickActionButton(props: IOnlikButtonProps) {
   const {
     option,
   } = props;
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [isLoading, markLoading, unmarkLoading] = useFlag();
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<SendStatus | undefined>();
 
   const handleClick = useLastCallback(() => {
-    setIsLoading(true);
+    if (isLoading) return;
+
+    markLoading();
+    setProgress(0);
+    setStatus(undefined);
     option.handler((isDone = true) => {
-      setIsLoading(false);
-      setIsSuccess(isDone);
-    });
+      unmarkLoading();
+      setStatus(isDone ? 'success' : 'error');
+    }, setProgress);
   });
+
+  const fillOffset = isLoading ? (1 - Math.max(progress, MIN_PROGRESS)) * 100 : 100;
 
   return (
     <Button
@@ -40,11 +56,15 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
       className="message-action-button"
       color="translucent-white"
       round
-      disabled={isLoading}
       ariaLabel={option.label}
       onClick={handleClick}
-      iconName={isSuccess ? 'check' : option.icon}
-    />
+    >
+      <span className={styles.fillClip}>
+        <span className={styles.fill} style={`transform: translateY(${fillOffset}%)`} />
+      </span>
+      <Icon name={status === 'success' ? 'check' : option.icon} className={styles.icon} />
+      {status === 'error' && <span className={styles.errorBadge} />}
+    </Button>
   );
 }
 

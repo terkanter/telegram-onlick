@@ -2419,6 +2419,7 @@ export interface LangPair {
   'OnlikVideoUnsupportedFormat': undefined;
   'OnlikVideoTooLarge': undefined;
   'OnlikVideoDownloadFailed': undefined;
+  'OnlikImageDownloadFailed': undefined;
   'RichMediaCollage': undefined;
   'RichMediaSlideshow': undefined;
   'RichMediaRetry': undefined;

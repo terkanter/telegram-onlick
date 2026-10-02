@@ -1,7 +1,7 @@
 import { getActions, getGlobal } from '../../../../global';
 
 import type {
-  ApiChat, ApiMessage, ApiPeer, ApiUser, ApiVideo,
+  ApiChat, ApiMessage, ApiOnProgress, ApiPeer, ApiUser, ApiVideo,
 } from '../../../../api/types';
 import type { IconName } from '../../../../types/icons';
 import type { ClipboardTextFormat, MessageCopyRequest } from '../../../../types/messageCopy';
@@ -38,8 +38,10 @@ export type ISendOption = {
   // context menu shows this text.
   label: string;
   icon: IconName;
-  handler: (callback?: (isSuccess?: boolean) => void) => void;
+  handler: (callback?: (isSuccess?: boolean) => void, onProgress?: SendProgressCallback) => void;
 };
+
+type SendProgressCallback = (progress: number) => void;
 
 export type ISendOptions = ISendOption[];
 
@@ -88,7 +90,7 @@ export function getMessageSendToParentWindowOptions(
     options.push({
       label: lang('OnlikSendTextAndImage'),
       icon: 'media',
-      handler: (afterEffectInternal?: () => void) => {
+      handler: (afterEffectInternal, onProgress) => {
         // @ts-ignore
         function getText() {
           if (checkHasMultiMessageSelection() && onCopyMessages) {
@@ -102,7 +104,7 @@ export function getMessageSendToParentWindowOptions(
         }
         const ntext = getText();
         const hash = documentMediaHash || mediaHash;
-        Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
+        Promise.resolve(hash ? fetchMediaBlobUrl(hash, message, onProgress) : photo!.blobUrl)
           .then(convertToBlob)
           .then(blobToBase64)
           .then((image) => sendFormContent({
@@ -115,7 +117,11 @@ export function getMessageSendToParentWindowOptions(
           }))
           .then(() => {
             afterEffect?.();
-            afterEffectInternal?.();
+            afterEffectInternal?.(true);
+          })
+          .catch(() => {
+            getActions().showNotification({ message: lang('OnlikImageDownloadFailed') });
+            afterEffectInternal?.(false);
           });
       },
     });
@@ -127,9 +133,9 @@ export function getMessageSendToParentWindowOptions(
     options.push({
       label: lang('OnlikSendImage'),
       icon: 'media',
-      handler: (afterEffectInternal?: () => void) => {
+      handler: (afterEffectInternal, onProgress) => {
         const hash = documentMediaHash || mediaHash;
-        Promise.resolve(hash ? mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl) : photo!.blobUrl)
+        Promise.resolve(hash ? fetchMediaBlobUrl(hash, message, onProgress) : photo!.blobUrl)
           .then(convertToBlob)
           .then(blobToBase64)
           .then((image) => sendFormContent({
@@ -138,10 +144,15 @@ export function getMessageSendToParentWindowOptions(
             user,
             sender,
             isSenderSelf: message.isOutgoing,
-          }));
-
-        afterEffect?.();
-        afterEffectInternal?.();
+          }))
+          .then(() => {
+            afterEffect?.();
+            afterEffectInternal?.(true);
+          })
+          .catch(() => {
+            getActions().showNotification({ message: lang('OnlikImageDownloadFailed') });
+            afterEffectInternal?.(false);
+          });
       },
     });
   }
@@ -183,7 +194,7 @@ export function getMessageSendToParentWindowOptions(
     options.push({
       label: getCopyLabel(lang, hasSelection),
       icon: 'article',
-      handler: (afterEffectInternal?: () => void) => {
+      handler: (afterEffectInternal) => {
         if (checkHasMultiMessageSelection() && onCopyMessages) {
           // Spanning several messages is the copy flow's job, not the posting form's
         } else if (hasSelection) {
@@ -223,7 +234,7 @@ function createVideoSendHandler(
   sender?: ApiPeer,
   afterEffect?: () => void,
 ): ISendOption['handler'] {
-  return (afterEffectInternal) => {
+  return (afterEffectInternal, onProgress) => {
     const { showNotification } = getActions();
 
     if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType)) {
@@ -241,7 +252,7 @@ function createVideoSendHandler(
     // blob if the video was played). The button shows a loading state meanwhile.
     const blobUrlPromise: Promise<string | undefined> = video.blobUrl
       ? Promise.resolve(video.blobUrl)
-      : mediaLoader.fetch(getVideoMediaHash(video, 'download')!, ApiMediaFormat.BlobUrl);
+      : fetchMediaBlobUrl(getVideoMediaHash(video, 'download')!, message, onProgress);
 
     blobUrlPromise
       .then((blobUrl) => {
@@ -265,6 +276,12 @@ function createVideoSendHandler(
         afterEffectInternal?.(false);
       });
   };
+}
+
+function fetchMediaBlobUrl(hash: string, message: ApiMessage, onProgress?: SendProgressCallback) {
+  const handleProgress: ApiOnProgress | undefined = onProgress && ((progress) => onProgress(progress));
+
+  return mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl, false, handleProgress, getMessageHtmlId(message.id));
 }
 
 // True when the selection spans message boundaries — evaluated on click, since the user may

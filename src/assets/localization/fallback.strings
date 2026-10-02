@@ -3281,6 +3281,7 @@
 "OnlikVideoUnsupportedFormat" = "This video format is not supported — the platform won’t accept it";
 "OnlikVideoTooLarge" = "The video is larger than 100 MB — the platform won’t accept it";
 "OnlikVideoDownloadFailed" = "Couldn’t load the video";
+"OnlikImageDownloadFailed" = "Couldn’t load the image";
 "RichMediaCollage" = "Collage";
 "RichMediaSlideshow" = "Slideshow";
 "RichMediaRetry" = "Retry upload";

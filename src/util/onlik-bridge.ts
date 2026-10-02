@@ -114,6 +114,7 @@ export const convertToBlob = (imageUrl?: string): Promise<Blob> => new Promise((
       canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Canvas is empty'))), 'image/png', 1);
     }
   };
+  imageEl.onerror = () => reject(new Error('Image failed to load'));
 
   imageEl.src = imageUrl;
 });
