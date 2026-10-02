@@ -34,12 +34,13 @@ const CHAT_TYPE_MAP: Record<ApiChat['type'], FormContentChat['type']> = {
 
 // Forwards content selected in a chat (photo and/or text) to the platform's post form.
 // The platform joins partial signals and opens the form, so we send whatever is selected.
+// Returns the request id of the signal, or `undefined` when nothing was sent.
 export function sendFormContent({
   image, video, text, chat, user, sender, isSenderSelf,
 }: SendFormContentParams) {
-  if (!chat) return;
+  if (!chat) return undefined;
 
-  postFormContentToParent({
+  return postFormContentToParent({
     image,
     video,
     text,

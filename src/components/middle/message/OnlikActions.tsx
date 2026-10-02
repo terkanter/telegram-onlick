@@ -1,8 +1,9 @@
-import { useState } from '../../../lib/teact/teact';
+import { useEffect, useRef, useState } from '../../../lib/teact/teact';
 
 import type { ApiMessage } from '../../../api/types';
 import type { ISendOption } from './helpers/sendMessageContentOptions';
 
+import { subscribeToFormContentResult } from '../../../util/telegramGateway';
 import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
 import useFlag from '../../../hooks/useFlag';
@@ -35,16 +36,31 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
   const [isLoading, markLoading, unmarkLoading] = useFlag();
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<SendStatus | undefined>();
+  const unsubscribeRef = useRef<NoneToVoidFunction>();
+
+  useEffect(() => () => unsubscribeRef.current?.(), []);
 
   const handleClick = useLastCallback(() => {
     if (isLoading) return;
 
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = undefined;
     markLoading();
     setProgress(0);
     setStatus(undefined);
-    option.handler((isDone = true) => {
+    option.handler((isDone = true, requestId) => {
       unmarkLoading();
-      setStatus(isDone ? 'success' : 'error');
+      if (!isDone) {
+        setStatus('error');
+        return;
+      }
+      if (!requestId) return;
+
+      // Handing the content over is not a success yet: the check mark waits for the platform to publish the post
+      unsubscribeRef.current = subscribeToFormContentResult(requestId, (resultStatus) => {
+        if (resultStatus === 'cancelled') return;
+        setStatus(resultStatus === 'posted' ? 'success' : 'error');
+      });
     }, setProgress);
   });
 

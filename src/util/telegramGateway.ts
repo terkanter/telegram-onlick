@@ -139,6 +139,19 @@ type FormContentMessage = {
   user?: FormContentUser;
   sender?: FormContentSender;
   tgAccount?: string;
+  // Echoed back in `form-content-result`
+  requestId: string;
+};
+
+export type FormContentResultStatus = 'posted' | 'cancelled' | 'failed';
+
+// The platform's verdict on a `form-content`: the post was published, the form was closed
+// without posting, or posting failed. The old platform sends none
+type FormContentResultMessage = {
+  source: typeof GATEWAY_SOURCE;
+  type: 'form-content-result';
+  requestId: string;
+  status: FormContentResultStatus;
 };
 
 // `0` means blur is off. Each enable produces a new monotonic generation, so media
@@ -157,6 +170,8 @@ let navigateHandler: ((route: string) => void) | undefined;
 // The request an `auth` must answer in protocol v2; a reply to anything else is stale
 let pendingAuthRequestId: string | undefined;
 let authRequestCounter = 0;
+let formContentRequestCounter = 0;
+const formContentResultHandlers = new Map<string, (status: FormContentResultStatus) => void>();
 let isBridgeInited = false;
 // The account announced to the parent in the last `ready`; stamps outgoing `route-change`
 // and fences off `navigate` from a stale account during a switch
@@ -337,6 +352,10 @@ function handleParentMessage(event: MessageEvent) {
     handleNavigateMessage(event.data);
     return;
   }
+  if (isFormContentResultMessage(event.data)) {
+    formContentResultHandlers.get(event.data.requestId)?.(event.data.status);
+    return;
+  }
   if (!isAuthMessage(event.data)) {
     logGatewayError('ignored malformed message from', event.origin, 'type:', data?.type);
     return;
@@ -376,19 +395,34 @@ function checkIsAuthExpected({ tgAccount, requestId }: AuthMessage) {
 
 // Posts selected chat content to the platform. Strictly targeted at the verified origin
 // (falls back to the configured allow-list) — never `'*'`, since it carries conversation data.
-export function postFormContentToParent(content: Omit<FormContentMessage, 'source' | 'type'>) {
+// Returns the request id the platform echoes in `form-content-result`, or `undefined` when nothing was posted.
+export function postFormContentToParent(content: Omit<FormContentMessage, 'source' | 'type' | 'requestId'>) {
   // The buttons are hidden by the same flag; this keeps any other path from posting without the right
   if (getGatewayPermissions()?.createPosting === false) {
     logGatewayError('form-content dropped: posting from Telegram is not permitted for this role');
-    return;
+    return undefined;
   }
 
+  formContentRequestCounter += 1;
+  const requestId = `${Date.now()}-${formContentRequestCounter}`;
   const message: FormContentMessage = {
-    source: GATEWAY_SOURCE, type: 'form-content', ...content, tgAccount: GATEWAY_ACCOUNT,
+    source: GATEWAY_SOURCE, type: 'form-content', ...content, tgAccount: GATEWAY_ACCOUNT, requestId,
   };
   if (!postToTrustedParent(message)) {
     logGatewayError('form-content dropped: no trusted platform origin known');
+    return undefined;
   }
+
+  return requestId;
+}
+
+// Returns the unsubscribe function
+export function subscribeToFormContentResult(requestId: string, handler: (status: FormContentResultStatus) => void) {
+  formContentResultHandlers.set(requestId, handler);
+
+  return () => {
+    formContentResultHandlers.delete(requestId);
+  };
 }
 
 // Posts a private-data message strictly to the verified platform origin (falls back to the
@@ -458,6 +492,15 @@ function isNavigateMessage(data: unknown): data is NavigateMessage {
     && message.type === 'navigate'
     && typeof message.accountId === 'string'
     && typeof message.route === 'string';
+}
+
+function isFormContentResultMessage(data: unknown): data is FormContentResultMessage {
+  if (typeof data !== 'object' || !data) return false;
+  const message = data as Partial<FormContentResultMessage>;
+  return message.source === GATEWAY_SOURCE
+    && message.type === 'form-content-result'
+    && typeof message.requestId === 'string'
+    && (message.status === 'posted' || message.status === 'cancelled' || message.status === 'failed');
 }
 
 function isAuthMessage(data: unknown): data is AuthMessage {

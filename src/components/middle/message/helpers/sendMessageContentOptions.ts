@@ -38,7 +38,8 @@ export type ISendOption = {
   // context menu shows this text.
   label: string;
   icon: IconName;
-  handler: (callback?: (isSuccess?: boolean) => void, onProgress?: SendProgressCallback) => void;
+  // `requestId` identifies the signal handed to the platform, see `subscribeToFormContentResult`
+  handler: (callback?: (isSuccess?: boolean, requestId?: string) => void, onProgress?: SendProgressCallback) => void;
 };
 
 type SendProgressCallback = (progress: number) => void;
@@ -115,9 +116,9 @@ export function getMessageSendToParentWindowOptions(
             sender,
             isSenderSelf: message.isOutgoing,
           }))
-          .then(() => {
+          .then((requestId) => {
             afterEffect?.();
-            afterEffectInternal?.(true);
+            afterEffectInternal?.(true, requestId);
           })
           .catch(() => {
             getActions().showNotification({ message: lang('OnlikImageDownloadFailed') });
@@ -145,9 +146,9 @@ export function getMessageSendToParentWindowOptions(
             sender,
             isSenderSelf: message.isOutgoing,
           }))
-          .then(() => {
+          .then((requestId) => {
             afterEffect?.();
-            afterEffectInternal?.(true);
+            afterEffectInternal?.(true, requestId);
           })
           .catch(() => {
             getActions().showNotification({ message: lang('OnlikImageDownloadFailed') });
@@ -195,10 +196,11 @@ export function getMessageSendToParentWindowOptions(
       label: getCopyLabel(lang, hasSelection),
       icon: 'article',
       handler: (afterEffectInternal) => {
+        let requestId: string | undefined;
         if (checkHasMultiMessageSelection() && onCopyMessages) {
           // Spanning several messages is the copy flow's job, not the posting form's
         } else if (hasSelection) {
-          sendFormContent({
+          requestId = sendFormContent({
             text: selection?.toString() || '',
             chat,
             user,
@@ -206,7 +208,7 @@ export function getMessageSendToParentWindowOptions(
             isSenderSelf: message.isOutgoing,
           });
         } else {
-          sendFormContent({
+          requestId = sendFormContent({
             text: getMessageTextWithSpoilers(lang, message, undefined)!,
             chat,
             user,
@@ -216,7 +218,7 @@ export function getMessageSendToParentWindowOptions(
         }
 
         afterEffect?.();
-        afterEffectInternal?.();
+        afterEffectInternal?.(true, requestId);
       },
     });
   }
@@ -267,9 +269,9 @@ function createVideoSendHandler(
         sender,
         isSenderSelf: message.isOutgoing,
       }))
-      .then(() => {
+      .then((requestId) => {
         afterEffect?.();
-        afterEffectInternal?.(true);
+        afterEffectInternal?.(true, requestId);
       })
       .catch(() => {
         showNotification({ message: lang('OnlikVideoDownloadFailed') });
