@@ -4,13 +4,18 @@ import type {
   ApiChat, ApiPeer, ApiUser, ApiUsername,
 } from '../api/types';
 import type {
-  FormContentChat, FormContentSender, FormContentUser, FormContentUsername, FormContentVideo,
+  FormContentBatchItem,
+  FormContentChat,
+  FormContentSender,
+  FormContentUser,
+  FormContentUsername,
+  FormContentVideo,
 } from './telegramGateway';
 
 import { getPeerTitle, isApiPeerUser } from '../global/helpers/peers';
 import { selectUser } from '../global/selectors';
 import { getTranslationFn } from './localization';
-import { postFormContentToParent } from './telegramGateway';
+import { postFormContentBatchToParent, postFormContentToParent } from './telegramGateway';
 
 type SendFormContentParams = {
   image?: string;
@@ -44,6 +49,25 @@ export function sendFormContent({
     image,
     video,
     text,
+    chat: buildFormContentChat(chat),
+    user: buildFormContentUser(user),
+    sender: sender ? buildFormContentSender(sender, Boolean(isSenderSelf)) : undefined,
+  });
+}
+
+type SendFormContentBatchParams = Omit<SendFormContentParams, 'image' | 'video' | 'text'> & {
+  items: FormContentBatchItem[];
+};
+
+// Forwards the posts built from a message selection as one batch. Returns the request ids in
+// item order, or `undefined` when nothing was sent.
+export function sendFormContentBatch({
+  items, chat, user, sender, isSenderSelf,
+}: SendFormContentBatchParams) {
+  if (!chat || !items.length) return undefined;
+
+  return postFormContentBatchToParent({
+    items,
     chat: buildFormContentChat(chat),
     user: buildFormContentUser(user),
     sender: sender ? buildFormContentSender(sender, Boolean(isSenderSelf)) : undefined,

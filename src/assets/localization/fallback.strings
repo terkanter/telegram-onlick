@@ -3282,6 +3282,10 @@
 "OnlikVideoTooLarge" = "The video is larger than 100 MB — the platform won’t accept it";
 "OnlikVideoDownloadFailed" = "Couldn’t load the video";
 "OnlikImageDownloadFailed" = "Couldn’t load the image";
+"OnlikSendSelectionToPlatform" = "Send to the platform as posts";
+"OnlikBatchPreparing" = "Preparing the posts…";
+"OnlikBatchNothingToSend" = "The selected messages have nothing to post";
+"OnlikBatchSomeSkipped" = "Some media couldn’t be loaded or isn’t accepted — those posts were skipped";
 "RichMediaCollage" = "Collage";
 "RichMediaSlideshow" = "Slideshow";
 "RichMediaRetry" = "Retry upload";

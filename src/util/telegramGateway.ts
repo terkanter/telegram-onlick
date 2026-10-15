@@ -143,6 +143,25 @@ type FormContentMessage = {
   requestId: string;
 };
 
+// One pick of a batch: the media and text of one future post
+export type FormContentBatchItem = {
+  image?: string;
+  video?: FormContentVideo;
+  text?: string;
+};
+
+// Several picks sent at once from the message selection. The platform opens one form for all of
+// them and answers each item's `requestId` with the usual `form-content-result`
+type FormContentBatchMessage = {
+  source: typeof GATEWAY_SOURCE;
+  type: 'form-content-batch';
+  items: (FormContentBatchItem & { requestId: string })[];
+  chat: FormContentChat;
+  user?: FormContentUser;
+  sender?: FormContentSender;
+  tgAccount?: string;
+};
+
 export type FormContentResultStatus = 'posted' | 'cancelled' | 'failed';
 
 // The platform's verdict on a `form-content`: the post was published, the form was closed
@@ -403,8 +422,7 @@ export function postFormContentToParent(content: Omit<FormContentMessage, 'sourc
     return undefined;
   }
 
-  formContentRequestCounter += 1;
-  const requestId = `${Date.now()}-${formContentRequestCounter}`;
+  const requestId = createFormContentRequestId();
   const message: FormContentMessage = {
     source: GATEWAY_SOURCE, type: 'form-content', ...content, tgAccount: GATEWAY_ACCOUNT, requestId,
   };
@@ -414,6 +432,35 @@ export function postFormContentToParent(content: Omit<FormContentMessage, 'sourc
   }
 
   return requestId;
+}
+
+// Posts the picks of a message selection as one batch, under the same rules as a single pick.
+// Returns the request ids in item order, or `undefined` when nothing was posted.
+export function postFormContentBatchToParent(
+  content: Omit<FormContentBatchMessage, 'source' | 'type' | 'items' | 'tgAccount'> & {
+    items: FormContentBatchItem[];
+  },
+) {
+  if (getGatewayPermissions()?.createPosting === false) {
+    logGatewayError('form-content-batch dropped: posting from Telegram is not permitted for this role');
+    return undefined;
+  }
+
+  const items = content.items.map((item) => ({ ...item, requestId: createFormContentRequestId() }));
+  const message: FormContentBatchMessage = {
+    source: GATEWAY_SOURCE, type: 'form-content-batch', ...content, items, tgAccount: GATEWAY_ACCOUNT,
+  };
+  if (!postToTrustedParent(message)) {
+    logGatewayError('form-content-batch dropped: no trusted platform origin known');
+    return undefined;
+  }
+
+  return items.map(({ requestId }) => requestId);
+}
+
+function createFormContentRequestId() {
+  formContentRequestCounter += 1;
+  return `${Date.now()}-${formContentRequestCounter}`;
 }
 
 // Returns the unsubscribe function

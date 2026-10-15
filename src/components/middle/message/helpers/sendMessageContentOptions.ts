@@ -48,8 +48,8 @@ export type ISendOptions = ISendOption[];
 
 // Platform acceptance limits (see `telegram-fork-video.md`) — checked before sending so the
 // manager gets a clear refusal instead of the platform silently dropping the signal.
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
-const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
+export const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+export const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 
 export function getMessageSendToParentWindowOptions(
   lang: LangFn,
@@ -280,7 +280,7 @@ function createVideoSendHandler(
   };
 }
 
-function fetchMediaBlobUrl(hash: string, message: ApiMessage, onProgress?: SendProgressCallback) {
+export function fetchMediaBlobUrl(hash: string, message: ApiMessage, onProgress?: SendProgressCallback) {
   const handleProgress: ApiOnProgress | undefined = onProgress && ((progress) => onProgress(progress));
 
   return mediaLoader.fetch(hash, ApiMediaFormat.BlobUrl, false, handleProgress, getMessageHtmlId(message.id));

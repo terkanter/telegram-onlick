@@ -1,24 +1,31 @@
 import { memo, useEffect, useState } from '../../lib/teact/teact';
-import { getActions, withGlobal } from '../../global';
+import { getActions, getGlobal, withGlobal } from '../../global';
 
-import type { ApiChat } from '../../api/types';
+import type { ApiChat, ApiMessage } from '../../api/types';
 import type { TabState } from '../../global/types';
 import type { MessageListType } from '../../types';
 import type { IconName } from '../../types/icons';
+import type { FormContentBatchItem } from '../../util/telegramGateway';
 
 import {
   selectCanDeleteSelectedMessages,
   selectCanDownloadSelectedMessages,
   selectCanForwardMessages,
-  selectCanReportSelectedMessages, selectCurrentChat,
+  selectCanReportSelectedMessages,
+  selectChatMessage,
+  selectCurrentChat,
   selectCurrentMessageList, selectHasIpRevealingMedia,
   selectHasProtectedMessage,
   selectSelectedMessagesCount,
+  selectSender,
   selectTabState,
+  selectUser,
 } from '../../global/selectors';
 import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
+import { sendFormContentBatch } from '../../util/onlik-bridge';
+import { buildSelectionPosts, loadSelectionPost } from './helpers/buildSelectionPosts';
 
 import useFlag from '../../hooks/useFlag';
 import useFrozenProps from '../../hooks/useFrozenProps';
@@ -84,10 +91,12 @@ const MessageSelectToolbar = ({
     reportMessages,
     openDeleteMessageModal,
     setSharedSettingOption,
+    showNotification,
   } = getActions();
   const lang = useLang();
   const oldLang = useOldLang();
-  const { canForwardMessages: canForwardByRole } = useGatewayPermissions();
+  const { canForwardMessages: canForwardByRole, canCreatePosting } = useGatewayPermissions();
+  const [isSendingToPlatform, markSendingToPlatform, unmarkSendingToPlatform] = useFlag();
 
   useCopySelectedMessages(Boolean(isActive && !reportContext));
 
@@ -119,6 +128,47 @@ const MessageSelectToolbar = ({
     isActive, handleDelete, handleExitMessageSelectMode, isAnyModalOpen,
     canDeleteMessages, reportContext,
   ]);
+
+  // Sends the selection to the platform as a batch of posts. Media downloads one by one; a post
+  // whose media fails to load or is refused by the platform limits is skipped
+  const handleSendToPlatform = useLastCallback(async () => {
+    if (!selectedMessageIds || !chat || isSendingToPlatform) return;
+
+    const global = getGlobal();
+    const messages = selectedMessageIds
+      .map((id) => selectChatMessage(global, chat.id, id))
+      .filter((message): message is ApiMessage => Boolean(message))
+      .sort((a, b) => a.id - b.id);
+    const posts = buildSelectionPosts(lang, messages);
+    if (!posts.length) {
+      showNotification({ message: lang('OnlikBatchNothingToSend') });
+      return;
+    }
+
+    markSendingToPlatform();
+    const items: FormContentBatchItem[] = [];
+    for (const post of posts) {
+      try {
+        items.push(await loadSelectionPost(post));
+      } catch {
+        // Reported once below
+      }
+    }
+    unmarkSendingToPlatform();
+
+    if (items.length < posts.length) {
+      showNotification({ message: lang('OnlikBatchSomeSkipped') });
+    }
+    const firstMessage = messages[0];
+    const requestIds = sendFormContentBatch({
+      items,
+      chat,
+      user: global.currentUserId ? selectUser(global, global.currentUserId) : undefined,
+      sender: selectSender(global, firstMessage),
+      isSenderSelf: firstMessage.isOutgoing,
+    });
+    if (requestIds) exitMessageSelectMode();
+  });
 
   const handleCopy = useLastCallback(() => {
     copySelectedMessages({ shouldNotify: true });
@@ -258,6 +308,13 @@ const MessageSelectToolbar = ({
                   )}
                   {rendering.canDownloadMessages && !rendering.hasProtectedMessage && (
                     renderButton('download', oldLang('lng_media_download'), handleMessageDownload)
+                  )}
+                  {canCreatePosting && (
+                    renderButton(
+                      isSendingToPlatform ? 'clock' : 'media',
+                      lang(isSendingToPlatform ? 'OnlikBatchPreparing' : 'OnlikSendSelectionToPlatform'),
+                      handleSendToPlatform,
+                    )
                   )}
                   {!rendering.hasProtectedMessage && (
                     renderButton('copy', oldLang('lng_context_copy_selected_items'), handleCopy)
