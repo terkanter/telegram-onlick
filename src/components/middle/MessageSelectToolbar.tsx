@@ -24,8 +24,10 @@ import {
 import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
+import { logGatewayError } from '../../util/gatewayLog';
 import { sendFormContentBatch } from '../../util/onlik-bridge';
 import { buildSelectionPosts, loadSelectionPost } from './helpers/buildSelectionPosts';
+import { getMessagePostVideo, getVideoErrorKey } from './message/helpers/sendMessageContentOptions';
 
 import useFlag from '../../hooks/useFlag';
 import useFrozenProps from '../../hooks/useFrozenProps';
@@ -147,18 +149,22 @@ const MessageSelectToolbar = ({
 
     markSendingToPlatform();
     const items: FormContentBatchItem[] = [];
+    // One notification per reason, however many posts it hit
+    const skipReasons = new Set<ReturnType<typeof getVideoErrorKey> | 'OnlikImageDownloadFailed'>();
     for (const post of posts) {
       try {
         items.push(await loadSelectionPost(post));
-      } catch {
-        // Reported once below
+      } catch (err) {
+        logGatewayError('form-content-batch: post skipped', { messageId: post.mediaMessage?.id, err });
+        const isVideo = Boolean(post.mediaMessage && getMessagePostVideo(post.mediaMessage));
+        skipReasons.add(isVideo ? getVideoErrorKey(err as Error) : 'OnlikImageDownloadFailed');
       }
     }
     unmarkSendingToPlatform();
 
-    if (items.length < posts.length) {
-      showNotification({ message: lang('OnlikBatchSomeSkipped') });
-    }
+    skipReasons.forEach((reason) => {
+      showNotification({ message: lang(reason) });
+    });
     const firstMessage = messages[0];
     const requestIds = sendFormContentBatch({
       items,

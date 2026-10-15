@@ -3285,7 +3285,6 @@
 "OnlikSendSelectionToPlatform" = "Send to the platform as posts";
 "OnlikBatchPreparing" = "Preparing the posts…";
 "OnlikBatchNothingToSend" = "The selected messages have nothing to post";
-"OnlikBatchSomeSkipped" = "Some media couldn’t be loaded or isn’t accepted — those posts were skipped";
 "RichMediaCollage" = "Collage";
 "RichMediaSlideshow" = "Slideshow";
 "RichMediaRetry" = "Retry upload";

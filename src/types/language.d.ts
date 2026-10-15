@@ -2423,7 +2423,6 @@ export interface LangPair {
   'OnlikSendSelectionToPlatform': undefined;
   'OnlikBatchPreparing': undefined;
   'OnlikBatchNothingToSend': undefined;
-  'OnlikBatchSomeSkipped': undefined;
   'RichMediaCollage': undefined;
   'RichMediaSlideshow': undefined;
   'RichMediaRetry': undefined;

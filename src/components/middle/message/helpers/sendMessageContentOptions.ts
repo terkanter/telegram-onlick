@@ -299,7 +299,7 @@ function createVideoSendHandler(
   };
 }
 
-function getVideoErrorKey(err: Error) {
+export function getVideoErrorKey(err: Error) {
   if (err.message === VIDEO_UNSUPPORTED_ERROR) return 'OnlikVideoUnsupportedFormat';
   if (err.message === VIDEO_TOO_LARGE_ERROR) return 'OnlikVideoTooLarge';
   return 'OnlikVideoDownloadFailed';

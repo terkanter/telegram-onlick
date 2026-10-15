@@ -79,12 +79,12 @@ export async function loadSelectionPost(post: SelectionPost): Promise<FormConten
     return { video: { blob, name: video.fileName }, text: post.text };
   }
 
-  // A photo, or an image sent as a file
+  // A photo, or an image sent as a file. Media still held locally (just sent) has no remote hash
+  // and is read from its local blob, the way the single send buttons do
   const fileImage = getMessageFileImage(message);
-  const hash = fileImage
-    ? getDocumentMediaHash(fileImage, 'full')
-    : getPhotoMediaHash(getMessagePhoto(message)!, 'inline');
-  const blobUrl = await fetchMediaBlobUrl(hash!, message);
+  const photo = getMessagePhoto(message);
+  const hash = fileImage ? getDocumentMediaHash(fileImage, 'full') : getPhotoMediaHash(photo!, 'inline');
+  const blobUrl = hash ? await fetchMediaBlobUrl(hash, message) : photo?.blobUrl;
   const image = await blobToBase64(await convertToBlob(blobUrl));
   return { image, text: post.text };
 }
