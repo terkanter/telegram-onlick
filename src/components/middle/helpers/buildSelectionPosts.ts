@@ -3,17 +3,17 @@ import type { LangFn } from '../../../util/localization';
 import type { FormContentBatchItem } from '../../../util/telegramGateway';
 
 import {
+  getDocumentMediaHash,
   getMessagePhoto,
-  getMessageVideo,
   getPhotoMediaHash,
-  getVideoMediaHash,
 } from '../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../global/helpers/messageSummary';
 import { blobToBase64, convertToBlob } from '../../../util/onlik-bridge';
 import {
   fetchMediaBlobUrl,
-  MAX_VIDEO_SIZE,
-  SUPPORTED_VIDEO_MIME_TYPES,
+  getMessageFileImage,
+  getMessagePostVideo,
+  loadPostVideoBlob,
 } from '../message/helpers/sendMessageContentOptions';
 
 // One future post: a media message and the text that goes with it, or the text alone
@@ -73,26 +73,24 @@ export async function loadSelectionPost(post: SelectionPost): Promise<FormConten
   const message = post.mediaMessage;
   if (!message) return { text: post.text };
 
-  const video = getMessageVideo(message);
-  if (video && !video.isRound) {
-    if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType) || video.size > MAX_VIDEO_SIZE) {
-      throw new Error('video not accepted by the platform');
-    }
-    const blobUrl = video.blobUrl ?? await fetchMediaBlobUrl(getVideoMediaHash(video, 'download')!, message);
-    if (!blobUrl) throw new Error('video download failed');
-    const blob = await (await fetch(blobUrl)).blob();
+  const video = getMessagePostVideo(message);
+  if (video) {
+    const blob = await loadPostVideoBlob(video, message);
     return { video: { blob, name: video.fileName }, text: post.text };
   }
 
-  const photo = getMessagePhoto(message)!;
-  const blobUrl = await fetchMediaBlobUrl(getPhotoMediaHash(photo, 'inline')!, message);
+  // A photo, or an image sent as a file
+  const fileImage = getMessageFileImage(message);
+  const hash = fileImage
+    ? getDocumentMediaHash(fileImage, 'full')
+    : getPhotoMediaHash(getMessagePhoto(message)!, 'inline');
+  const blobUrl = await fetchMediaBlobUrl(hash!, message);
   const image = await blobToBase64(await convertToBlob(blobUrl));
   return { image, text: post.text };
 }
 
 function checkHasPostMedia(message: ApiMessage) {
-  const video = getMessageVideo(message);
-  return Boolean(getMessagePhoto(message) || (video && !video.isRound));
+  return Boolean(getMessagePhoto(message) || getMessageFileImage(message) || getMessagePostVideo(message));
 }
 
 function getMessageText(lang: LangFn, message: ApiMessage) {

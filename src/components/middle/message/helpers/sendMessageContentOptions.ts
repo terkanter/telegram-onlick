@@ -1,7 +1,7 @@
 import { getActions, getGlobal } from '../../../../global';
 
 import type {
-  ApiChat, ApiMessage, ApiOnProgress, ApiPeer, ApiUser, ApiVideo,
+  ApiChat, ApiDocument, ApiMessage, ApiOnProgress, ApiPeer, ApiUser, ApiVideo,
 } from '../../../../api/types';
 import type { IconName } from '../../../../types/icons';
 import type { ClipboardTextFormat, MessageCopyRequest } from '../../../../types/messageCopy';
@@ -20,6 +20,8 @@ import {
   getWebPagePhoto,
   getWebPageVideo,
   hasMediaLocalBlobUrl,
+  isDocumentPhoto,
+  isDocumentVideo,
 } from '../../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../../global/helpers/messageSummary';
 import {
@@ -48,8 +50,11 @@ export type ISendOptions = ISendOption[];
 
 // Platform acceptance limits (see `telegram-fork-video.md`) — checked before sending so the
 // manager gets a clear refusal instead of the platform silently dropping the signal.
-export const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
-export const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
+const VIDEO_UNSUPPORTED_ERROR = 'video format not accepted by the platform';
+const VIDEO_TOO_LARGE_ERROR = 'video larger than the platform accepts';
+const STICKER_MIME_TYPE = 'image/webp';
 
 export function getMessageSendToParentWindowOptions(
   lang: LangFn,
@@ -64,7 +69,8 @@ export function getMessageSendToParentWindowOptions(
   const webPage = selectWebPageFromMessage(global, message);
   const photo = getMessagePhoto(message)
     || (!getWebPageVideo(webPage) ? getWebPagePhoto(webPage) : undefined);
-  const document = getMessageDocument(message);
+  // A photo sent as a file arrives as a document; a clip sent as a file goes the video way below
+  const document = getMessageFileImage(message);
   const mediaHash = photo ? getPhotoMediaHash(photo, 'inline') : undefined;
   const documentMediaHash = document ? getDocumentMediaHash(document, 'full') : undefined;
   // Unlike clipboard copy (`copyOptions.ts`), this path serializes the image via
@@ -160,8 +166,8 @@ export function getMessageSendToParentWindowOptions(
 
   // Video travels as a `Blob` (never a data-URL — a 100MB clip is a ~133MB string). Mirrors the
   // image buttons: with a caption → combined ТВ (replaces the rest), otherwise video-only В.
-  const video = getMessageVideo(message);
-  const canVideoBeSent = Boolean(canCopy && video && !video.isRound);
+  const video = getMessagePostVideo(message);
+  const canVideoBeSent = Boolean(canCopy && video);
 
   if (canVideoBeSent && text) {
     options.push({
@@ -224,11 +230,43 @@ export function getMessageSendToParentWindowOptions(
   }
   return options;
 }
+// An image sent as a file. Stickers are documents too, but not something to post
+export function getMessageFileImage(message: ApiMessage) {
+  const document = getMessageDocument(message);
+  if (!document || document.mimeType === STICKER_MIME_TYPE) return undefined;
+
+  return isDocumentPhoto(document) || document.mimeType.startsWith('image/') ? document : undefined;
+}
+
+// The clip a post would carry: an inline video (not a round one) or a video sent as a file
+export function getMessagePostVideo(message: ApiMessage): ApiVideo | ApiDocument | undefined {
+  const video = getMessageVideo(message);
+  if (video) return video.isRound ? undefined : video;
+
+  const document = getMessageDocument(message);
+  return document && (isDocumentVideo(document) || document.mimeType.startsWith('video/')) ? document : undefined;
+}
+
+// Downloads a post video's bytes, refusing what the platform would not accept
+export async function loadPostVideoBlob(
+  video: ApiVideo | ApiDocument, message: ApiMessage, onProgress?: SendProgressCallback,
+) {
+  if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType)) throw new Error(VIDEO_UNSUPPORTED_ERROR);
+  if (video.size > MAX_VIDEO_SIZE) throw new Error(VIDEO_TOO_LARGE_ERROR);
+
+  // Reuse the already-loaded blob if the video was played
+  const loadedBlobUrl = 'blobUrl' in video ? video.blobUrl : undefined;
+  const blobUrl = loadedBlobUrl ?? await fetchMediaBlobUrl(getVideoMediaHash(video, 'download')!, message, onProgress);
+  if (!blobUrl) throw new Error('video download failed');
+
+  return (await fetch(blobUrl)).blob();
+}
+
 // Validates the clip against the platform limits, downloads its bytes, then sends one signal.
 // `afterEffectInternal(false)` on any failure keeps the button from flashing success.
 function createVideoSendHandler(
   lang: LangFn,
-  video: ApiVideo,
+  video: ApiVideo | ApiDocument,
   text: string | undefined,
   message: ApiMessage,
   chat?: ApiChat,
@@ -239,28 +277,9 @@ function createVideoSendHandler(
   return (afterEffectInternal, onProgress) => {
     const { showNotification } = getActions();
 
-    if (!SUPPORTED_VIDEO_MIME_TYPES.has(video.mimeType)) {
-      showNotification({ message: lang('OnlikVideoUnsupportedFormat') });
-      afterEffectInternal?.(false);
-      return;
-    }
-    if (video.size > MAX_VIDEO_SIZE) {
-      showNotification({ message: lang('OnlikVideoTooLarge') });
-      afterEffectInternal?.(false);
-      return;
-    }
-
-    // The full clip must be downloaded before the signal is sent (reuse the already-loaded
-    // blob if the video was played). The button shows a loading state meanwhile.
-    const blobUrlPromise: Promise<string | undefined> = video.blobUrl
-      ? Promise.resolve(video.blobUrl)
-      : fetchMediaBlobUrl(getVideoMediaHash(video, 'download')!, message, onProgress);
-
-    blobUrlPromise
-      .then((blobUrl) => {
-        if (!blobUrl) throw new Error('video download failed');
-        return fetch(blobUrl).then((response) => response.blob());
-      })
+    // The full clip must be downloaded before the signal is sent. The button shows a loading
+    // state meanwhile.
+    loadPostVideoBlob(video, message, onProgress)
       .then((blob) => sendFormContent({
         video: { blob, name: video.fileName },
         text,
@@ -273,11 +292,17 @@ function createVideoSendHandler(
         afterEffect?.();
         afterEffectInternal?.(true, requestId);
       })
-      .catch(() => {
-        showNotification({ message: lang('OnlikVideoDownloadFailed') });
+      .catch((err: Error) => {
+        showNotification({ message: lang(getVideoErrorKey(err)) });
         afterEffectInternal?.(false);
       });
   };
+}
+
+function getVideoErrorKey(err: Error) {
+  if (err.message === VIDEO_UNSUPPORTED_ERROR) return 'OnlikVideoUnsupportedFormat';
+  if (err.message === VIDEO_TOO_LARGE_ERROR) return 'OnlikVideoTooLarge';
+  return 'OnlikVideoDownloadFailed';
 }
 
 export function fetchMediaBlobUrl(hash: string, message: ApiMessage, onProgress?: SendProgressCallback) {
