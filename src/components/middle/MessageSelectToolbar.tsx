@@ -43,6 +43,7 @@ import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import Checkbox from '../ui/Checkbox';
 import ConfirmDialog from '../ui/ConfirmDialog';
+import { formatPercent } from './message/OnlikActions';
 
 import './MessageSelectToolbar.scss';
 import onlikStyles from './message/OnlikActions.module.scss';
@@ -351,6 +352,9 @@ const MessageSelectToolbar = ({
                         </span>
                       )}
                       <Icon name="media" className={onlikStyles.icon} />
+                      {isSendingToPlatform && (
+                        <span className={onlikStyles.progressBadge}>{formatPercent(sendProgress)}</span>
+                      )}
                     </div>
                   )}
                   {!rendering.hasProtectedMessage && (

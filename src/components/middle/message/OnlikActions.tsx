@@ -31,6 +31,7 @@ type SendStatus = 'sent' | 'posted' | 'error';
 
 // Keeps the fill visible while the progress is still unknown
 const MIN_PROGRESS = 0.15;
+const PERCENT = 100;
 // How long the button confirms the click while the platform has not reported the post
 const SENT_STATUS_DURATION = 20000;
 
@@ -103,9 +104,14 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
         <span className={styles.fill} style={`transform: translateY(${fillOffset}%)`} />
       </span>
       <Icon name={shownStatus === 'sent' || isPosted ? 'check' : option.icon} className={styles.icon} />
+      {isLoading && <span className={styles.progressBadge}>{formatPercent(progress)}</span>}
       {shownStatus === 'error' && <span className={styles.errorBadge} />}
     </Button>
   );
+}
+
+export function formatPercent(progress: number) {
+  return `${Math.round(progress * PERCENT)}%`;
 }
 
 export function OnlikActionsButtons(props: OwnProps) {
