@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from '../../../lib/teact/teact';
 import type { ApiMessage } from '../../../api/types';
 import type { ISendOption } from './helpers/sendMessageContentOptions';
 
+import { buildOnlikBatchStatusKey, getOnlikBatchStatuses } from '../../../util/onlikBatchStatus';
 import { subscribeToFormContentResult } from '../../../util/telegramGateway';
 import { getMessageSendToParentWindowOptions } from './helpers/sendMessageContentOptions';
 
+import useDerivedState from '../../../hooks/useDerivedState';
 import useFlag from '../../../hooks/useFlag';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -21,6 +23,8 @@ type OwnProps = {
 
 type IOnlikButtonProps = {
   option: ISendOption;
+  // The message's state from a batch send, shown while this button has none of its own
+  batchStatusKey?: string;
 };
 
 type SendStatus = 'sent' | 'posted' | 'error';
@@ -33,6 +37,7 @@ const SENT_STATUS_DURATION = 20000;
 export function OnlickActionButton(props: IOnlikButtonProps) {
   const {
     option,
+    batchStatusKey,
   } = props;
 
   const [isLoading, markLoading, unmarkLoading] = useFlag();
@@ -77,8 +82,13 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
     }, setProgress);
   });
 
+  const batchStatus = useDerivedState(
+    () => (batchStatusKey ? getOnlikBatchStatuses()[batchStatusKey] : undefined), [batchStatusKey],
+  );
+  const shownStatus = status ?? batchStatus;
+
   const fillOffset = isLoading ? (1 - Math.max(progress, MIN_PROGRESS)) * 100 : 100;
-  const isPosted = status === 'posted';
+  const isPosted = shownStatus === 'posted';
 
   return (
     <Button
@@ -92,8 +102,8 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
       <span className={styles.fillClip}>
         <span className={styles.fill} style={`transform: translateY(${fillOffset}%)`} />
       </span>
-      <Icon name={status === 'sent' || isPosted ? 'check' : option.icon} className={styles.icon} />
-      {status === 'error' && <span className={styles.errorBadge} />}
+      <Icon name={shownStatus === 'sent' || isPosted ? 'check' : option.icon} className={styles.icon} />
+      {shownStatus === 'error' && <span className={styles.errorBadge} />}
     </Button>
   );
 }
@@ -104,7 +114,9 @@ export function OnlikActionsButtons(props: OwnProps) {
   const lang = useLang();
   const options = getMessageSendToParentWindowOptions(lang, message, true);
 
-  return options.map((option) => (
-    <OnlickActionButton option={option} />
+  // A batch send marks the message once, on its first button
+  const batchStatusKey = buildOnlikBatchStatusKey(message.chatId, message.id);
+  return options.map((option, index) => (
+    <OnlickActionButton option={option} batchStatusKey={index === 0 ? batchStatusKey : undefined} />
   ));
 }

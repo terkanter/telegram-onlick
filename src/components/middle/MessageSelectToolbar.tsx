@@ -26,6 +26,7 @@ import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
 import { logGatewayError } from '../../util/gatewayLog';
 import { sendFormContentBatch } from '../../util/onlik-bridge';
+import { trackOnlikBatchPost } from '../../util/onlikBatchStatus';
 import { buildSelectionPosts, loadSelectionPost } from './helpers/buildSelectionPosts';
 import { getMessagePostVideo, getVideoErrorKey } from './message/helpers/sendMessageContentOptions';
 
@@ -44,6 +45,10 @@ import Checkbox from '../ui/Checkbox';
 import ConfirmDialog from '../ui/ConfirmDialog';
 
 import './MessageSelectToolbar.scss';
+import onlikStyles from './message/OnlikActions.module.scss';
+
+// Keeps the fill visible while the progress is still unknown
+const MIN_SEND_PROGRESS = 0.15;
 
 export type OwnProps = {
   isActive?: boolean;
@@ -99,6 +104,8 @@ const MessageSelectToolbar = ({
   const oldLang = useOldLang();
   const { canForwardMessages: canForwardByRole, canCreatePosting } = useGatewayPermissions();
   const [isSendingToPlatform, markSendingToPlatform, unmarkSendingToPlatform] = useFlag();
+  // 0..1 across the whole selection while its media downloads
+  const [sendProgress, setSendProgress] = useState(0);
 
   useCopySelectedMessages(Boolean(isActive && !reportContext));
 
@@ -148,17 +155,22 @@ const MessageSelectToolbar = ({
     }
 
     markSendingToPlatform();
-    const items: FormContentBatchItem[] = [];
+    setSendProgress(0);
+    const loaded: { post: (typeof posts)[number]; item: FormContentBatchItem }[] = [];
     // One notification per reason, however many posts it hit
     const skipReasons = new Set<ReturnType<typeof getVideoErrorKey> | 'OnlikImageDownloadFailed'>();
-    for (const post of posts) {
+    for (const [index, post] of posts.entries()) {
       try {
-        items.push(await loadSelectionPost(post));
+        const item = await loadSelectionPost(post, (progress) => {
+          setSendProgress((index + progress) / posts.length);
+        });
+        loaded.push({ post, item });
       } catch (err) {
         logGatewayError('form-content-batch: post skipped', { messageId: post.mediaMessage?.id, err });
         const isVideo = Boolean(post.mediaMessage && getMessagePostVideo(post.mediaMessage));
         skipReasons.add(isVideo ? getVideoErrorKey(err as Error) : 'OnlikImageDownloadFailed');
       }
+      setSendProgress((index + 1) / posts.length);
     }
     unmarkSendingToPlatform();
 
@@ -167,13 +179,19 @@ const MessageSelectToolbar = ({
     });
     const firstMessage = messages[0];
     const requestIds = sendFormContentBatch({
-      items,
+      items: loaded.map(({ item }) => item),
       chat,
       user: global.currentUserId ? selectUser(global, global.currentUserId) : undefined,
       sender: selectSender(global, firstMessage),
       isSenderSelf: firstMessage.isOutgoing,
     });
-    if (requestIds) exitMessageSelectMode();
+    if (!requestIds) return;
+
+    // Each message now shows on its own send button how its post went
+    requestIds.forEach((requestId, index) => {
+      trackOnlikBatchPost(chat.id, loaded[index].post.messageIds, requestId);
+    });
+    exitMessageSelectMode();
   });
 
   const handleCopy = useLastCallback(() => {
@@ -316,11 +334,24 @@ const MessageSelectToolbar = ({
                     renderButton('download', oldLang('lng_media_download'), handleMessageDownload)
                   )}
                   {canCreatePosting && (
-                    renderButton(
-                      isSendingToPlatform ? 'clock' : 'media',
-                      lang(isSendingToPlatform ? 'OnlikBatchPreparing' : 'OnlikSendSelectionToPlatform'),
-                      handleSendToPlatform,
-                    )
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="div-button item"
+                      onClick={handleSendToPlatform}
+                      title={lang(isSendingToPlatform ? 'OnlikBatchPreparing' : 'OnlikSendSelectionToPlatform')}
+                      aria-label={lang(isSendingToPlatform ? 'OnlikBatchPreparing' : 'OnlikSendSelectionToPlatform')}
+                    >
+                      {isSendingToPlatform && (
+                        <span className={onlikStyles.fillClip}>
+                          <span
+                            className={onlikStyles.fill}
+                            style={`transform: translateY(${(1 - Math.max(sendProgress, MIN_SEND_PROGRESS)) * 100}%)`}
+                          />
+                        </span>
+                      )}
+                      <Icon name="media" className={onlikStyles.icon} />
+                    </div>
                   )}
                   {!rendering.hasProtectedMessage && (
                     renderButton('copy', oldLang('lng_context_copy_selected_items'), handleCopy)
