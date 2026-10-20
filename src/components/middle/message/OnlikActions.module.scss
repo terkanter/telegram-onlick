@@ -23,23 +23,16 @@
   position: relative;
 }
 
-.progressBadge {
+.progressText {
   pointer-events: none;
 
-  position: absolute;
-  top: -0.25rem;
-  right: -0.625rem;
+  position: relative;
 
-  padding: 0.0625rem 0.25rem;
-  border-radius: 0.5rem;
-
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: 1;
   color: white;
-
-  background-color: var(--color-primary);
 }
 
 .errorBadge {

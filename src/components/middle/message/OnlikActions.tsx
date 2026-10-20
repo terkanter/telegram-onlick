@@ -103,8 +103,11 @@ export function OnlickActionButton(props: IOnlikButtonProps) {
       <span className={styles.fillClip}>
         <span className={styles.fill} style={`transform: translateY(${fillOffset}%)`} />
       </span>
-      <Icon name={shownStatus === 'sent' || isPosted ? 'check' : option.icon} className={styles.icon} />
-      {isLoading && <span className={styles.progressBadge}>{formatPercent(progress)}</span>}
+      {isLoading ? (
+        <span className={styles.progressText}>{formatPercent(progress)}</span>
+      ) : (
+        <Icon name={shownStatus === 'sent' || isPosted ? 'check' : option.icon} className={styles.icon} />
+      )}
       {shownStatus === 'error' && <span className={styles.errorBadge} />}
     </Button>
   );

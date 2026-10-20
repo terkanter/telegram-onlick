@@ -351,9 +351,10 @@ const MessageSelectToolbar = ({
                           />
                         </span>
                       )}
-                      <Icon name="media" className={onlikStyles.icon} />
-                      {isSendingToPlatform && (
-                        <span className={onlikStyles.progressBadge}>{formatPercent(sendProgress)}</span>
+                      {isSendingToPlatform ? (
+                        <span className={onlikStyles.progressText}>{formatPercent(sendProgress)}</span>
+                      ) : (
+                        <Icon name="media" className={onlikStyles.icon} />
                       )}
                     </div>
                   )}
