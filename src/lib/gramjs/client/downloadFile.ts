@@ -44,6 +44,8 @@ const DISCONNECT_SLEEP = 1000;
 
 // when the sender requests hangs for 60 second we will reimport
 const SENDER_TIMEOUT = 60 * 1000;
+// The gateway answers this when Telegram stays silent for 60 seconds
+const GATEWAY_TIMEOUT_MESSAGE = 'invoke timed out';
 // Telegram may have server issues so we try several times
 const SENDER_RETRIES = 5;
 
@@ -140,7 +142,9 @@ export async function downloadFile(
 }
 
 // Gateway mode (variant 2): fetch parts through the relayed `invoke` with `dcId`; the backend
-// owns the data-center connection. Sequential — the backend handles real parallelism.
+// owns the data-center connection. Sequential — the backend handles real parallelism. Each part
+// is a full round trip through the gateway, so a whole file comes in 1 MB parts (the most
+// `upload.getFile` takes) unless the caller asks for less: a 2 MB file is 2 requests, not 16.
 async function downloadFileViaGateway(
   client: TelegramClient,
   inputLocation: Api.TypeInputFileLocation,
@@ -157,7 +161,10 @@ async function downloadFileViaGateway(
 
   const rangeSize = end ? end - start + 1 : undefined;
   if (!partSizeKb) {
-    partSizeKb = fileSize ? getDownloadPartSize(rangeSize || fileSize) : DEFAULT_CHUNK_SIZE;
+    // A streamed range (video playback) keeps the small parts: its first bytes matter, not the total
+    const isWholeFile = start === 0 && !fileParams.end;
+    const defaultKb = fileSize ? getDownloadPartSize(rangeSize || fileSize) : DEFAULT_CHUNK_SIZE;
+    partSizeKb = isWholeFile ? ONE_MB / 1024 : defaultKb;
   }
 
   const partSize = partSizeKb * 1024;
@@ -174,7 +181,9 @@ async function downloadFileViaGateway(
   progressCallback?.(progress);
 
   while (true) {
-    if (progressCallback?.isCanceled) break;
+    // A cut-short buffer must not pass for the file: it would be cached and handed to everyone
+    // waiting for it. Same as the direct path.
+    if (progressCallback?.isCanceled) throw new Error('USER_CANCELED');
 
     let limit = partSize;
     let isPrecise = false;
@@ -188,6 +197,7 @@ async function downloadFileViaGateway(
     }
 
     const result = await (async () => {
+      let isTimeoutRetried = false;
       while (true) {
         try {
           return await client.invoke(new Api.upload.GetFile({
@@ -199,6 +209,12 @@ async function downloadFileViaGateway(
         } catch (err) {
           if (err instanceof FloodWaitError) {
             await sleep(err.seconds * 1000);
+            continue;
+          }
+          // Once: the gateway keeps the first request running and a repeat waits for its answer,
+          // so a part that is merely slow still lands; a dead one fails the file after this.
+          if (!isTimeoutRetried && err instanceof RPCError && err.errorMessage === GATEWAY_TIMEOUT_MESSAGE) {
+            isTimeoutRetried = true;
             continue;
           }
           throw err;
