@@ -28,7 +28,9 @@ import { logGatewayError } from '../../util/gatewayLog';
 import { sendFormContentBatch } from '../../util/onlik-bridge';
 import { trackOnlikBatchPost } from '../../util/onlikBatchStatus';
 import { buildSelectionPosts, loadSelectionPost } from './helpers/buildSelectionPosts';
-import { getMessagePostVideo, getVideoErrorKey } from './message/helpers/sendMessageContentOptions';
+import {
+  getImageErrorKey, getMessagePostVideo, getVideoErrorKey,
+} from './message/helpers/sendMessageContentOptions';
 
 import useFlag from '../../hooks/useFlag';
 import useFrozenProps from '../../hooks/useFrozenProps';
@@ -159,7 +161,7 @@ const MessageSelectToolbar = ({
     setSendProgress(0);
     const loaded: { post: (typeof posts)[number]; item: FormContentBatchItem }[] = [];
     // One notification per reason, however many posts it hit
-    const skipReasons = new Set<ReturnType<typeof getVideoErrorKey> | 'OnlikImageDownloadFailed'>();
+    const skipReasons = new Set<ReturnType<typeof getVideoErrorKey | typeof getImageErrorKey>>();
     for (const [index, post] of posts.entries()) {
       try {
         const item = await loadSelectionPost(post, (progress) => {
@@ -169,7 +171,7 @@ const MessageSelectToolbar = ({
       } catch (err) {
         logGatewayError('form-content-batch: post skipped', { messageId: post.mediaMessage?.id, err });
         const isVideo = Boolean(post.mediaMessage && getMessagePostVideo(post.mediaMessage));
-        skipReasons.add(isVideo ? getVideoErrorKey(err as Error) : 'OnlikImageDownloadFailed');
+        skipReasons.add(isVideo ? getVideoErrorKey(err as Error) : getImageErrorKey(err as Error));
       }
       setSendProgress((index + 1) / posts.length);
     }

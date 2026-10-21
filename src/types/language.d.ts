@@ -2420,6 +2420,8 @@ export interface LangPair {
   'OnlikVideoTooLarge': undefined;
   'OnlikVideoDownloadFailed': undefined;
   'OnlikImageDownloadFailed': undefined;
+  'OnlikImageUnsupportedFormat': undefined;
+  'OnlikImageTooLarge': undefined;
   'OnlikSendSelectionToPlatform': undefined;
   'OnlikBatchPreparing': undefined;
   'OnlikBatchNothingToSend': undefined;

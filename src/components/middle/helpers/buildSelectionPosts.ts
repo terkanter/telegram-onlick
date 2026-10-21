@@ -8,11 +8,11 @@ import {
   getPhotoMediaHash,
 } from '../../../global/helpers';
 import { getMessageTextWithSpoilers } from '../../../global/helpers/messageSummary';
-import { blobToBase64, convertToBlob } from '../../../util/onlik-bridge';
 import {
   fetchMediaBlobUrl,
   getMessageFileImage,
   getMessagePostVideo,
+  loadPlatformImage,
   loadPostVideoBlob,
 } from '../message/helpers/sendMessageContentOptions';
 
@@ -92,7 +92,7 @@ export async function loadSelectionPost(
   const photo = getMessagePhoto(message);
   const hash = fileImage ? getDocumentMediaHash(fileImage, 'full') : getPhotoMediaHash(photo!, 'inline');
   const blobUrl = hash ? await fetchMediaBlobUrl(hash, message, onProgress) : photo?.blobUrl;
-  const image = await blobToBase64(await convertToBlob(blobUrl));
+  const image = await loadPlatformImage(blobUrl);
   return { image, text: post.text };
 }
 

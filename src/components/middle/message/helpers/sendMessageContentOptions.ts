@@ -54,7 +54,11 @@ const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
 const SUPPORTED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
 const VIDEO_UNSUPPORTED_ERROR = 'video format not accepted by the platform';
 const VIDEO_TOO_LARGE_ERROR = 'video larger than the platform accepts';
-const STICKER_MIME_TYPE = 'image/webp';
+// The platform takes these images as they are (`POST /file/upload/single`), up to 25 MiB
+const SUPPORTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGE_SIZE = 25 * 1024 * 1024;
+const IMAGE_UNSUPPORTED_ERROR = 'image format not accepted by the platform';
+const IMAGE_TOO_LARGE_ERROR = 'image larger than the platform accepts';
 
 export function getMessageSendToParentWindowOptions(
   lang: LangFn,
@@ -112,8 +116,7 @@ export function getMessageSendToParentWindowOptions(
         const ntext = getText();
         const hash = documentMediaHash || mediaHash;
         Promise.resolve(hash ? fetchMediaBlobUrl(hash, message, onProgress) : photo!.blobUrl)
-          .then(convertToBlob)
-          .then(blobToBase64)
+          .then(loadPlatformImage)
           .then((image) => sendFormContent({
             image,
             text: ntext,
@@ -126,8 +129,8 @@ export function getMessageSendToParentWindowOptions(
             afterEffect?.();
             afterEffectInternal?.(true, requestId);
           })
-          .catch(() => {
-            getActions().showNotification({ message: lang('OnlikImageDownloadFailed') });
+          .catch((err: Error) => {
+            getActions().showNotification({ message: lang(getImageErrorKey(err)) });
             afterEffectInternal?.(false);
           });
       },
@@ -143,8 +146,7 @@ export function getMessageSendToParentWindowOptions(
       handler: (afterEffectInternal, onProgress) => {
         const hash = documentMediaHash || mediaHash;
         Promise.resolve(hash ? fetchMediaBlobUrl(hash, message, onProgress) : photo!.blobUrl)
-          .then(convertToBlob)
-          .then(blobToBase64)
+          .then(loadPlatformImage)
           .then((image) => sendFormContent({
             image,
             chat,
@@ -156,8 +158,8 @@ export function getMessageSendToParentWindowOptions(
             afterEffect?.();
             afterEffectInternal?.(true, requestId);
           })
-          .catch(() => {
-            getActions().showNotification({ message: lang('OnlikImageDownloadFailed') });
+          .catch((err: Error) => {
+            getActions().showNotification({ message: lang(getImageErrorKey(err)) });
             afterEffectInternal?.(false);
           });
       },
@@ -230,10 +232,10 @@ export function getMessageSendToParentWindowOptions(
   }
   return options;
 }
-// An image sent as a file. Stickers are documents too, but not something to post
+// An image sent as a file. Stickers arrive as `content.sticker`, so a WebP document is a picture
 export function getMessageFileImage(message: ApiMessage) {
   const document = getMessageDocument(message);
-  if (!document || document.mimeType === STICKER_MIME_TYPE) return undefined;
+  if (!document) return undefined;
 
   return isDocumentPhoto(document) || document.mimeType.startsWith('image/') ? document : undefined;
 }
@@ -297,6 +299,29 @@ function createVideoSendHandler(
         afterEffectInternal?.(false);
       });
   };
+}
+
+// The image as the platform takes it: the file itself when its type is accepted — redrawing a JPEG
+// into a PNG only made it several times larger, past the upload limit — else drawn into a PNG.
+// Rejects with a reason `getImageErrorKey` names.
+export async function loadPlatformImage(imageUrl?: string): Promise<string> {
+  if (!imageUrl) throw new Error('No image URL');
+  const file = await (await fetch(imageUrl)).blob();
+  let image = file;
+  if (!SUPPORTED_IMAGE_MIME_TYPES.has(file.type)) {
+    // HEIC does not draw in Chrome or Firefox
+    image = await convertToBlob(imageUrl).catch(() => {
+      throw new Error(IMAGE_UNSUPPORTED_ERROR);
+    });
+  }
+  if (image.size > MAX_IMAGE_SIZE) throw new Error(IMAGE_TOO_LARGE_ERROR);
+  return blobToBase64(image);
+}
+
+export function getImageErrorKey(err: Error) {
+  if (err.message === IMAGE_UNSUPPORTED_ERROR) return 'OnlikImageUnsupportedFormat';
+  if (err.message === IMAGE_TOO_LARGE_ERROR) return 'OnlikImageTooLarge';
+  return 'OnlikImageDownloadFailed';
 }
 
 export function getVideoErrorKey(err: Error) {
