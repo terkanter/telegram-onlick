@@ -16,18 +16,28 @@ import {
   loadPostVideoBlob,
 } from '../message/helpers/sendMessageContentOptions';
 
-// One future post: a media message and the text that goes with it, or the text alone
+// One future post: a media message and the text that goes with it, or the text alone. A
+// `resetTime` one is no post: the platform starts the schedule over from the next post
 export type SelectionPost = {
   mediaMessage?: ApiMessage;
   text?: string;
+  resetTime?: true;
   // Every selected message the post was built from — they all show how it went
   messageIds: number[];
 };
 
+// Text that is the "Reset time" command and nothing else: case, spaces, emoji, punctuation and
+// styled letters (𝐑𝐞𝐬𝐞𝐭 𝐓𝐢𝐦𝐞 — NFKC folds them to plain ones) do not matter. Only the whole
+// text counts, so a caption that merely mentions the words is still a post
+export function checkIsResetTimeText(text?: string) {
+  return text?.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === 'resettime';
+}
+
 // Splits the selected messages into posts, in chat order. A media message takes its own
 // caption; an album counts as its first photo or video with the album's caption. A text-only
 // message joins the neighbouring media that has no text yet — the one right before it, else the
-// one right after it — and otherwise becomes a text-only post.
+// one right after it — and otherwise becomes a text-only post. A message whose text is the
+// "Reset time" command — with its media, if any, and its whole album — is a reset marker instead
 export function buildSelectionPosts(lang: LangFn, messages: ApiMessage[]): SelectionPost[] {
   const sorted = [...messages].sort((a, b) => a.id - b.id);
   const posts: SelectionPost[] = [];
@@ -37,9 +47,29 @@ export function buildSelectionPosts(lang: LangFn, messages: ApiMessage[]): Selec
     const text = getMessageText(lang, message);
     const hasMedia = checkHasPostMedia(message);
 
+    if (checkIsResetTimeText(text)) {
+      const albumPost = message.groupedId ? albumPosts.get(message.groupedId) : undefined;
+      if (albumPost) {
+        // The album's command arrived after its first items: the album is the marker
+        albumPost.messageIds.push(message.id);
+        albumPost.mediaMessage = undefined;
+        albumPost.text = undefined;
+        albumPost.resetTime = true;
+        return;
+      }
+      const marker: SelectionPost = { resetTime: true, messageIds: [message.id] };
+      posts.push(marker);
+      if (message.groupedId) albumPosts.set(message.groupedId, marker);
+      return;
+    }
+
     if (message.groupedId) {
       const albumPost = albumPosts.get(message.groupedId);
       if (albumPost) {
+        if (albumPost.resetTime) {
+          albumPost.messageIds.push(message.id);
+          return;
+        }
         albumPost.mediaMessage ??= hasMedia ? message : undefined;
         albumPost.text ??= text;
         albumPost.messageIds.push(message.id);
@@ -47,7 +77,8 @@ export function buildSelectionPosts(lang: LangFn, messages: ApiMessage[]): Selec
       }
     }
 
-    const previous = posts[posts.length - 1];
+    // Nothing joins across a reset
+    const previous = posts[posts.length - 1]?.resetTime ? undefined : posts[posts.length - 1];
     if (!hasMedia) {
       if (!text) return;
       if (previous?.mediaMessage && !previous.text) {
@@ -77,6 +108,7 @@ export function buildSelectionPosts(lang: LangFn, messages: ApiMessage[]): Selec
 export async function loadSelectionPost(
   post: SelectionPost, onProgress?: (progress: number) => void,
 ): Promise<FormContentBatchItem> {
+  if (post.resetTime) return { resetTime: true };
   const message = post.mediaMessage;
   if (!message) return { text: post.text };
 

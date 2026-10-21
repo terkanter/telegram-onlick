@@ -152,7 +152,7 @@ const MessageSelectToolbar = ({
       .filter((message): message is ApiMessage => Boolean(message))
       .sort((a, b) => a.id - b.id);
     const posts = buildSelectionPosts(lang, messages);
-    if (!posts.length) {
+    if (!posts.some((post) => !post.resetTime)) {
       showNotification({ message: lang('OnlikBatchNothingToSend') });
       return;
     }
@@ -192,7 +192,8 @@ const MessageSelectToolbar = ({
 
     // Each message now shows on its own send button how its post went
     requestIds.forEach((requestId, index) => {
-      trackOnlikBatchPost(chat.id, loaded[index].post.messageIds, requestId);
+      const { post } = loaded[index];
+      if (!post.resetTime) trackOnlikBatchPost(chat.id, post.messageIds, requestId);
     });
     exitMessageSelectMode();
   });

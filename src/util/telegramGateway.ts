@@ -148,6 +148,8 @@ export type FormContentBatchItem = {
   image?: string;
   video?: FormContentVideo;
   text?: string;
+  // No post: the "Reset time" command — the platform starts the schedule over after it
+  resetTime?: true;
 };
 
 // Several picks sent at once from the message selection. The platform opens one form for all of
