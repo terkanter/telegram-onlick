@@ -22,6 +22,7 @@ import {
   DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, TELEGRAM_API_HASH, TELEGRAM_API_ID, UPLOAD_WORKERS,
 } from '../../../config';
 import Deferred from '../../../util/Deferred';
+import getGatewayLimitMessage from '../../../util/gatewayLimitMessage';
 import { logGatewayError, setGatewayVerbose } from '../../../util/gatewayLog';
 import { GATEWAY_ACCOUNT } from '../../../util/multiaccount';
 import { pause } from '../../../util/schedulers';
@@ -635,7 +636,21 @@ export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, req
 // `send*`/`forward*` swallow errors into `updateMessageSendFailed`, so a tagged gateway refusal
 // (blocked word, forwarding not allowed, session dead, …) would otherwise be invisible. Surface
 // its human message; untagged errors stay as-is (no dialog on send failure). See roles spec §2.
+// A Telegram limit with a known end has no tag, but the employee needs to hear when it ends.
 export function dispatchGatewayRefusalError(err: Error) {
+  const { gatewayUntil, gatewayCause } = err as { gatewayUntil?: string; gatewayCause?: string };
+  if (gatewayUntil) {
+    sendApiUpdate({
+      '@type': 'error',
+      error: {
+        message: getGatewayLimitMessage(gatewayUntil, gatewayCause),
+        code: 420,
+        errorCode: 'TELEGRAM_FLOOD_LIMIT',
+      },
+    });
+    return;
+  }
+
   const error = buildApiError(err);
   if (!error.errorCode) return;
 

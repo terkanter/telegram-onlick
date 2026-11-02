@@ -43,7 +43,9 @@ type PendingRequest = {
 type GatewayInboundFrame =
   | { type: 'ready'; accountId: string }
   | { type: 'result'; id: number; response: string }
-  | { type: 'error'; id: number; message: string; code?: number; errorCode?: string }
+  | {
+    type: 'error'; id: number; message: string; code?: number; errorCode?: string; until?: string; cause?: string;
+  }
   | { type: 'update'; update: string };
 
 // `stopped` is terminal: the policy ruled out a reconnect, nothing is sent or queued anymore
@@ -244,7 +246,10 @@ export default class GatewayTransport implements IGatewayTransport {
         logGatewayError('← error', {
           id: frame.id, message: frame.message, code: frame.code, errorCode: frame.errorCode,
         });
-        pending?.reject(toGatewayError(frame.message, frame.code ?? DEFAULT_ERROR_CODE, frame.errorCode));
+        pending?.reject(Object.assign(
+          toGatewayError(frame.message, frame.code ?? DEFAULT_ERROR_CODE, frame.errorCode),
+          { gatewayUntil: frame.until, gatewayCause: frame.cause },
+        ));
         break;
       }
       case 'update':

@@ -13,5 +13,6 @@ export default function useGatewayPermissions() {
     canViewAvatars: permissions?.viewAvatars !== false,
     canForwardMessages: permissions?.forwardMessages !== false,
     canCreatePosting: permissions?.createPosting !== false,
+    canViewBlockedUsers: permissions?.viewBlockedUsers !== false,
   };
 }

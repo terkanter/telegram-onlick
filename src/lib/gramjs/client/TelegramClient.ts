@@ -1297,7 +1297,11 @@ class TelegramClient {
         request,
       );
       // Carry the backend's machine tag so the app layer can branch the UI (roles spec §2)
-      throw Object.assign(rpcError, { gatewayErrorCode: gatewayError.gatewayErrorCode });
+      throw Object.assign(rpcError, {
+        gatewayErrorCode: gatewayError.gatewayErrorCode,
+        gatewayUntil: gatewayError.gatewayUntil,
+        gatewayCause: gatewayError.gatewayCause,
+      });
     }
   }
 

@@ -6,6 +6,7 @@ import type { IconName } from '../../../types/icons';
 import { MUTE_INDEFINITE_TIMESTAMP, UNMUTE_TIMESTAMP } from '../../../config';
 import buildClassName from '../../../util/buildClassName';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
@@ -71,6 +72,7 @@ const FooterActionBar = ({
   } = getActions();
 
   const lang = useLang();
+  const { canViewBlockedUsers } = useGatewayPermissions();
 
   const handleSubscribeClick = useLastCallback(() => {
     joinChannel({ chatId });
@@ -146,7 +148,7 @@ const FooterActionBar = ({
     if (canRestartBot) {
       return { key: 'BotRestart', label: lang('BotRestart'), isPrimary: true, onClick: handleRestartBot };
     }
-    if (canUnblock) {
+    if (canUnblock && canViewBlockedUsers) {
       return { key: 'Unblock', label: lang('Unblock'), isPrimary: true, onClick: handleUnblock };
     }
     if (isChannelMuteBar) {

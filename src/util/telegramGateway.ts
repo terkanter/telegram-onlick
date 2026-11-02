@@ -59,6 +59,7 @@ export type GatewayPermissions = {
   viewAvatars: boolean;
   forwardMessages: boolean;
   createPosting: boolean;
+  viewBlockedUsers: boolean;
 };
 
 // Per-user platform settings pushed right after `auth` and on every toggle change.

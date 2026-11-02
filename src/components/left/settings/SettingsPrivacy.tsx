@@ -14,6 +14,7 @@ import { selectSharedSettings } from '../../../global/selectors/sharedState';
 import { formatCountdown } from '../../../util/dates/oldDateFormat';
 import { getClosestEntry } from '../../../util/getClosestEntry';
 
+import useGatewayPermissions from '../../../hooks/useGatewayPermissions';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -96,14 +97,22 @@ const SettingsPrivacy = ({
     openPasskeyModal,
   } = getActions();
 
+  // Without the right the gateway refuses the list, and that would be an error window on every open
+  const { canViewBlockedUsers } = useGatewayPermissions();
+
   useEffect(() => {
     if (!isCurrentUserFrozen) {
-      loadBlockedUsers();
       loadPrivacySettings({});
       loadWebAuthorizations();
       loadPasskeys();
     }
   }, [isCurrentUserFrozen]);
+
+  useEffect(() => {
+    if (!isCurrentUserFrozen && canViewBlockedUsers) {
+      loadBlockedUsers();
+    }
+  }, [isCurrentUserFrozen, canViewBlockedUsers]);
 
   useEffect(() => {
     if (isActive && !isCurrentUserFrozen) {
@@ -214,15 +223,17 @@ const SettingsPrivacy = ({
   return (
     <div className="settings-content custom-scroll">
       <Island>
-        <ListItem
-          icon="block-filled"
-          iconBg="red"
-          narrow
-          onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyBlockedUsers })}
-        >
-          {oldLang('BlockedUsers')}
-          <span className="settings-item__current-value">{blockedCount || ''}</span>
-        </ListItem>
+        {canViewBlockedUsers && (
+          <ListItem
+            icon="block-filled"
+            iconBg="red"
+            narrow
+            onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyBlockedUsers })}
+          >
+            {oldLang('BlockedUsers')}
+            <span className="settings-item__current-value">{blockedCount || ''}</span>
+          </ListItem>
+        )}
         {canSetPasscode && (
           <ListItem
             icon="lock-filled"

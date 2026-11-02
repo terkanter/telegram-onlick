@@ -51,6 +51,7 @@ import { buildAutoDeletePeriodOptions, DEFAULT_AUTO_DELETE_PERIODS } from '../co
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useFlag from '../../hooks/useFlag';
+import useGatewayPermissions from '../../hooks/useGatewayPermissions';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
@@ -236,6 +237,7 @@ const HeaderMenuContainer = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const { canViewBlockedUsers } = useGatewayPermissions();
 
   const { isMobile } = useAppLayout();
   const [isMenuOpen, setIsMenuOpen] = useState(true);
@@ -888,7 +890,7 @@ const HeaderMenuContainer = ({
               {noForwardsMyEnabled || noForwardsPeerEnabled ? lang('EnableSharing') : lang('DisableSharing')}
             </MenuItem>
           )}
-          {isPrivate && !isChatWithSelf && !isBot && (
+          {isPrivate && !isChatWithSelf && !isBot && (!isBlocked || canViewBlockedUsers) && (
             <MenuItem
               icon={isBlocked ? 'user' : 'hand-stop'}
               onClick={isBlocked ? handleUnblock : handleBlock}
